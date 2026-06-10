@@ -11,7 +11,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const bucket = "your-bucket-name";
+const bucket = process.env.SUPABASE_BUCKET;
 
 module.exports = {
   supabase,
