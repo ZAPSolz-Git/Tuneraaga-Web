@@ -28,12 +28,14 @@ import AdminDash from "./admin/AdminDash.jsx";
 import ArtistManager from "./admin/ArtistManager";
 import SongManager from "./admin/SongManager";
 // hello mc
+
 // --- ADMIN PAGE IMPORTS ---
 import TopPlaylistAdmin from "./admin/TopPlaylistAdmin";
 import TopChartAdmin from "./admin/TopChartAdmin";
 import TrendingSongsAdmin from "./admin/TrendingSongsAdmin";
 import LatestReleasesAdmin from "./admin/LatestReleasesAdmin";
 import Top10IndiaAdmin from "./admin/Top10IndiaAdmin";
+import PodcastAdmin from "./admin/PodcastAdmin";
 
 // --- PROTECTED ROUTE IMPORT ---
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -100,6 +102,7 @@ function App() {
           <Route path="top-charts" element={<TopChartAdmin />} />
           <Route path="top-playlists" element={<TopPlaylistAdmin />} />
           <Route path="songs" element={<SongManager />} />
+          <Route path="podcasts" element={<PodcastAdmin />} />
         </Route>
 
         {/* --- 404 / FALLBACK --- */}

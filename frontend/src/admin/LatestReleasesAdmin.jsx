@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { createClient } from '@supabase/supabase-js';
+import { supabase, handleSupabaseError } from "../lib/supabaseClient";
 import { Trash2, Plus, Loader2 } from "lucide-react";
-
-// --- ENV CONFIGURATION ---
-// .env file se variables load kar rahe hain
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const LatestReleasesAdmin = () => {
   const [listItems, setListItems] = useState([]);
@@ -24,15 +17,16 @@ const LatestReleasesAdmin = () => {
     try {
       // 1. Get current items in this list (Join with releases table)
       const { data: listData, error: listError } = await supabase
-        .from('latest_releases')
+        .from("latest_releases")
         .select(`*, releases (id, title, cover_url)`);
-      
+
       if (listError) throw listError;
 
       // 2. Get ALL releases for the dropdown
       const { data: releasesData, error: releasesError } = await supabase
-        .from('releases')
-        .select('id, title');
+        .from("releases")
+        .select("id, title")
+        .limit(500);
 
       if (releasesError) throw releasesError;
 
@@ -40,7 +34,13 @@ const LatestReleasesAdmin = () => {
       if (releasesData) setAllReleases(releasesData);
     } catch (error) {
       console.error("Error fetching data:", error);
-      alert("Failed to load data");
+      const { needsRefresh } = handleSupabaseError(error);
+      if (needsRefresh) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await fetchData();
+      } else {
+        alert("Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -52,14 +52,13 @@ const LatestReleasesAdmin = () => {
 
     try {
       const { error } = await supabase
-        .from('latest_releases')
+        .from("latest_releases")
         .insert([{ release_id: selectedReleaseId }]);
 
       if (error) throw error;
 
-      // Success
       setSelectedReleaseId("");
-      fetchData(); // Refresh list
+      await fetchData();
     } catch (error) {
       alert("Error adding song: " + error.message);
     }
@@ -70,13 +69,13 @@ const LatestReleasesAdmin = () => {
 
     try {
       const { error } = await supabase
-        .from('latest_releases')
+        .from("latest_releases")
         .delete()
-        .eq('id', id);
+        .eq("id", id);
 
       if (error) throw error;
 
-      fetchData(); // Refresh list
+      await fetchData();
     } catch (error) {
       alert("Error deleting song: " + error.message);
     }
@@ -86,14 +85,15 @@ const LatestReleasesAdmin = () => {
     <div className="p-6 md:p-8 max-w-5xl mx-auto">
       <h2 className="text-2xl font-bold mb-6">Manage Latest Top 10 Releases</h2>
 
-      {/* Add New Form */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <Plus className="w-4 h-4 text-blue-600" /> Add New Song
         </h3>
         <form onSubmit={handleAdd} className="flex gap-4 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Select Song</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Select Song
+            </label>
             <select
               value={selectedReleaseId}
               onChange={(e) => setSelectedReleaseId(e.target.value)}
@@ -107,8 +107,8 @@ const LatestReleasesAdmin = () => {
               ))}
             </select>
           </div>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium flex items-center gap-2"
           >
             <Plus size={18} /> Add to List
@@ -116,7 +116,6 @@ const LatestReleasesAdmin = () => {
         </form>
       </div>
 
-      {/* List Display */}
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-blue-600" size={48} />
@@ -133,11 +132,17 @@ const LatestReleasesAdmin = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {listItems.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                <tr
+                  key={item.id}
+                  className="hover:bg-slate-50 transition-colors"
+                >
                   <td className="p-4">
-                    <img 
-                      src={item.releases?.cover_url || "https://via.placeholder.com/50"} 
-                      alt="cover" 
+                    <img
+                      src={
+                        item.releases?.cover_url ||
+                        "https://via.placeholder.com/50"
+                      }
+                      alt="cover"
                       className="w-12 h-12 rounded object-cover border border-slate-200 bg-gray-100"
                     />
                   </td>
@@ -145,7 +150,7 @@ const LatestReleasesAdmin = () => {
                     {item.releases?.title || "Unknown Title"}
                   </td>
                   <td className="p-4 text-right">
-                    <button 
+                    <button
                       onClick={() => handleDelete(item.id)}
                       className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors"
                       title="Remove"

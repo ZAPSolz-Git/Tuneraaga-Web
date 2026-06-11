@@ -12,6 +12,7 @@ import {
   X,
   Info,
   TrendingUp,
+  Podcast,
   Flame,
   Users,
   LogOut,
@@ -194,6 +195,13 @@ const AdminLayout = () => {
                   to="/admin/songs"
                   icon={Upload}
                   label="Release Song"
+                  sidebarOpen={sidebarOpen}
+                />
+
+                <NavItem
+                  to="/admin/podcasts"
+                  icon={Podcast}
+                  label="Podcast Admin"
                   sidebarOpen={sidebarOpen}
                 />
 
