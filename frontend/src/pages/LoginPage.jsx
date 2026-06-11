@@ -1,202 +1,20 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { motion, useMotionValue, useSpring } from "framer-motion";
+// pages/LoginPage.jsx
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-
-// ==========================================
-// SUPABASE IMPORT (Sirf Ek Baar)
-// ==========================================
 import { supabase } from "@/lib/supabaseClient";
-
-// ==========================================
-// ICONS IMPORT
-// ==========================================
-import {
-  User,
-  Lock,
-  Shield,
-  ArrowLeft,
-  Music,
-  Mic,
-  Mic2,
-  Headphones,
-  Radio,
-  Disc,
-  Album,
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Rewind,
-  FastForward,
-  PlayCircle,
-  PauseCircle,
-  Volume,
-  Volume1,
-  Volume2,
-  VolumeX,
-  Airplay,
-  RadioTower,
-  Speaker,
-  Waves,
-  Zap,
-  Sparkles,
-  Star,
-  Award,
-  Crown,
-  Heart,
-  Bell,
-  ListMusic,
-  Shuffle,
-  Repeat,
-  Repeat1,
-  LayoutList,
-  Clapperboard,
-  Film,
-  Video,
-  Image,
-  Aperture,
-  Circle,
-  Hexagon,
-  Diamond,
-  Triangle,
-} from "lucide-react";
-
-const musicIconSet = [
-  Music, Mic, Mic2, Headphones, Radio, Disc, Album, Play, Pause,
-  SkipForward, SkipBack, Rewind, FastForward, PlayCircle, PauseCircle,
-  Volume, Volume1, Volume2, VolumeX, Airplay, RadioTower, Speaker,
-  Waves, Zap, Sparkles, Star, Award, Crown, Heart, Bell, ListMusic,
-  Shuffle, Repeat, Repeat1, LayoutList, Clapperboard, Film, Video,
-  Image, Aperture, Circle, Hexagon, Diamond, Triangle, Music, Mic,
-  Headphones, Radio, Disc, Play, Pause, SkipForward, SkipBack, Rewind, FastForward,
-];
-
-// ... Baaki ka code (AntiGravityIcon, FloatingBackground, LoginPage component) same rahega ...
-
-// ==========================================
-// 2. ANTI-GRAVITY ICON COMPONENT
-// ==========================================
-const AntiGravityIcon = ({
-  Icon,
-  top,
-  left,
-  size,
-  rotate,
-  colorClass,
-  delay,
-  mouseRef,
-}) => {
-  const ref = useRef(null);
-  const x = useSpring(0, { stiffness: 120, damping: 20 });
-  const y = useSpring(0, { stiffness: 120, damping: 20 });
-
-  useEffect(() => {
-    let animationFrameId;
-    const updatePosition = () => {
-      if (!ref.current || !mouseRef.current) return;
-      const rect = ref.current.getBoundingClientRect();
-      const iconX = rect.left + rect.width / 2;
-      const iconY = rect.top + rect.height / 2;
-      const mouseX = mouseRef.current.x;
-      const mouseY = mouseRef.current.y;
-      const distX = mouseX - iconX;
-      const distY = mouseY - iconY;
-      const distance = Math.sqrt(distX * distX + distY * distY);
-      const maxDist = 350;
-      if (distance < maxDist) {
-        const force = (maxDist - distance) / maxDist;
-        const moveX = -distX * force * 0.8;
-        const moveY = -distY * force * 0.8;
-        x.set(moveX);
-        y.set(moveY);
-      } else {
-        x.set(0);
-        y.set(0);
-      }
-      animationFrameId = requestAnimationFrame(updatePosition);
-    };
-    animationFrameId = requestAnimationFrame(updatePosition);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, []);
-
-  return (
-    <motion.div
-      ref={ref}
-      style={{ position: "absolute", top: top, left: left, x, y }}
-      animate={{
-        opacity: [0.3, 0.7, 0.3],
-        scale: 1,
-        rotate: [rotate - 15, rotate + 15, rotate - 15],
-      }}
-      transition={{
-        duration: 4 + Math.random() * 3,
-        repeat: Infinity,
-        ease: "easeInOut",
-        delay: delay,
-      }}
-      whileHover={{
-        scale: 1.4,
-        rotate: 360,
-        color: "#2563eb",
-        transition: { duration: 0.5, type: "spring", stiffness: 200 },
-      }}
-      className={`${colorClass} drop-shadow-xl opacity-60`}
-    >
-      <Icon size={size} strokeWidth={1.5} />
-    </motion.div>
-  );
-};
+import { motion } from "framer-motion";
+import { Shield, Mic, User, Lock, ArrowLeft } from "lucide-react";
 
 const FloatingBackground = () => {
-  const mouseRef = useRef({ x: 0, y: 0 });
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      mouseRef.current = { x: e.clientX, y: e.clientY };
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
-
-  const iconsData = useMemo(() => {
-    return Array.from({ length: 70 }).map((_, i) => {
-      const RandomIcon =
-        musicIconSet[Math.floor(Math.random() * musicIconSet.length)];
-      const colors = [
-        "text-blue-700",
-        "text-indigo-700",
-        "text-cyan-700",
-        "text-slate-600",
-        "text-blue-600",
-        "text-indigo-600",
-      ];
-      const randomColor = colors[Math.floor(Math.random() * colors.length)];
-      return {
-        Icon: RandomIcon,
-        top: Math.random() * 100 + "%",
-        left: Math.random() * 100 + "%",
-        size: 28 + Math.random() * 35,
-        rotate: Math.random() * 360,
-        colorClass: randomColor,
-        delay: Math.random() * 2,
-      };
-    });
-  }, []);
-
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-      {iconsData.map((props, index) => (
-        <AntiGravityIcon key={index} {...props} mouseRef={mouseRef} />
-      ))}
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-50 via-white to-slate-100 z-[-1]" />
-      <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-blue-200/40 rounded-full blur-[100px]" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-indigo-200/40 rounded-full blur-[100px]" />
+    <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+      <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
     </div>
   );
 };
 
-// ==========================================
-// 3. LOGIN PAGE COMPONENT
-// ==========================================
 const LoginPage = () => {
   const [loginType, setLoginType] = useState("admin");
   const [email, setEmail] = useState("");
@@ -205,22 +23,56 @@ const LoginPage = () => {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
- 
-const handleLogin = async (e) => {
+  // Clear any existing sessions on component mount
+  useEffect(() => {
+    const clearSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          console.log("Session exists, clearing...");
+        }
+      } catch (err) {
+        console.error("Session check error:", err);
+      }
+    };
+    clearSession();
+  }, []);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
+
+    // Prevent multiple login attempts
+    if (isLoading) return;
+
     setIsLoading(true);
     setError("");
 
     try {
+      // First, sign out any existing session
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.log("Sign out error (can be ignored):", signOutErr);
+      }
+
+      // Small delay to ensure sign out completes
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // 1. SIGN IN WITH SUPABASE AUTH
       const { data: authData, error: authError } =
         await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: email.trim(),
+          password: password.trim(),
         });
 
       if (authError) {
         throw new Error(authError.message);
+      }
+
+      if (!authData || !authData.user) {
+        throw new Error("Invalid response from server");
       }
 
       const userId = authData.user.id;
@@ -230,10 +82,17 @@ const handleLogin = async (e) => {
         .from("artists")
         .select("*")
         .eq("id", userId)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to avoid errors
 
-      if (profileError || !profileData) {
-        throw new Error("User profile not found in database.");
+      if (profileError) {
+        console.error("Profile fetch error:", profileError);
+        throw new Error("Error fetching user profile");
+      }
+
+      if (!profileData) {
+        throw new Error(
+          "User profile not found in database. Please contact support.",
+        );
       }
 
       const userRole = profileData.role;
@@ -242,51 +101,93 @@ const handleLogin = async (e) => {
       if (loginType === "admin") {
         // Check if user has admin role
         if (userRole !== "admin") {
-          throw new Error("Access denied. This account does not have admin privileges.");
+          await supabase.auth.signOut(); // Sign out if wrong role
+          throw new Error(
+            "Access denied. This account does not have admin privileges.",
+          );
         }
-        
+
         console.log("Admin Login Success:", profileData);
+
+        // Clear any existing data
+        localStorage.removeItem("artistId");
+        localStorage.removeItem("artistName");
+        localStorage.removeItem("artistEmail");
+
+        // Set admin data
         localStorage.setItem("adminId", profileData.id);
-        localStorage.setItem("adminName", profileData.name);
+        localStorage.setItem(
+          "adminName",
+          profileData.name || profileData.email,
+        );
         localStorage.setItem("adminEmail", profileData.email);
         localStorage.setItem("userRole", "admin");
-        
-        navigate("/admin");
-      } 
-      else if (loginType === "artist") {
+        localStorage.setItem("userId", profileData.id);
+
+        // Navigate with replace to prevent back button issues
+        navigate("/admin", { replace: true });
+      } else if (loginType === "artist") {
         // Check if user has artist role
         if (userRole !== "artist") {
-          throw new Error("Access denied. Admin accounts cannot login as artists. Please use Admin Portal.");
+          await supabase.auth.signOut(); // Sign out if wrong role
+          throw new Error(
+            "Access denied. Admin accounts cannot login as artists. Please use Admin Portal.",
+          );
         }
-        
+
         console.log("Artist Login Success:", profileData);
+
+        // Clear any existing data
+        localStorage.removeItem("adminId");
+        localStorage.removeItem("adminName");
+        localStorage.removeItem("adminEmail");
+
+        // Set artist data
         localStorage.setItem("artistId", profileData.id);
-        localStorage.setItem("artistName", profileData.name);
+        localStorage.setItem(
+          "artistName",
+          profileData.name || profileData.email,
+        );
         localStorage.setItem("artistEmail", profileData.email);
         localStorage.setItem("userRole", "artist");
-        
-        navigate("/artist/dashboard");
+        localStorage.setItem("userId", profileData.id);
+
+        // Navigate with replace to prevent back button issues
+        navigate("/artist/dashboard", { replace: true });
       }
-      
     } catch (err) {
       console.error("Login Error:", err);
-      
+
       // Custom error messages for better UX
-      let errorMessage = err.message || "Login failed.";
-      
-      if (err.message.includes("admin privileges")) {
-        errorMessage = "❌ This account is not an admin. Please login as Artist.";
-      } else if (err.message.includes("Admin accounts cannot login as artists")) {
-        errorMessage = "❌ Admin accounts cannot login as Artists. Please login as Admin.";
-      } else if (err.message.includes("Invalid login credentials")) {
+      let errorMessage = err.message || "Login failed. Please try again.";
+
+      if (err.message.includes("Invalid login credentials")) {
         errorMessage = "❌ Invalid email or password. Please try again.";
+      } else if (err.message.includes("admin privileges")) {
+        errorMessage =
+          "❌ This account is not an admin. Please login as Artist.";
+      } else if (
+        err.message.includes("Admin accounts cannot login as artists")
+      ) {
+        errorMessage =
+          "❌ Admin accounts cannot login as Artists. Please login as Admin.";
+      } else if (err.message.includes("profile not found")) {
+        errorMessage = "❌ User profile not found. Please contact support.";
       }
-      
+
       setError(errorMessage);
+
+      // Sign out on error to clear any partial session
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.log("Sign out error on catch:", signOutErr);
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 relative overflow-hidden">
       <FloatingBackground />
@@ -305,6 +206,7 @@ const handleLogin = async (e) => {
             }`}
           />
           <button
+            type="button"
             onClick={() => {
               setLoginType("admin");
               setError("");
@@ -316,6 +218,7 @@ const handleLogin = async (e) => {
             Admin
           </button>
           <button
+            type="button"
             onClick={() => {
               setLoginType("artist");
               setError("");
@@ -386,6 +289,7 @@ const handleLogin = async (e) => {
                   loginType === "admin" ? "admin@email.com" : "artist@email.com"
                 }
                 className="block w-full pl-11 pr-3 py-4 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                disabled={isLoading}
               />
             </div>
           </div>
@@ -407,13 +311,14 @@ const handleLogin = async (e) => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="•••••••••"
                 className="block w-full pl-11 pr-3 py-4 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                disabled={isLoading}
               />
             </div>
           </div>
 
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={{ scale: isLoading ? 1 : 1.02 }}
+            whileTap={{ scale: isLoading ? 1 : 0.98 }}
             type="submit"
             disabled={isLoading}
             className="w-full text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl disabled:opacity-70 disabled:shadow-none hover:shadow-blue-500/40"
@@ -437,6 +342,7 @@ const handleLogin = async (e) => {
 
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
           <button
+            type="button"
             onClick={() => navigate("/")}
             className="text-sm text-slate-500 hover:text-blue-600 transition-colors font-medium flex items-center justify-center gap-1 w-full"
           >
