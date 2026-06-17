@@ -5,15 +5,16 @@ const uploadImageToSupabase = async (file) => {
   if (!file) return null;
 
   const fileName = `${Date.now()}_${file.originalname}`;
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabaseAdmin.storage
     .from(bucket)
     .upload(fileName, file.buffer, {
       contentType: file.mimetype,
     });
 
-  if (uploadError) throw new Error(`Image upload failed: ${uploadError.message}`);
+  if (uploadError)
+    throw new Error(`Image upload failed: ${uploadError.message}`);
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
+  const { data } = supabaseAdmin.storage.from(bucket).getPublicUrl(fileName);
   return data.publicUrl;
 };
 
@@ -33,18 +34,9 @@ exports.getAllArtists = async (req, res) => {
   }
 };
 
-// --- 2. ADD NEW ARTIST (Registration) ---
+// --- 2. CREATE ARTIST (Registration) ---
 exports.createArtist = async (req, res) => {
   try {
-    const file = req.file;
-    
-    // 1. Handle Image Upload
-    let imagePath = "https://picsum.photos/seed/default/300/300";
-    if (file) {
-      imagePath = await uploadImageToSupabase(file);
-    }
-
-    // 2. Extract Data
     const {
       name,
       genre,
@@ -59,55 +51,82 @@ exports.createArtist = async (req, res) => {
       idDocumentUrl,
       status,
       verified,
+      born_date,
+      early_life,
+      career,
+      recognition_awards,
     } = req.body;
 
-    // 3. Create User in Supabase Auth
-    const finalPassword = password || "defaultPassword123!"; // Default if public form
+    if (!email || !name) {
+      return res.status(400).json({ error: "Name aur email zaroori hain." });
+    }
 
+    const finalPassword =
+      password && password.trim() !== "" ? password : "DefaultPass123!";
+
+    // STEP 1: Supabase Auth mein user banao
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
         password: finalPassword,
         email_confirm: true,
-        user_metadata: { role: "artist" },
+        user_metadata: { role: "artist", name },
       });
 
     if (authError) {
       console.error("Auth Error:", authError);
+      if (authError.message.includes("already been registered")) {
+        return res
+          .status(400)
+          .json({ error: "Yeh email pehle se registered hai." });
+      }
       return res.status(400).json({ error: authError.message });
     }
 
     const authUserId = authData.user.id;
 
-    // 4. Insert into Database
+    // STEP 2: Image upload
+    let imagePath = "https://picsum.photos/seed/default/300/300";
+    if (req.file) {
+      imagePath = await uploadImageToSupabase(req.file);
+    }
+
+    // STEP 3: Artists table mein insert karo
     const { data: artist, error: dbError } = await supabase
       .from("artists")
       .insert([
         {
-          id: authUserId, // Link to Auth User
+          id: authUserId,
           name,
           genre,
           image: imagePath,
           bio,
           email,
           phone,
-          followers: followers || '0M',
+          followers: followers || "0M",
           profile_url: profileUrl,
           spotify_url: spotifyUrl,
           instagram_url: instagramUrl,
           id_document_url: idDocumentUrl,
-          status: status || 'Pending',
-          verified: verified === "true" || false,
+          status: status || "Pending",
+          verified: verified === "true" || verified === true || false,
+          born_date: born_date || null,
+          early_life: early_life || null,
+          career: career || null,
+          recognition_awards: recognition_awards || null,
+          password: finalPassword,
+          role: "artist",
         },
       ])
       .select();
 
     if (dbError) {
       console.error("DB Error:", dbError);
+      await supabaseAdmin.auth.admin.deleteUser(authUserId);
       return res.status(500).json({ error: dbError.message });
     }
 
-    res.json({ success: true, artist });
+    res.status(201).json({ success: true, artist });
   } catch (err) {
     console.error("Server Error:", err);
     res.status(500).json({ error: err.message });
@@ -118,21 +137,7 @@ exports.createArtist = async (req, res) => {
 exports.updateArtist = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // --- SECURITY CHECK: Kya logged-in user wahi hai jo update kar raha hai? ---
-    if (req.user.id !== id) {
-      return res.status(403).json({ error: "Access Denied: You can only update your own profile." });
-    }
 
-    const file = req.file;
-
-    // 1. Handle Image Upload if new file provided
-    let imagePath;
-    if (file) {
-      imagePath = await uploadImageToSupabase(file);
-    }
-
-    // 2. Extract Fields
     const {
       name,
       genre,
@@ -147,9 +152,13 @@ exports.updateArtist = async (req, res) => {
       idDocumentUrl,
       status,
       verified,
+      born_date,
+      early_life,
+      career,
+      recognition_awards,
     } = req.body;
 
-    // 3. Update Auth User (Email/Password)
+    // Auth update
     const authUpdateData = {};
     if (email) authUpdateData.email = email;
     if (password && password.trim() !== "") {
@@ -157,15 +166,51 @@ exports.updateArtist = async (req, res) => {
     }
 
     if (Object.keys(authUpdateData).length > 0) {
-      const { error: authError } =
-        await supabaseAdmin.auth.admin.updateUserById(id, authUpdateData);
-      if (authError) {
-        console.error("Auth Update Error:", authError);
-        return res.status(400).json({ error: authError.message });
+      // Pehle check karo Auth mein user hai ya nahi
+      try {
+        const { data: existingUser, error: fetchError } =
+          await supabaseAdmin.auth.admin.getUserById(id);
+
+        if (fetchError || !existingUser?.user) {
+          // Auth mein nahi hai — naya banao
+          if (email) {
+            const finalPassword =
+              password && password.trim() !== "" ? password : "DefaultPass123!";
+
+            const { error: createError } =
+              await supabaseAdmin.auth.admin.createUser({
+                email,
+                password: finalPassword,
+                email_confirm: true,
+                user_metadata: { role: "artist", name },
+              });
+
+            if (createError) {
+              console.log("Auth create skipped:", createError.message);
+            } else {
+              console.log("Auth user created for existing artist ✅");
+            }
+          }
+        } else {
+          // Auth mein hai — update karo
+          const { error: authError } =
+            await supabaseAdmin.auth.admin.updateUserById(id, authUpdateData);
+          if (authError) {
+            console.log("Auth update skipped:", authError.message);
+          }
+        }
+      } catch (authErr) {
+        console.log("Auth operation skipped:", authErr.message);
       }
     }
 
-    // 4. Update Database Record
+    // Image upload
+    let imagePath;
+    if (req.file) {
+      imagePath = await uploadImageToSupabase(req.file);
+    }
+
+    // DB update
     const updateData = {
       name,
       genre,
@@ -179,11 +224,16 @@ exports.updateArtist = async (req, res) => {
       id_document_url: idDocumentUrl,
       status,
       verified: verified === "true" || verified === true,
+      born_date: born_date || null,
+      early_life: early_life || null,
+      career: career || null,
+      recognition_awards: recognition_awards || null,
     };
 
-    if (imagePath) {
-      updateData.image = imagePath;
+    if (password && password.trim() !== "") {
+      updateData.password = password;
     }
+    if (imagePath) updateData.image = imagePath;
 
     const { data, error } = await supabase
       .from("artists")
@@ -197,7 +247,7 @@ exports.updateArtist = async (req, res) => {
     }
 
     if (!data || data.length === 0) {
-      return res.status(404).json({ error: "Artist not found" });
+      return res.status(404).json({ error: "Artist nahi mila." });
     }
 
     res.status(200).json({ success: true, artist: data[0] });
@@ -212,18 +262,20 @@ exports.deleteArtist = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // --- SECURITY CHECK: Kya logged-in user wahi hai jo delete kar raha hai? ---
-    if (req.user.id !== id) {
-      return res.status(403).json({ error: "Access Denied: You can only delete your own profile." });
+    const { error: dbError } = await supabase
+      .from("artists")
+      .delete()
+      .eq("id", id);
+
+    if (dbError) throw dbError;
+
+    try {
+      await supabaseAdmin.auth.admin.deleteUser(id);
+    } catch (authErr) {
+      console.log("Auth delete skipped:", authErr.message);
     }
-    
-    // Optional: Supabase Auth se user delete karna
-    // await supabaseAdmin.auth.admin.deleteUser(id);
 
-    const { error } = await supabase.from("artists").delete().eq("id", id);
-
-    if (error) throw error;
-    res.status(200).json({ message: "Artist deleted successfully" });
+    res.status(200).json({ message: "Artist successfully delete ho gaya!" });
   } catch (err) {
     console.error("DELETE Error:", err);
     res.status(500).json({ error: err.message });

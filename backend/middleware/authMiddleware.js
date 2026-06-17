@@ -1,33 +1,35 @@
-// backend/middleware/authMiddleware.js
 const { supabase } = require("../config/supabaseClient");
 
 const authenticateUser = async (req, res, next) => {
   try {
-    // 1. Header se Token lo
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
-      return res.status(401).json({ error: "Login required: No token found." });
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. Token nahi mila.",
+      });
     }
 
-    // Header format: "Bearer <token>"
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.split(" ")[1];
 
-    // 2. Supabase se Token Verify Karo
-    const { data, error } = await supabase.auth.getUser(token);
+    // Supabase se token verify karo
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
-    if (error) {
-      console.error("Auth Error:", error.message);
-      return res.status(401).json({ error: "Invalid or expired token." });
+    if (error || !user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid ya expired token.",
+      });
     }
 
-    // 3. User ko req object mein daalo taaki Controller use kar sake
-    req.user = data.user;
-    next(); // Aage badho (Controller mein jao)
-
+    req.user = user; // user object next middleware/controller ko milega
+    next();
   } catch (err) {
-    console.error("Server Auth Error:", err);
-    res.status(500).json({ error: "Authentication check failed." });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

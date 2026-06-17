@@ -80,7 +80,6 @@ const Dashboard = () => {
       .map((item, index) => {
         if (!item.releases) return null;
         return {
-          // Create a truly unique key by combining prefix, release ID, and index
           uniqueKey: `${prefix}-${item.releases.id}-${index}`,
           id: item.releases.id,
           title: item.releases.title,
@@ -109,7 +108,7 @@ const Dashboard = () => {
     }
   };
 
-  // 2. Fetch Latest Releases (NEW)
+  // 2. Fetch Latest Releases
   const fetchLatestReleases = async () => {
     setLoadingLatest(true);
     try {
@@ -126,7 +125,7 @@ const Dashboard = () => {
     }
   };
 
-  // 3. Fetch Top 10 India (NEW)
+  // 3. Fetch Top 10 India
   const fetchTop10India = async () => {
     setLoadingTop10(true);
     try {
@@ -209,7 +208,7 @@ const Dashboard = () => {
           <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
         </div>
 
-        <div className="absolute bottom-[28%] left-8 md:left-16 max-w-xl z-10">
+        <div className="absolute bottom-[28%] left-4 right-4 md:left-16 md:right-auto max-w-xl z-10">
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
@@ -222,39 +221,50 @@ const Dashboard = () => {
               {heroContent.rating}
             </span>
 
-            <div className="mt-12 mb-2">
+            {/* ✅ LOGO FIX: Full width on mobile, zoom-in effect, never clipped */}
+            <div className="mt-6 md:mt-12 mb-2">
               <img
                 src={heroContent.logo}
                 alt={heroContent.title}
-                className="w-[280px] md:w-[400px] h-auto object-contain drop-shadow-[0_4px_20px_rgba(0,0,0,0.5)] translate-y-8"
+                style={{
+                  width:
+                    "min(90vw, 420px)" /* fills almost full screen on mobile */,
+                  maxWidth: "420px",
+                  height: "auto",
+                  objectFit: "contain",
+                  filter: "drop-shadow(0 4px 24px rgba(0,0,0,0.6))",
+                  transform: "scale(1.1)" /* slight zoom-in on mobile */,
+                  transformOrigin: "left center",
+                }}
+                className="md:w-[400px] md:translate-y-8"
               />
             </div>
 
-            <p className="text-sm text-gray-200 mt-1 mb-4 font-medium">
+            <p className="text-sm text-gray-200 mt-3 mb-4 font-medium">
               {heroContent.year}
             </p>
             <p className="text-base md:text-lg text-gray-100 mb-8 leading-relaxed hidden md:block">
               {heroContent.description}
             </p>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => handlePlaySong(heroContent)}
-                className="flex items-center gap-2 px-6 py-3 rounded-md font-semibold text-white shadow-lg transition-all hover:opacity-90"
+                className="flex items-center gap-2 px-5 py-2.5 md:px-6 md:py-3 rounded-md font-semibold text-white shadow-lg transition-all hover:opacity-90 text-sm md:text-base"
                 style={{ background: BLUE_GRADIENT }}
               >
                 {currentSong?.id === heroContent.id && isPlaying ? (
-                  <Pause className="w-5 h-5 fill-white" />
+                  <Pause className="w-4 h-4 md:w-5 md:h-5 fill-white" />
                 ) : (
-                  <Play className="w-5 h-5 fill-white" />
+                  <Play className="w-4 h-4 md:w-5 md:h-5 fill-white" />
                 )}
                 {currentSong?.id === heroContent.id && isPlaying
                   ? "Pause"
                   : "Play"}
               </button>
 
-              <button className="flex items-center gap-2 px-6 py-3 rounded-md font-semibold bg-white/20 backdrop-blur-md border border-white/30 text-white hover:bg-white/30 transition-all shadow-sm">
-                <Info className="w-5 h-5" /> More Info
+              <button className="flex items-center gap-2 px-5 py-2.5 md:px-6 md:py-3 rounded-md font-semibold bg-white/20 backdrop-blur-md border border-white/30 text-white hover:bg-white/30 transition-all shadow-sm text-sm md:text-base">
+                <Info className="w-4 h-4 md:w-5 md:h-5" /> More Info
               </button>
             </div>
           </motion.div>
@@ -265,7 +275,7 @@ const Dashboard = () => {
             setIsMuted(!isMuted);
             if (audioRef.current) audioRef.current.muted = !isMuted;
           }}
-          className="absolute right-10 bottom-[20%] border border-white/30 rounded-full p-2 bg-black/20 backdrop-blur-sm hover:bg-black/40 transition-colors shadow-sm"
+          className="absolute right-4 md:right-10 bottom-[20%] border border-white/30 rounded-full p-2 bg-black/20 backdrop-blur-sm hover:bg-black/40 transition-colors shadow-sm"
         >
           {isMuted ? (
             <VolumeX className="w-5 h-5 text-white" />
@@ -282,7 +292,7 @@ const Dashboard = () => {
             return (
               <div
                 key={row.rowKey}
-                className="relative group/row px-8 md:px-16"
+                className="relative group/row px-4 md:px-16"
               >
                 <h3 className="text-xl font-bold mb-3 text-slate-900">
                   {row.title}
@@ -361,7 +371,7 @@ const ContentRow = ({
   if (items.length === 0) return null;
 
   return (
-    <div className="relative group/row px-8 md:px-16">
+    <div className="relative group/row px-4 md:px-16">
       <h3 className="text-xl font-bold mb-3 text-slate-900">{title}</h3>
       <div
         ref={rowRef}
@@ -374,7 +384,7 @@ const ContentRow = ({
       >
         {items.map((item) => (
           <ContentCard
-            key={item.uniqueKey} // Using the unique key instead of item.id
+            key={item.uniqueKey}
             item={item}
             onPlaySong={onPlaySong}
             currentSong={currentSong}
@@ -395,7 +405,7 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.05 }}
-      className="relative flex-shrink-0 w-[200px] md:w-[240px] cursor-pointer group/card"
+      className="relative flex-shrink-0 w-[160px] md:w-[240px] cursor-pointer group/card"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
