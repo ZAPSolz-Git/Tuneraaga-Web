@@ -73,7 +73,7 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-gradient-to-br from-white via-slate-50 to-white border-t border-slate-200">
+    <footer className="bg-gradient-to-br from-white via-slate-50 to-white border-t border-slate-200 overflow-hidden">
       {/* Decorative Top Border - Thinner */}
       <div className="h-0.5 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
 
@@ -85,12 +85,12 @@ const Footer = () => {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md"
+                className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md flex-shrink-0"
                 style={{ background: BLUE_GRADIENT }}
               >
                 <Play className="w-5 h-5 fill-white text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <span className="font-bold text-xl bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
                   Tune Raaga
                 </span>
@@ -122,7 +122,7 @@ const Footer = () => {
             <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl transform rotate-1"></div>
             <div className="relative bg-white rounded-xl p-5 shadow-md border border-slate-100">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                   <Mail className="w-4 h-4 text-blue-600" />
                 </div>
                 <h3 className="text-base font-bold text-slate-800">
@@ -136,14 +136,14 @@ const Footer = () => {
                 <input
                   type="email"
                   placeholder="Your email address"
-                  className="flex-1 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-all"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100 transition-all"
                 />
-                <button className="px-5 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-semibold hover:shadow-md transition-all hover:scale-105">
+                <button className="px-5 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-semibold hover:shadow-md transition-all hover:scale-105 whitespace-nowrap">
                   Subscribe
                 </button>
               </div>
               <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                <Shield className="w-3 h-3" />
+                <Shield className="w-3 h-3 flex-shrink-0" />
                 No spam, unsubscribe anytime
               </p>
             </div>
@@ -168,7 +168,7 @@ const Footer = () => {
                     to={link.path}
                     className="group flex items-center gap-2 text-slate-600 hover:text-blue-600 transition-all duration-200"
                   >
-                    <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center transition-all">
+                    <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center transition-all flex-shrink-0">
                       <link.icon className="w-3 h-3 text-slate-500 group-hover:text-blue-600 transition-colors" />
                     </div>
                     <span className="text-sm">{link.name}</span>
@@ -194,7 +194,7 @@ const Footer = () => {
                     to={link.path}
                     className="group flex items-center gap-2 text-slate-600 hover:text-blue-600 transition-all duration-200"
                   >
-                    <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center transition-all">
+                    <div className="w-6 h-6 rounded-md bg-slate-100 group-hover:bg-blue-50 flex items-center justify-center transition-all flex-shrink-0">
                       <link.icon className="w-3 h-3 text-slate-500 group-hover:text-blue-600 transition-colors" />
                     </div>
                     <span className="text-sm">{link.name}</span>
@@ -218,8 +218,8 @@ const Footer = () => {
                 <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
                   <Mail className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-xs text-slate-500">
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500 truncate">
                     support@tuneraaga.com
                   </p>
                 </div>
@@ -228,7 +228,7 @@ const Footer = () => {
                 <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
                   <Phone className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-700">+1 (555) 123-4567</p>
                 </div>
               </li>
@@ -236,7 +236,7 @@ const Footer = () => {
                 <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <MapPin className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-700 leading-tight">
                     123 Music Street, Melody City
                   </p>
@@ -250,17 +250,16 @@ const Footer = () => {
         <div className="border-t border-slate-200 pt-5">
           <div className="flex flex-col md:flex-row justify-between items-center gap-3">
             <div className="flex items-center gap-1.5 text-slate-500 text-xs">
-              <Copyright className="w-3 h-3" />
+              <Copyright className="w-3 h-3 flex-shrink-0" />
               <span>{currentYear} Tune Raaga. All rights reserved.</span>
             </div>
 
             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-full">
-              <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
+              <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse flex-shrink-0" />
 
-              <span className="text-slate-600 text-xs">
+              <span className="text-slate-600 text-xs whitespace-nowrap">
                 Made with love for music lovers
               </span>
-              
             </div>
           </div>
         </div>

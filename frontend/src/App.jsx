@@ -20,13 +20,17 @@ import Podcast from "./pages/Podcast";
 import TopArtist from "./pages/TopArtist";
 import Footer from "./components/Footer";
 
+// --- NEW: Album Detail & Artist Profile ---
+import AlbumDetail from "./pages/AlbumDetail";
+import ArtistProfile from "./pages/ArtistProfile";
+
 // --- LOGIN PAGE ---
 // import LoginPage from "./pages/LoginPage";
 
 // --- ADMIN COMPONENTS ---
 import AdminDash from "./admin/AdminDash.jsx";
 import ArtistManager from "./admin/ArtistManager";
-import SongManager from "./admin/SongManager";
+
 // hello mc
 
 // --- ADMIN PAGE IMPORTS ---
@@ -35,6 +39,9 @@ import TopChartAdmin from "./admin/TopChartAdmin";
 import TrendingSongsAdmin from "./admin/TrendingSongsAdmin";
 import LatestReleasesAdmin from "./admin/LatestReleasesAdmin";
 import Top10IndiaAdmin from "./admin/Top10IndiaAdmin";
+import AdminNewRelease from "./admin/AdminNewRelease";
+import SongEditAdmin from "./admin/SongEditAdmin";
+
 import PodcastAdmin from "./admin/PodcastAdmin";
 
 // --- PROTECTED ROUTE IMPORT ---
@@ -65,8 +72,15 @@ function App() {
           <Route path="top-chart" element={<TopChart />} />
           <Route path="top-playlist" element={<TopPlayList />} />
           <Route path="new-releases" element={<NewRelease />} />
+
           <Route path="podcast" element={<Podcast />} />
         </Route>
+
+        {/* --- NEW: Album Detail Page (outside Layout — full page) --- */}
+        <Route path="/album/:albumName" element={<AlbumDetail />} />
+
+        {/* --- NEW: Artist Profile Page (outside Layout — full page) --- */}
+        <Route path="/artist/:artistName" element={<ArtistProfile />} />
 
         {/* --- LOGIN ROUTE --- */}
         <Route path="/login" element={<LoginPage />} />
@@ -101,7 +115,8 @@ function App() {
           <Route path="top-10-india" element={<Top10IndiaAdmin />} />
           <Route path="top-charts" element={<TopChartAdmin />} />
           <Route path="top-playlists" element={<TopPlaylistAdmin />} />
-          <Route path="songs" element={<SongManager />} />
+          <Route path="new-release" element={<AdminNewRelease />} />
+          <Route path="song-edit" element={<SongEditAdmin />} />
           <Route path="podcasts" element={<PodcastAdmin />} />
         </Route>
 

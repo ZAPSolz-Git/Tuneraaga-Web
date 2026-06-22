@@ -195,7 +195,7 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="relative bg-white">
+    <div className="relative bg-white overflow-hidden">
       {/* Hero Section */}
       <div className="relative h-[85vh] w-full">
         <div className="absolute inset-0">
@@ -221,22 +221,12 @@ const Dashboard = () => {
               {heroContent.rating}
             </span>
 
-            {/* ✅ LOGO FIX: Full width on mobile, zoom-in effect, never clipped */}
-            <div className="mt-6 md:mt-12 mb-2">
+            {/* ✅ FIXED LOGO: Removed scale(1.1) and 90vw to prevent horizontal scrolling on mobile */}
+            <div className="mt-6 md:mt-12 mb-2 w-full max-w-[320px] md:max-w-[400px]">
               <img
                 src={heroContent.logo}
                 alt={heroContent.title}
-                style={{
-                  width:
-                    "min(90vw, 420px)" /* fills almost full screen on mobile */,
-                  maxWidth: "420px",
-                  height: "auto",
-                  objectFit: "contain",
-                  filter: "drop-shadow(0 4px 24px rgba(0,0,0,0.6))",
-                  transform: "scale(1.1)" /* slight zoom-in on mobile */,
-                  transformOrigin: "left center",
-                }}
-                className="md:w-[400px] md:translate-y-8"
+                className="w-full h-auto object-contain drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)] md:translate-y-8"
               />
             </div>
 
@@ -247,7 +237,7 @@ const Dashboard = () => {
               {heroContent.description}
             </p>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={() => handlePlaySong(heroContent)}
                 className="flex items-center gap-2 px-5 py-2.5 md:px-6 md:py-3 rounded-md font-semibold text-white shadow-lg transition-all hover:opacity-90 text-sm md:text-base"

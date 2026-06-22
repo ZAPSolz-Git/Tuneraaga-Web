@@ -20,6 +20,7 @@ import {
   ListMusic,
   Sparkles,
   Award,
+  Edit3,
 } from "lucide-react";
 // --- UPDATED: Centralized Supabase Client Import ---
 import { supabase } from "@/lib/supabaseClient";
@@ -192,9 +193,16 @@ const AdminLayout = () => {
                   sidebarOpen={sidebarOpen}
                 />
                 <NavItem
-                  to="/admin/songs"
+                  to="/admin/new-release"
                   icon={Upload}
                   label="Release Song"
+                  sidebarOpen={sidebarOpen}
+                />
+
+                <NavItem
+                  to="/admin/song-edit"
+                  icon={Edit3}
+                  label="Edit Songs"
                   sidebarOpen={sidebarOpen}
                 />
 
