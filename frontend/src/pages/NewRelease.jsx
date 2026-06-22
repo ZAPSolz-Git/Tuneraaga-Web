@@ -205,7 +205,7 @@ const TEXT_BLACK = "#0f172a";
 const BLUE_DARK = "#2563eb";
 
 // ─── DATA: LANGUAGE & GENRE FILTERS ───
-const LANGUAGE_FILTERS = [
+const LANGUAGE_OPTIONS = [
   "For You",
   "Hindi",
   "Tamil",
@@ -247,20 +247,8 @@ const GENRE_OPTIONS = [
   "World Music",
 ];
 
-const FilterPill = ({ label, active, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 whitespace-nowrap flex-shrink-0 select-none ${
-      active
-        ? "bg-blue-600 text-white shadow-md"
-        : "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200"
-    }`}
-  >
-    {label}
-  </button>
-);
-
-const GenreDropdown = ({ value, onChange, options }) => {
+// ─── REUSABLE DROPDOWN COMPONENT ───
+const FilterDropdown = ({ value, onChange, options, icon: Icon, label }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -272,36 +260,68 @@ const GenreDropdown = ({ value, onChange, options }) => {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [ref]);
+  }, []);
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300 border shadow-sm select-none whitespace-nowrap ${
+          value === "For You" || value === "All Genres"
+            ? "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+            : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-blue-200 shadow-md"
+        }`}
       >
-        <span>{value}</span>
+        {Icon && <Icon size={15} className="opacity-70" />}
+        <span>{label || value}</span>
         <ChevronDown
           size={14}
-          className={`transition-transform ${open ? "rotate-180" : ""}`}
+          className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`}
         />
       </button>
-      {open && (
-        <div className="absolute top-full mt-2 right-0 bg-white rounded-lg shadow-xl border border-slate-200 w-48 max-h-64 overflow-y-auto z-50 animate-in fade-in slide-in-from-top-2">
-          {options.map((opt) => (
-            <div
-              key={opt}
-              onClick={() => {
-                onChange(opt);
-                setOpen(false);
-              }}
-              className={`px-4 py-2 text-sm cursor-pointer hover:bg-slate-50 ${value === opt ? "text-blue-600 font-bold bg-blue-50" : "text-slate-700"}`}
-            >
-              {opt}
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl border border-slate-200 w-52 max-h-72 overflow-y-auto z-50"
+          >
+            {/* Search Box */}
+            <div className="sticky top-0 bg-white border-b border-slate-100 px-3 py-2">
+              <input
+                type="text"
+                placeholder="Search..."
+                className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
             </div>
-          ))}
-        </div>
-      )}
+
+            {options.map((opt) => (
+              <div
+                key={opt}
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                className={`px-4 py-2.5 text-sm cursor-pointer transition-all duration-150 flex items-center justify-between ${
+                  value === opt
+                    ? "text-blue-600 font-bold bg-blue-50"
+                    : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <span>{opt}</span>
+                {value === opt && (
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                )}
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -509,7 +529,6 @@ const NewRelease = () => {
     if (song.albumName) {
       navigate(`/album/${encodeURIComponent(song.albumName)}`);
     } else {
-      // If no album, just play the song directly
       const idx = filteredSongs.findIndex((s) => s.id === song.id);
       handleSongClick(idx, song, filteredSongs);
     }
@@ -517,7 +536,7 @@ const NewRelease = () => {
 
   // ─── HANDLE PLAY BUTTON ON CARD → Play directly (don't navigate) ───
   const handlePlayButtonClick = (e, index, song, list) => {
-    e.stopPropagation(); // Prevent card click → album navigation
+    e.stopPropagation();
     handleSongClick(index, song, list);
   };
 
@@ -567,40 +586,47 @@ const NewRelease = () => {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-stretch md:items-center overflow-hidden">
-          <div className="flex bg-white rounded-lg border border-slate-200 p-1 shadow-sm flex-shrink-0">
+        {/* ─── FILTER BAR: View Toggle + Language Dropdown + Genre Dropdown ─── */}
+        <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
+          {/* View Mode Toggle */}
+          <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm flex-shrink-0">
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 rounded-md transition-all ${viewMode === "grid" ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:text-gray-600"}`}
+              className={`p-2 rounded-lg transition-all duration-200 ${
+                viewMode === "grid"
+                  ? "bg-blue-100 text-blue-700 shadow-sm"
+                  : "text-gray-400 hover:text-gray-600"
+              }`}
             >
               <Grid3x3 size={16} />
             </button>
             <button
               onClick={() => setViewMode("table")}
-              className={`p-2 rounded-md transition-all ${viewMode === "table" ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:text-gray-600"}`}
+              className={`p-2 rounded-lg transition-all duration-200 ${
+                viewMode === "table"
+                  ? "bg-blue-100 text-blue-700 shadow-sm"
+                  : "text-gray-400 hover:text-gray-600"
+              }`}
             >
               <List size={16} />
             </button>
           </div>
 
-          <div className="flex flex-nowrap gap-3 overflow-x-auto items-center w-full md:w-auto md:max-w-[600px] pb-3 md:pb-0 scroll-smooth">
-            {LANGUAGE_FILTERS.map((filter) => (
-              <FilterPill
-                key={filter}
-                label={filter}
-                active={activeLanguage === filter}
-                onClick={() => setActiveLanguage(filter)}
-              />
-            ))}
-          </div>
+          {/* Language Dropdown */}
+          <FilterDropdown
+            value={activeLanguage}
+            onChange={setActiveLanguage}
+            options={LANGUAGE_OPTIONS}
+            label={activeLanguage}
+          />
 
-          <div className="flex-shrink-0">
-            <GenreDropdown
-              value={activeGenre}
-              onChange={setActiveGenre}
-              options={GENRE_OPTIONS}
-            />
-          </div>
+          {/* Genre Dropdown */}
+          <FilterDropdown
+            value={activeGenre}
+            onChange={setActiveGenre}
+            options={GENRE_OPTIONS}
+            label={activeGenre}
+          />
         </div>
       </div>
 
@@ -612,8 +638,16 @@ const NewRelease = () => {
       ) : (
         <>
           {filteredSongs.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
-              No songs found.
+            <div className="text-center py-20">
+              <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+                <Music size={32} className="text-slate-300" />
+              </div>
+              <p className="text-gray-400 text-lg font-medium">
+                No songs found
+              </p>
+              <p className="text-gray-300 text-sm mt-1">
+                Try changing your filters
+              </p>
             </div>
           ) : (
             <div className="flex flex-col h-full">
@@ -633,7 +667,11 @@ const NewRelease = () => {
                         onClick={() => handleCardClick(song)}
                       >
                         <div
-                          className={`relative aspect-square rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-sm border ${isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 group-hover:border-blue-400"} group-hover:shadow-xl transition-all duration-300`}
+                          className={`relative aspect-square rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-sm border ${
+                            isActive
+                              ? "border-blue-500 ring-2 ring-blue-200"
+                              : "border-slate-200 group-hover:border-blue-400"
+                          } group-hover:shadow-xl transition-all duration-300`}
                         >
                           <img
                             src={song.img}
@@ -641,7 +679,7 @@ const NewRelease = () => {
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                           />
 
-                          {/* Hover Play Button — plays directly, does NOT navigate */}
+                          {/* Hover Play Button */}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
                             <motion.div
                               whileHover={{ scale: 1.1 }}
@@ -669,7 +707,7 @@ const NewRelease = () => {
                             NEW
                           </div>
 
-                          {/* Album Name Badge (if exists) */}
+                          {/* Album Name Badge */}
                           {song.albumName && (
                             <div
                               className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
@@ -689,12 +727,15 @@ const NewRelease = () => {
 
                         <div className="px-1">
                           <h3
-                            className={`font-bold text-base truncate transition-colors ${isActive ? "text-blue-600" : "group-hover:text-blue-600 text-slate-900"}`}
+                            className={`font-bold text-base truncate transition-colors ${
+                              isActive
+                                ? "text-blue-600"
+                                : "group-hover:text-blue-600 text-slate-900"
+                            }`}
                           >
                             {song.title}
                           </h3>
 
-                          {/* Clickable Artist Names */}
                           <p className="text-slate-500 text-sm truncate mt-1 flex items-center gap-0.5 flex-wrap">
                             {allArtists.map((a, i) => (
                               <span
@@ -763,7 +804,9 @@ const NewRelease = () => {
                           return (
                             <tr
                               key={song.id}
-                              className={`hover:bg-slate-50 transition-colors cursor-pointer ${isActive ? "bg-blue-50" : ""}`}
+                              className={`hover:bg-slate-50 transition-colors cursor-pointer ${
+                                isActive ? "bg-blue-50" : ""
+                              }`}
                             >
                               <td
                                 className="px-6 py-4 whitespace-nowrap"
@@ -780,7 +823,11 @@ const NewRelease = () => {
                                 onClick={() => handleCardClick(song)}
                               >
                                 <div
-                                  className={`text-sm font-medium ${isActive ? "text-blue-600" : "text-slate-900"}`}
+                                  className={`text-sm font-medium ${
+                                    isActive
+                                      ? "text-blue-600"
+                                      : "text-slate-900"
+                                  }`}
                                 >
                                   {song.title}
                                 </div>
@@ -803,7 +850,6 @@ const NewRelease = () => {
                                   ))}
                                 </div>
                               </td>
-                              {/* Album Column */}
                               <td
                                 className="px-6 py-4 whitespace-nowrap hidden md:table-cell"
                                 onClick={() => handleCardClick(song)}
@@ -902,7 +948,7 @@ const NewRelease = () => {
           />
         )}
       </AnimatePresence>
-    </div>
+    </div>  
   );
 };
 

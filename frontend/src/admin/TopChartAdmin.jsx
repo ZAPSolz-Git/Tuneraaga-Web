@@ -6,11 +6,9 @@ import {
   Play,
   X,
   Upload,
-  ArrowLeft,
   Trash2,
   ChevronRight,
   CheckCircle2,
-  Disc,
   Globe,
   Loader2,
   AlertTriangle,
@@ -19,7 +17,6 @@ import {
   List,
   Image,
   Info,
-  TrendingUp,
   Edit,
   ChevronDown,
   Search,
@@ -59,15 +56,17 @@ const CHART_TYPES = [
   "Weekly Top",
 ];
 
-// Searchable Select Component
+// ─── SEARCHABLE SELECT ───
 const SearchableSelect = ({ options, value, onChange, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const containerRef = useRef(null);
+
   const selectedOption = options.find((opt) => opt.id == value);
   const displayValue = selectedOption
     ? `${selectedOption.title} - ${selectedOption.primary_artist}`
     : "";
+
   const filteredOptions = options.filter(
     (opt) =>
       opt.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,11 +74,8 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
   );
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target)
-      ) {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false);
         setSearchTerm("");
       }
@@ -87,12 +83,6 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const handleSelect = (id) => {
-    onChange(id);
-    setIsOpen(false);
-    setSearchTerm("");
-  };
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -129,7 +119,11 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
               filteredOptions.map((opt) => (
                 <div
                   key={opt.id}
-                  onClick={() => handleSelect(opt.id)}
+                  onClick={() => {
+                    onChange(opt.id);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
                   className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
                 >
                   <div className="font-medium text-slate-800 truncate">
@@ -152,6 +146,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
   );
 };
 
+// ─── MAIN COMPONENT ───
 const TopChartAdmin = () => {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -188,26 +183,16 @@ const TopChartAdmin = () => {
       const { data, error } = await supabase
         .from("charts")
         .select(
-          `
-          *,
-          chart_songs (
-            id,
-            title,
-            artist,
-            audio_url
-          )
-        `,
+          `*, chart_songs ( id, title, artist, featuring_artists, album_name, cover_url, audio_url, duration )`,
         )
         .order("created_at", { ascending: false });
-
       if (error) throw error;
-      console.log("Fetched charts:", data); // Debug log
       setCharts(data || []);
     } catch (err) {
       console.error("Error fetching charts:", err);
       const { needsRefresh } = handleSupabaseError(err);
       if (needsRefresh) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
         await fetchCharts();
       } else {
         Swal.fire("Error", "Failed to load data", "error");
@@ -221,27 +206,21 @@ const TopChartAdmin = () => {
     try {
       const { data, error } = await supabase
         .from("releases")
-        .select("id, title, primary_artist, audio_url")
+        .select(
+          "id, title, primary_artist, featuring_artists, album_name, cover_url, audio_url",
+        )
+        .eq("status", "Published")
         .limit(500);
-
       if (error) throw error;
       setAllReleases(data || []);
     } catch (err) {
       console.error("Error fetching releases:", err);
-      const { needsRefresh } = handleSupabaseError(err);
-      if (needsRefresh) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        await fetchReleases();
-      }
     }
   };
 
   useEffect(() => {
-    const init = async () => {
-      await fetchCharts();
-      await fetchReleases();
-    };
-    init();
+    fetchCharts();
+    fetchReleases();
   }, []);
 
   const updateField = (field, value) =>
@@ -250,36 +229,34 @@ const TopChartAdmin = () => {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      const preview = URL.createObjectURL(file);
       updateField("image", file);
-      updateField("imagePreview", preview);
+      updateField("imagePreview", URL.createObjectURL(file));
     }
   };
 
+  // ─── ADD SONG — now pulls all fields from release ───
   const addTempSong = (e) => {
     e.preventDefault();
-    const selectedRelease = allReleases.find((r) => r.id == tempSong.releaseId);
-    if (!selectedRelease)
-      return Swal.fire(
-        "Required",
-        "Please select a song from the library.",
-        "warning",
-      );
+    const rel = allReleases.find((r) => r.id == tempSong.releaseId);
+    if (!rel) return Swal.fire("Required", "Please select a song.", "warning");
 
-    const newSong = {
-      id: Date.now(),
-      title: selectedRelease.title,
-      artist: selectedRelease.primary_artist,
-      audioUrl: selectedRelease.audio_url,
-    };
-
-    setSongs([...songs, newSong]);
+    setSongs([
+      ...songs,
+      {
+        id: Date.now(),
+        title: rel.title,
+        artist: rel.primary_artist,
+        featuringArtists: rel.featuring_artists || "",
+        albumName: rel.album_name || "",
+        coverUrl: rel.cover_url || "",
+        audioUrl: rel.audio_url || "",
+        releaseId: rel.id,
+      },
+    ]);
     setTempSong({ releaseId: "" });
   };
 
-  const removeTempSong = (id) => {
-    setSongs(songs.filter((s) => s.id !== id));
-  };
+  const removeTempSong = (id) => setSongs(songs.filter((s) => s.id !== id));
 
   const handleSubmit = async () => {
     if (!formData.copyright_holder)
@@ -315,16 +292,18 @@ const TopChartAdmin = () => {
         })
         .select()
         .single();
-
       if (insertError) throw insertError;
-      const chartId = newChart.id;
 
       for (const song of songs) {
         await supabase.from("chart_songs").insert({
-          chart_id: chartId,
+          chart_id: newChart.id,
           title: song.title,
           artist: song.artist,
+          featuring_artists: song.featuringArtists || null,
+          album_name: song.albumName || null,
+          cover_url: song.coverUrl || null,
           audio_url: song.audioUrl,
+          release_id: song.releaseId || null,
         });
       }
 
@@ -346,7 +325,6 @@ const TopChartAdmin = () => {
       await fetchCharts();
       Swal.fire("Success", "Chart Created Successfully!", "success");
     } catch (err) {
-      console.error("Error creating chart:", err);
       Swal.fire("Error", err.message, "error");
     } finally {
       setLoading(false);
@@ -379,11 +357,9 @@ const TopChartAdmin = () => {
   const handleUpdateChart = async (e) => {
     e.preventDefault();
     if (!editingChart) return;
-
     setLoading(true);
     try {
       let imageUrlToUpdate = editingChart.image_url;
-
       if (editImageFile) {
         const fileName = `topchartscover/${Date.now()}-${editImageFile.name}`;
         const { data: imgData, error: imgError } = await supabase.storage
@@ -395,32 +371,19 @@ const TopChartAdmin = () => {
         } = supabase.storage.from(BUCKET_NAME).getPublicUrl(imgData.path);
         imageUrlToUpdate = publicUrl;
       }
-
-      const payload = {
-        title: editData.title,
-        artist: editData.artist,
-        year: parseInt(editData.year),
-        genre: editData.genre,
-        description: editData.description,
-        language: editData.language,
-        type: editData.type,
-        copyright_holder: editData.copyright_holder,
-        publisher: editData.publisher,
-        image_url: imageUrlToUpdate,
-      };
-
       const { error } = await supabase
         .from("charts")
-        .update(payload)
+        .update({
+          ...editData,
+          year: parseInt(editData.year),
+          image_url: imageUrlToUpdate,
+        })
         .eq("id", editingChart.id);
-
       if (error) throw error;
-
       await fetchCharts();
-      Swal.fire("Success", "Chart details updated successfully!", "success");
+      Swal.fire("Success", "Chart updated successfully!", "success");
       closeEditModal();
     } catch (err) {
-      console.error("Error updating chart:", err);
       Swal.fire("Error", err.message, "error");
     } finally {
       setLoading(false);
@@ -443,21 +406,20 @@ const TopChartAdmin = () => {
     if (!newSongForManage.releaseId)
       return Swal.fire("Error", "Please select a song", "error");
     if (!activeChartForManage) return;
-
-    const originalChart = { ...activeChartForManage };
     try {
-      const selectedRelease = allReleases.find(
-        (r) => r.id == newSongForManage.releaseId,
-      );
-      if (!selectedRelease) throw new Error("Release not found");
+      const rel = allReleases.find((r) => r.id == newSongForManage.releaseId);
+      if (!rel) throw new Error("Release not found");
 
       const { error: dbError } = await supabase.from("chart_songs").insert({
         chart_id: activeChartForManage.id,
-        title: selectedRelease.title,
-        artist: selectedRelease.primary_artist,
-        audio_url: selectedRelease.audio_url,
+        title: rel.title,
+        artist: rel.primary_artist,
+        featuring_artists: rel.featuring_artists || null,
+        album_name: rel.album_name || null,
+        cover_url: rel.cover_url || null,
+        audio_url: rel.audio_url,
+        release_id: rel.id,
       });
-
       if (dbError) throw dbError;
 
       const { data: updatedData } = await supabase
@@ -472,29 +434,23 @@ const TopChartAdmin = () => {
           prev.map((c) => (c.id === updatedData.id ? updatedData : c)),
         );
       }
-
       setNewSongForManage({ releaseId: "" });
       Swal.fire("Added", "Song added successfully!", "success");
     } catch (err) {
-      console.error(err);
       Swal.fire("Error", err.message, "error");
-      setActiveChartForManage(originalChart);
     }
   };
 
   const handleDeleteSongFromExisting = async (songId) => {
     const result = await Swal.fire({
       title: "Are you sure?",
-      text: "You won't be able to revert this!",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#3085d6",
       cancelButtonColor: "#d33",
       confirmButtonText: "Yes, delete it!",
     });
-
     if (result.isConfirmed) {
-      const originalChart = { ...activeChartForManage };
       try {
         const { error } = await supabase
           .from("chart_songs")
@@ -514,9 +470,7 @@ const TopChartAdmin = () => {
         }
         Swal.fire("Deleted!", "Song has been deleted.", "success");
       } catch (err) {
-        console.error(err);
         Swal.fire("Error", "Failed to delete song", "error");
-        setActiveChartForManage(originalChart);
       }
     }
   };
@@ -549,6 +503,7 @@ const TopChartAdmin = () => {
 
   return (
     <div className="p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">
@@ -558,27 +513,18 @@ const TopChartAdmin = () => {
             Create Top 50, Trending, and detailed charts.
           </p>
         </div>
-
         <div className="flex items-center gap-3">
           {step === 0 && (
             <div className="flex bg-white rounded-lg border border-slate-200 p-1 shadow-sm">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-2 rounded-md transition-all ${
-                  viewMode === "grid"
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-gray-400 hover:text-gray-600"
-                }`}
+                className={`p-2 rounded-md transition-all ${viewMode === "grid" ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:text-gray-600"}`}
               >
                 <Grid3x3 size={18} />
               </button>
               <button
                 onClick={() => setViewMode("table")}
-                className={`p-2 rounded-md transition-all ${
-                  viewMode === "table"
-                    ? "bg-blue-100 text-blue-700"
-                    : "text-gray-400 hover:text-gray-600"
-                }`}
+                className={`p-2 rounded-md transition-all ${viewMode === "table" ? "bg-blue-100 text-blue-700" : "text-gray-400 hover:text-gray-600"}`}
               >
                 <List size={18} />
               </button>
@@ -593,21 +539,16 @@ const TopChartAdmin = () => {
         </div>
       </div>
 
-      {/* WIZARD SECTION */}
+      {/* WIZARD */}
       {step > 0 && (
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden min-h-[500px] flex flex-col mb-8">
-          {/* Stepper UI */}
           <div className="bg-slate-50 border-b border-slate-200 px-8 py-4">
             <div className="flex items-center justify-between max-w-4xl mx-auto">
               {steps.map((s, i) => (
                 <div key={s.id} className="flex items-center flex-1">
                   <div className="flex flex-col items-center gap-1 w-full">
                     <div
-                      className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${
-                        step - 1 >= i
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-gray-300 text-gray-400 bg-white"
-                      }`}
+                      className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all ${step - 1 >= i ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 text-gray-400 bg-white"}`}
                     >
                       {step - 1 > i ? (
                         <CheckCircle2 size={16} />
@@ -616,18 +557,14 @@ const TopChartAdmin = () => {
                       )}
                     </div>
                     <span
-                      className={`text-[10px] font-bold uppercase ${
-                        step - 1 >= i ? "text-blue-700" : "text-gray-400"
-                      }`}
+                      className={`text-[10px] font-bold uppercase ${step - 1 >= i ? "text-blue-700" : "text-gray-400"}`}
                     >
                       {s.label}
                     </span>
                   </div>
                   {i < steps.length - 1 && (
                     <div
-                      className={`h-0.5 w-full mx-2 ${
-                        step - 1 > i ? "bg-blue-600" : "bg-gray-200"
-                      }`}
+                      className={`h-0.5 w-full mx-2 ${step - 1 > i ? "bg-blue-600" : "bg-gray-200"}`}
                     ></div>
                   )}
                 </div>
@@ -636,18 +573,15 @@ const TopChartAdmin = () => {
           </div>
 
           <div className="flex-grow p-4 md:p-8 bg-white overflow-y-auto">
+            {/* Step 1: Cover */}
             {step === 1 && (
-              <div className="max-w-3xl mx-auto text-center animate-in fade-in">
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
+              <div className="max-w-3xl mx-auto text-center">
+                <h3 className="text-xl font-bold text-gray-900 mb-4">
                   Upload Cover
                 </h3>
                 <div
                   onClick={() => document.getElementById("posterInput").click()}
-                  className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative group ${
-                    formData.image
-                      ? "border-green-400 bg-green-50"
-                      : "border-gray-300 hover:border-blue-400 bg-gray-50"
-                  }`}
+                  className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer ${formData.image ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 bg-gray-50"}`}
                 >
                   <input
                     type="file"
@@ -680,8 +614,9 @@ const TopChartAdmin = () => {
               </div>
             )}
 
+            {/* Step 2: Info */}
             {step === 2 && (
-              <div className="max-w-4xl mx-auto animate-in fade-in">
+              <div className="max-w-4xl mx-auto">
                 <h3 className="text-xl font-bold text-gray-900 mb-6">
                   Chart Details
                 </h3>
@@ -698,7 +633,6 @@ const TopChartAdmin = () => {
                       placeholder="e.g. India Superhits Top 50"
                     />
                   </div>
-
                   <div className="col-span-2">
                     <label className="block text-sm font-bold text-gray-700 mb-1">
                       Artist Name *
@@ -711,7 +645,6 @@ const TopChartAdmin = () => {
                       placeholder="e.g. Various Artists"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">
                       Release Year *
@@ -723,7 +656,6 @@ const TopChartAdmin = () => {
                       onChange={(e) => updateField("year", e.target.value)}
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">
                       Genre *
@@ -734,18 +666,13 @@ const TopChartAdmin = () => {
                       onChange={(e) => updateField("genre", e.target.value)}
                     >
                       <option value="">Select Genre</option>
-                      {genres && genres.length > 0 ? (
-                        genres.map((g) => (
-                          <option key={g} value={g}>
-                            {g}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="Other">Other</option>
-                      )}
+                      {genres?.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
                     </select>
                   </div>
-
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">
                       Type
@@ -778,7 +705,6 @@ const TopChartAdmin = () => {
                       ))}
                     </select>
                   </div>
-
                   <div className="col-span-2">
                     <label className="block text-sm font-bold text-gray-700 mb-1">
                       Description
@@ -796,11 +722,12 @@ const TopChartAdmin = () => {
               </div>
             )}
 
+            {/* Step 3: Songs */}
             {step === 3 && (
-              <div className="max-w-5xl mx-auto animate-in fade-in">
+              <div className="max-w-5xl mx-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 h-fit">
-                    <h4 className="font-bold text-gray-900 mb-4">
+                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                       <Plus size={18} /> Add Song
                     </h4>
                     <form onSubmit={addTempSong} className="space-y-3">
@@ -812,9 +739,7 @@ const TopChartAdmin = () => {
                           <SearchableSelect
                             options={allReleases}
                             value={tempSong.releaseId}
-                            onChange={(id) =>
-                              setTempSong({ ...tempSong, releaseId: id })
-                            }
+                            onChange={(id) => setTempSong({ releaseId: id })}
                             placeholder="Select a song..."
                           />
                         </div>
@@ -835,30 +760,45 @@ const TopChartAdmin = () => {
                       {songs.map((s, idx) => (
                         <div
                           key={s.id}
-                          className="flex items-center justify-between p-4 border-b border-slate-100"
+                          className="flex items-center gap-3 p-4 border-b border-slate-100"
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="text-slate-400 font-bold">
-                              {idx + 1}
-                            </span>
-                            <div>
-                              <p className="text-sm font-bold">{s.title}</p>
-                              <p className="text-xs text-slate-500">
-                                {s.artist}
+                          <span className="text-slate-400 font-bold w-6">
+                            {idx + 1}
+                          </span>
+                          {s.coverUrl && (
+                            <img
+                              src={s.coverUrl}
+                              className="w-10 h-10 rounded-lg object-cover"
+                              alt=""
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold truncate">
+                              {s.title}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {s.artist}
+                              {s.featuringArtists
+                                ? ` ft. ${s.featuringArtists}`
+                                : ""}
+                            </p>
+                            {s.albumName && (
+                              <p className="text-xs text-blue-500 truncate">
+                                {s.albumName}
                               </p>
-                            </div>
+                            )}
                           </div>
                           <button
                             onClick={() => removeTempSong(s.id)}
-                            className="text-red-500"
+                            className="text-red-500 hover:text-red-700 flex-shrink-0"
                           >
                             <Trash2 size={16} />
                           </button>
                         </div>
                       ))}
                       {songs.length === 0 && (
-                        <div className="p-4 text-center text-slate-400 text-sm">
-                          No songs added
+                        <div className="p-6 text-center text-slate-400 text-sm">
+                          No songs added yet
                         </div>
                       )}
                     </div>
@@ -867,8 +807,9 @@ const TopChartAdmin = () => {
               </div>
             )}
 
+            {/* Step 4: Rights */}
             {step === 4 && (
-              <div className="max-w-4xl mx-auto animate-in fade-in">
+              <div className="max-w-4xl mx-auto">
                 <h3 className="text-xl font-bold text-gray-900 mb-6">
                   Copyright & Distribution
                 </h3>
@@ -879,7 +820,7 @@ const TopChartAdmin = () => {
                     </label>
                     <input
                       type="text"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:border-blue-500 outline-none"
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2"
                       value={formData.copyright_holder}
                       onChange={(e) =>
                         updateField("copyright_holder", e.target.value)
@@ -893,7 +834,7 @@ const TopChartAdmin = () => {
                     </label>
                     <input
                       type="text"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:border-blue-500 outline-none"
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2"
                       value={formData.publisher}
                       onChange={(e) => updateField("publisher", e.target.value)}
                       placeholder="Publisher Name"
@@ -917,6 +858,7 @@ const TopChartAdmin = () => {
               </div>
             )}
 
+            {/* Step 5: Finish */}
             {step === 5 && (
               <div className="max-w-2xl mx-auto text-center py-10">
                 <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -948,182 +890,172 @@ const TopChartAdmin = () => {
             <button
               onClick={prevStep}
               disabled={step === 1}
-              className="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold"
+              className="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold disabled:opacity-40"
             >
               Previous
             </button>
-            {step < 5 ? (
+            {step < 5 && (
               <button
                 onClick={nextStep}
                 className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"
               >
                 Next <ChevronRight size={18} />
               </button>
-            ) : null}
+            )}
           </div>
         </div>
       )}
 
-      {/* DASHBOARD LIST SECTION */}
+      {/* DASHBOARD */}
       {step === 0 && (
         <div>
           {fetching ? (
             <div className="py-20 flex justify-center">
               <Loader2 className="animate-spin text-blue-600" size={40} />
             </div>
+          ) : charts.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
+              <Music className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-700 mb-2">
+                No Charts Found
+              </h3>
+              <p className="text-slate-500">
+                Create your first chart by clicking the button above.
+              </p>
+            </div>
           ) : (
             <>
-              {charts.length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
-                  <Music className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-slate-700 mb-2">
-                    No Charts Found
-                  </h3>
-                  <p className="text-slate-500 mb-4">
-                    Create your first chart by clicking the button above.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* GRID VIEW */}
-                  {viewMode === "grid" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {charts.map((chart) => (
-                        <div
-                          key={chart.id}
-                          className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all group"
-                        >
-                          <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100">
-                            <img
-                              src={
-                                chart.image_url ||
-                                "https://via.placeholder.com/100"
-                              }
-                              alt={chart.title}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="flex flex-col justify-center flex-grow">
-                            <h3 className="font-bold text-slate-900 line-clamp-1">
-                              {chart.title}
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-1">
-                              {chart.artist} • {chart.year}
-                            </p>
-                            <p className="text-xs text-slate-500 mb-2">
-                              {chart.type} • {chart.genre}
-                            </p>
-                            <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold w-fit">
-                              {chart.chart_songs?.length || 0} Tracks
-                            </span>
-
-                            <div className="mt-3 flex gap-2">
-                              <button
-                                onClick={() => openManageModal(chart)}
-                                className="flex-1 py-1.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-600 hover:text-white transition-colors flex items-center justify-center gap-1"
-                              >
-                                <ListMusic size={12} /> Songs
-                              </button>
-                              <button
-                                onClick={() => openEditModal(chart)}
-                                className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
-                                title="Edit Details"
-                              >
-                                <Edit size={14} />
-                              </button>
-                            </div>
-                          </div>
+              {viewMode === "grid" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {charts.map((chart) => (
+                    <div
+                      key={chart.id}
+                      className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all"
+                    >
+                      <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100">
+                        <img
+                          src={
+                            chart.image_url || "https://via.placeholder.com/100"
+                          }
+                          alt={chart.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex flex-col justify-center flex-grow min-w-0">
+                        <h3 className="font-bold text-slate-900 line-clamp-1">
+                          {chart.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 mb-1">
+                          {chart.artist} • {chart.year}
+                        </p>
+                        <p className="text-xs text-slate-500 mb-2">
+                          {chart.type} • {chart.genre}
+                        </p>
+                        <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold w-fit">
+                          {chart.chart_songs?.length || 0} Tracks
+                        </span>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => openManageModal(chart)}
+                            className="flex-1 py-1.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-600 hover:text-white transition-colors flex items-center justify-center gap-1"
+                          >
+                            <ListMusic size={12} /> Songs
+                          </button>
+                          <button
+                            onClick={() => openEditModal(chart)}
+                            className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                            title="Edit Details"
+                          >
+                            <Edit size={14} />
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* TABLE VIEW */}
-                  {viewMode === "table" && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200">
-                          <thead className="bg-slate-50">
-                            <tr>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Cover
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Title & Artist
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Details
-                              </th>
-                              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Tracks
-                              </th>
-                              <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Actions
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-slate-200">
-                            {charts.map((chart) => (
-                              <tr
-                                key={chart.id}
-                                className="hover:bg-slate-50 transition-colors"
-                              >
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <img
-                                    className="h-16 w-16 rounded-lg object-cover shadow-sm"
-                                    src={
-                                      chart.image_url ||
-                                      "https://via.placeholder.com/100"
-                                    }
-                                    alt=""
-                                  />
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="text-sm font-bold text-slate-900">
-                                    {chart.title}
-                                  </div>
-                                  <div className="text-sm text-slate-500">
-                                    {chart.artist}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm text-slate-700">
-                                    {chart.type}
-                                  </div>
-                                  <div className="text-xs text-slate-500">
-                                    {chart.genre} • {chart.year}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">
-                                    {chart.chart_songs?.length || 0} Songs
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button
-                                      onClick={() => openEditModal(chart)}
-                                      className="p-2 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                      title="Edit Details"
-                                    >
-                                      <Edit size={16} />
-                                    </button>
-                                    <button
-                                      onClick={() => openManageModal(chart)}
-                                      className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 hover:text-blue-800 transition-colors text-xs font-bold flex items-center gap-1"
-                                    >
-                                      <ListMusic size={14} /> Manage
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
                       </div>
                     </div>
-                  )}
-                </>
+                  ))}
+                </div>
+              )}
+
+              {viewMode === "table" && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {[
+                            "Cover",
+                            "Title & Artist",
+                            "Details",
+                            "Tracks",
+                            "Actions",
+                          ].map((h) => (
+                            <th
+                              key={h}
+                              className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider"
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-200">
+                        {charts.map((chart) => (
+                          <tr
+                            key={chart.id}
+                            className="hover:bg-slate-50 transition-colors"
+                          >
+                            <td className="px-6 py-4">
+                              <img
+                                className="h-16 w-16 rounded-lg object-cover shadow-sm"
+                                src={
+                                  chart.image_url ||
+                                  "https://via.placeholder.com/100"
+                                }
+                                alt=""
+                              />
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-bold text-slate-900">
+                                {chart.title}
+                              </div>
+                              <div className="text-sm text-slate-500">
+                                {chart.artist}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-slate-700">
+                                {chart.type}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {chart.genre} • {chart.year}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">
+                                {chart.chart_songs?.length || 0} Songs
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => openEditModal(chart)}
+                                  className="p-2 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => openManageModal(chart)}
+                                  className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-xs font-bold flex items-center gap-1"
+                                >
+                                  <ListMusic size={14} /> Manage
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -1157,7 +1089,6 @@ const TopChartAdmin = () => {
                   <X size={20} />
                 </button>
               </div>
-
               <div className="flex-grow overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 h-fit">
                   <h4 className="font-bold text-blue-900 mb-4">Add Song</h4>
@@ -1174,10 +1105,7 @@ const TopChartAdmin = () => {
                           options={allReleases}
                           value={newSongForManage.releaseId}
                           onChange={(id) =>
-                            setNewSongForManage({
-                              ...newSongForManage,
-                              releaseId: id,
-                            })
+                            setNewSongForManage({ releaseId: id })
                           }
                           placeholder="Search songs..."
                         />
@@ -1191,31 +1119,60 @@ const TopChartAdmin = () => {
                     </button>
                   </form>
                 </div>
-
                 <div className="lg:col-span-2">
                   <h4 className="font-bold text-gray-900 mb-4">
-                    Current Songs
+                    Current Songs (
+                    {activeChartForManage.chart_songs?.length || 0})
                   </h4>
                   <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                     {activeChartForManage.chart_songs?.map((s, i) => (
                       <div
                         key={s.id}
-                        className="flex items-center justify-between p-3 border-b border-slate-50"
+                        className="flex items-center gap-3 p-3 border-b border-slate-50 last:border-0"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-400 font-bold text-xs">
-                            {i + 1}
-                          </span>
-                          <p className="text-sm font-bold">{s.title}</p>
+                        <span className="text-slate-400 font-bold text-xs w-5">
+                          {i + 1}
+                        </span>
+                        {s.cover_url && (
+                          <img
+                            src={s.cover_url}
+                            className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                            alt=""
+                            onError={(e) => {
+                              e.target.style.display = "none";
+                            }}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate">
+                            {s.title}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {s.artist}
+                            {s.featuring_artists
+                              ? ` ft. ${s.featuring_artists}`
+                              : ""}
+                          </p>
+                          {s.album_name && (
+                            <p className="text-xs text-blue-500 truncate">
+                              {s.album_name}
+                            </p>
+                          )}
                         </div>
                         <button
                           onClick={() => handleDeleteSongFromExisting(s.id)}
-                          className="text-red-500 hover:bg-red-50 p-1 rounded"
+                          className="text-red-500 hover:bg-red-50 p-1 rounded flex-shrink-0"
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
                     ))}
+                    {(!activeChartForManage.chart_songs ||
+                      activeChartForManage.chart_songs.length === 0) && (
+                      <div className="p-6 text-center text-slate-400 text-sm">
+                        No songs yet
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1224,7 +1181,7 @@ const TopChartAdmin = () => {
         )}
       </AnimatePresence>
 
-      {/* EDIT DETAILS MODAL */}
+      {/* EDIT MODAL */}
       <AnimatePresence>
         {isEditOpen && editingChart && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1303,13 +1260,11 @@ const TopChartAdmin = () => {
                         }
                       >
                         <option value="">Select Genre</option>
-                        {genres && genres.length > 0
-                          ? genres.map((g) => (
-                              <option key={g} value={g}>
-                                {g}
-                              </option>
-                            ))
-                          : null}
+                        {genres?.map((g) => (
+                          <option key={g} value={g}>
+                            {g}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -1396,7 +1351,6 @@ const TopChartAdmin = () => {
                         }
                       />
                     </div>
-
                     <div className="col-span-2">
                       <label className="block text-sm font-bold text-gray-700 mb-1">
                         Change Cover (Optional)
