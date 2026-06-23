@@ -26,6 +26,8 @@ import {
   Share2,
   Link2,
   Flag,
+  Film,
+  User,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -68,6 +70,26 @@ const parseArtists = (artistStr) => {
     .filter(Boolean);
 };
 
+// ─── ROBUST: Parse actor names ───
+const parseActorNames = (val) => {
+  if (Array.isArray(val))
+    return val.map((s) => String(s).trim()).filter(Boolean);
+  if (
+    val == null ||
+    val === "" ||
+    typeof val === "number" ||
+    typeof val === "boolean"
+  )
+    return [];
+  const str = String(val).trim();
+  if (str === "") return [];
+  return str
+    .split(",")
+    .map((a) => a.trim())
+    .filter((s) => s.length > 0);
+};
+
+// ─── STICKY PLAYER ───
 const StickyPlayer = ({
   song,
   isPlaying,
@@ -86,6 +108,8 @@ const StickyPlayer = ({
   onClose,
 }) => {
   if (!song) return null;
+  const featuringList = parseArtists(song.featuringArtists);
+
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -108,8 +132,19 @@ const StickyPlayer = ({
             </h4>
             <p className="text-xs text-gray-400 truncate mt-1">
               {song.artist}
-              {song.featuringArtists ? ` ft. ${song.featuringArtists}` : ""}
+              {featuringList.length > 0 && ` ft. ${featuringList.join(", ")}`}
             </p>
+            {/* Movie/Album in player */}
+            {song.movieName && (
+              <p className="text-[10px] text-purple-400 truncate flex items-center gap-1 mt-0.5">
+                <Film size={9} /> {song.movieName}
+              </p>
+            )}
+            {song.albumName && !song.movieName && (
+              <p className="text-[10px] text-blue-400 truncate flex items-center gap-1 mt-0.5">
+                <Disc3 size={9} /> {song.albumName}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
@@ -220,6 +255,7 @@ const StickyPlayer = ({
   );
 };
 
+// ─── MAIN COMPONENT ───
 const ArtistProfile = () => {
   const { artistName } = useParams();
   const navigate = useNavigate();
@@ -248,7 +284,6 @@ const ArtistProfile = () => {
   const songDurationsRef = useRef({});
   const moreMenuRef = useRef(null);
 
-  // Close more menu on outside click
   useEffect(() => {
     const handler = (e) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
@@ -295,8 +330,6 @@ const ArtistProfile = () => {
             song.featuring ||
             song.feat ||
             "";
-
-          // Try multiple column names for duration
           const dbDuration =
             song.duration ||
             song.song_duration ||
@@ -316,14 +349,17 @@ const ArtistProfile = () => {
             audioUrl: song.audio_url,
             language: song.language || "",
             genre: song.genre || "",
+            // ── FIX: Extract album & movie names properly ──
             albumName: song.album_name || "",
             albumCoverUrl: song.album_cover_url || song.cover_url || "",
+            movieName: song.movie_name || "",
+            actorNames: song.actor_names || "",
             playCount: song.play_count || 0,
             listenersCount: song.listeners_count || 0,
             trackNumber: song.track_number || 1,
             releaseDate: song.release_date,
             artist_image_url: song.artist_image_url || "",
-            actorNames: song.actor_names || "",
+            format: song.format || "Single",
             dbDuration: dbDuration,
           };
         };
@@ -385,7 +421,7 @@ const ArtistProfile = () => {
                   row.cover_url ||
                   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=200&background=2563eb&color=fff`,
                 songCount: 0,
-                year: row.release_date
+                year: row.releaseDate
                   ? new Date(row.release_date).getFullYear().toString()
                   : "",
               });
@@ -407,19 +443,15 @@ const ArtistProfile = () => {
     if (!song || !song.id) return;
     if (countedSongIds.current.has(song.id)) return;
     countedSongIds.current.add(song.id);
-
     try {
       const { data: current, error: fetchErr } = await supabase
         .from("releases")
         .select("play_count, listeners_count")
         .eq("id", song.id)
         .single();
-
       if (fetchErr) throw fetchErr;
-
       const newPlayCount = (current?.play_count || 0) + 1;
       const newListenersCount = (current?.listeners_count || 0) + 1;
-
       const { error: updateErr } = await supabase
         .from("releases")
         .update({
@@ -427,9 +459,7 @@ const ArtistProfile = () => {
           listeners_count: newListenersCount,
         })
         .eq("id", song.id);
-
       if (updateErr) throw updateErr;
-
       const updateList = (list) =>
         list.map((s) =>
           s.id === song.id
@@ -440,7 +470,6 @@ const ArtistProfile = () => {
               }
             : s,
         );
-
       setArtistSongs((prev) => updateList(prev));
       setCollabSongs((prev) => updateList(prev));
     } catch (error) {
@@ -458,7 +487,6 @@ const ArtistProfile = () => {
     audio.addEventListener("loadedmetadata", () => {
       const dur = audio.duration;
       setDuration(dur);
-      // Cache the duration for this song so table shows it
       if (currentSong?.id && isFinite(dur)) {
         songDurationsRef.current[currentSong.id] = dur;
       }
@@ -471,7 +499,6 @@ const ArtistProfile = () => {
     };
   }, []);
 
-  // Update cached duration when currentSong changes and audio loads
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;
@@ -499,22 +526,24 @@ const ArtistProfile = () => {
     return () => audio.removeEventListener("ended", handleEnded);
   }, [currentList, currentIndex, isShuffle]);
 
-  // Helper to get dynamic duration for any song
   const getSongDuration = (song) => {
-    // Priority 1: Cached from actual audio playback
     const cached = songDurationsRef.current[song.id];
     if (cached && isFinite(cached)) return formatDuration(cached);
-    // Priority 2: From DB column
     if (song.dbDuration) return formatDuration(song.dbDuration);
-    // Fallback
     return "—";
+  };
+
+  // ── Helper: Get movie or album for display ──
+  const getMovieOrAlbum = (song) => {
+    if (song.movieName) return { type: "movie", name: song.movieName };
+    if (song.albumName) return { type: "album", name: song.albumName };
+    return null;
   };
 
   const playSong = (song) => {
     if (!song) return;
     const audio = audioRef.current;
-    const isNewSong = currentSong?.id !== song.id;
-    if (isNewSong) {
+    if (currentSong?.id !== song.id) {
       setCurrentSong(song);
       audio.src = song.audioUrl;
       audio.load();
@@ -570,7 +599,6 @@ const ArtistProfile = () => {
       setCurrentTime(time);
     }
   };
-
   const handleClosePlayer = () => {
     setPlaying(false);
     setCurrentSong(null);
@@ -579,7 +607,6 @@ const ArtistProfile = () => {
       audioRef.current.currentTime = 0;
     }
   };
-
   const toggleMute = () => setIsMuted(!isMuted);
   const handleVolumeChange = (v) => {
     setVolume(v);
@@ -619,27 +646,23 @@ const ArtistProfile = () => {
 
   const featuringArtistsList = (() => {
     const set = new Set();
-    const allSongs = [...artistSongs, ...collabSongs];
-    allSongs.forEach((s) => {
-      const raw = s.featuringArtists;
-      if (!raw) return;
-      parseArtists(raw).forEach((a) => {
+    [...artistSongs, ...collabSongs].forEach((s) => {
+      if (!s.featuringArtists) return;
+      parseArtists(s.featuringArtists).forEach((a) => {
         const trimmed = a.trim();
         if (
           trimmed &&
           trimmed.toLowerCase() !== decodedArtistName.toLowerCase()
-        ) {
+        )
           set.add(trimmed);
-        }
       });
     });
     return [...set];
   })();
 
   const getFeaturingForSong = (song) => {
-    const raw = song.featuringArtists;
-    if (!raw) return [];
-    return parseArtists(raw).filter(
+    if (!song.featuringArtists) return [];
+    return parseArtists(song.featuringArtists).filter(
       (a) => a.trim().toLowerCase() !== decodedArtistName.toLowerCase(),
     );
   };
@@ -688,7 +711,7 @@ const ArtistProfile = () => {
         </div>
       ) : (
         <>
-          {/* ARTIST HEADER */}
+          {/* ─── ARTIST HEADER ─── */}
           <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-8">
             <div className="flex-shrink-0 mx-auto md:mx-0">
               <div className="w-36 h-36 md:w-44 md:h-44 rounded-full overflow-hidden shadow-2xl border-4 border-white bg-gradient-to-br from-blue-400 to-blue-600">
@@ -728,8 +751,7 @@ const ArtistProfile = () => {
                   <>
                     <span className="text-slate-300">|</span>
                     <span className="text-sm font-medium text-slate-500 flex items-center gap-1">
-                      <Mic2 size={13} className="text-amber-500" />
-                      ft.
+                      <Mic2 size={13} className="text-amber-500" /> ft.
                     </span>
                     {featuringArtistsList.map((fa, fi) => (
                       <span key={fa} className="flex items-center gap-0.5">
@@ -777,6 +799,7 @@ const ArtistProfile = () => {
                   </span>
                 )}
               </div>
+
               <div className="flex items-center gap-3 justify-center md:justify-start">
                 <button
                   onClick={() => {
@@ -800,8 +823,6 @@ const ArtistProfile = () => {
                     fill={isArtistLiked ? "currentColor" : "none"}
                   />
                 </button>
-
-                {/* 3-dot menu with features */}
                 <div className="relative" ref={moreMenuRef}>
                   <button
                     onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -822,23 +843,22 @@ const ArtistProfile = () => {
                           onClick={handleShareArtist}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
                         >
-                          <Share2 size={16} className="text-slate-400" />
-                          Share Artist
+                          <Share2 size={16} className="text-slate-400" /> Share
+                          Artist
                         </button>
                         <button
                           onClick={handleCopyLink}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
                         >
-                          <Link2 size={16} className="text-slate-400" />
-                          Copy Link
+                          <Link2 size={16} className="text-slate-400" /> Copy
+                          Link
                         </button>
                         <div className="mx-3 my-1 border-t border-slate-100" />
                         <button
                           onClick={() => setShowMoreMenu(false)}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
                         >
-                          <Flag size={16} className="text-red-400" />
-                          Report
+                          <Flag size={16} className="text-red-400" /> Report
                         </button>
                       </motion.div>
                     )}
@@ -848,7 +868,7 @@ const ArtistProfile = () => {
             </div>
           </div>
 
-          {/* TABS + SONG LIST */}
+          {/* ─── TABS + SONG LIST ─── */}
           <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1 border-b border-slate-200 mb-4">
@@ -888,7 +908,7 @@ const ArtistProfile = () => {
                 ))}
               </div>
 
-              {/* Song List Table */}
+              {/* ─── SONG LIST TABLE ─── */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200">
@@ -900,8 +920,9 @@ const ArtistProfile = () => {
                         <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                           Song
                         </th>
+                        {/* ── FIX: "Company" replaced with "Movie / Album" ── */}
                         <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Company
+                          Movie / Album
                         </th>
                         <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                           Featuring
@@ -918,6 +939,8 @@ const ArtistProfile = () => {
                       {displayList.map((song, index) => {
                         const isActive = currentSong?.id === song.id;
                         const featuringList = getFeaturingForSong(song);
+                        const movieOrAlbum = getMovieOrAlbum(song);
+                        const actors = parseActorNames(song.actorNames);
 
                         return (
                           <motion.tr
@@ -928,11 +951,9 @@ const ArtistProfile = () => {
                             className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
                             initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }}
-                            transition={{
-                              duration: 0.3,
-                              delay: index * 0.03,
-                            }}
+                            transition={{ duration: 0.3, delay: index * 0.03 }}
                           >
+                            {/* # Column */}
                             <td className="px-4 md:px-6 py-3 whitespace-nowrap">
                               <div className="w-8 h-8 flex items-center justify-center">
                                 {isActive && playing ? (
@@ -986,6 +1007,7 @@ const ArtistProfile = () => {
                               </div>
                             </td>
 
+                            {/* Song Column */}
                             <td className="px-4 md:px-6 py-3">
                               <div className="flex items-center gap-3">
                                 <img
@@ -1006,32 +1028,46 @@ const ArtistProfile = () => {
                                   <Link
                                     to={`/artist/${encodeURIComponent(song.artist)}`}
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`text-xs truncate mt-0.5 block hover:underline transition-colors ${
-                                      song.artist.toLowerCase() ===
-                                      decodedArtistName.toLowerCase()
-                                        ? "text-blue-600 font-semibold"
-                                        : "text-slate-500 hover:text-blue-600"
-                                    }`}
+                                    className={`text-xs truncate mt-0.5 block hover:underline transition-colors ${song.artist.toLowerCase() === decodedArtistName.toLowerCase() ? "text-blue-600 font-semibold" : "text-slate-500 hover:text-blue-600"}`}
                                   >
                                     {song.artist}
                                   </Link>
+                                  {/* Actor names under artist */}
+                                  {actors.length > 0 && (
+                                    <p className="text-[10px] text-slate-400 truncate flex items-center gap-0.5 mt-0.5">
+                                      <User size={8} /> {actors.join(", ")}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             </td>
 
+                            {/* ── FIX: Movie / Album Column ── */}
                             <td className="px-4 md:px-6 py-3">
-                              {song.companyName ? (
-                                <span className="text-sm text-slate-600 truncate block max-w-[120px] lg:max-w-[160px]">
-                                  {song.companyName}
-                                </span>
-                              ) : song.albumName ? (
-                                <Link
-                                  to={`/album/${encodeURIComponent(song.albumName)}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-sm text-slate-600 hover:text-blue-600 hover:underline transition-colors truncate block max-w-[120px] lg:max-w-[160px]"
+                              {movieOrAlbum ? (
+                                <span
+                                  className={`text-sm truncate flex items-center gap-1 max-w-[160px] lg:max-w-[200px] ${movieOrAlbum.type === "movie" ? "text-purple-600 font-medium" : "text-blue-600 hover:text-blue-700 hover:underline cursor-pointer font-medium"}`}
+                                  onClick={(e) => {
+                                    if (movieOrAlbum.type === "album") {
+                                      e.stopPropagation();
+                                      navigate(
+                                        `/album/${encodeURIComponent(movieOrAlbum.name)}`,
+                                      );
+                                    }
+                                  }}
                                 >
-                                  {song.albumName}
-                                </Link>
+                                  {movieOrAlbum.type === "movie" ? (
+                                    <Film size={12} className="flex-shrink-0" />
+                                  ) : (
+                                    <Disc3
+                                      size={12}
+                                      className="flex-shrink-0"
+                                    />
+                                  )}
+                                  <span className="truncate">
+                                    {movieOrAlbum.name}
+                                  </span>
+                                </span>
                               ) : (
                                 <span className="text-sm text-slate-400">
                                   —
@@ -1039,12 +1075,12 @@ const ArtistProfile = () => {
                               )}
                             </td>
 
+                            {/* Featuring Column */}
                             <td className="px-4 md:px-6 py-3">
                               {featuringList.length > 0 ? (
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1 flex-shrink-0">
-                                    <Mic2 size={10} />
-                                    feat.
+                                    <Mic2 size={10} /> feat.
                                   </span>
                                   {featuringList.map((fa, fi) => (
                                     <span
@@ -1073,11 +1109,12 @@ const ArtistProfile = () => {
                               )}
                             </td>
 
+                            {/* Plays Column */}
                             <td className="px-4 md:px-6 py-3 text-right text-sm text-slate-500 font-medium">
                               {formatCount(song.playCount)}
                             </td>
 
-                            {/* Dynamic Duration */}
+                            {/* Duration Column */}
                             <td className="px-4 md:px-6 py-3 text-right text-sm text-slate-500 font-mono">
                               {isActive
                                 ? formatDuration(duration) || "—"
@@ -1095,6 +1132,7 @@ const ArtistProfile = () => {
         </>
       )}
 
+      {/* ─── STICKY PLAYER ─── */}
       <AnimatePresence>
         {currentSong && (
           <StickyPlayer

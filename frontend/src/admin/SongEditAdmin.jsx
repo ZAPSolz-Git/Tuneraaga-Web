@@ -9,6 +9,7 @@ import {
   Loader2,
   Music,
   Image,
+  Film,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
@@ -17,59 +18,15 @@ import {
   FileText,
   Upload,
   Check,
+  User,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { genres, getSubgenres } from "../lib/subgener";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const GENRES = [
-  "Pop",
-  "Hip Hop/Rap",
-  "Rock",
-  "Indian",
-  "Arabic",
-  "Latin",
-  "Dance",
-  "R&B/Soul",
-  "Country",
-  "Classical",
-  "Jazz",
-  "Alternative",
-  "Blues",
-  "Electronic",
-  "Folk",
-  "Metal",
-  "Reggae",
-  "Romance",
-  "Devotional",
-  "Sufi",
-  "World Music",
-];
-const SUBGENRES = {
-  Pop: ["Dance Pop", "Electropop", "Indie Pop", "Teen Pop", "Synth Pop"],
-  "Hip Hop/Rap": [
-    "Trap",
-    "Drill",
-    "Conscious Rap",
-    "Boom Bap",
-    "Lo-Fi Hip Hop",
-  ],
-  Rock: ["Hard Rock", "Soft Rock", "Punk Rock", "Indie Rock", "Classic Rock"],
-  Indian: [
-    "Bollywood",
-    "Kollywood",
-    "Tollywood",
-    "Bhangra",
-    "Devotional",
-    "Classical",
-  ],
-  Electronic: ["House", "Techno", "Dubstep", "Ambient", "Drum & Bass"],
-  "R&B/Soul": ["Neo Soul", "Contemporary R&B", "Gospel", "Funk"],
-  Classical: ["Hindustani", "Carnatic", "Western Classical", "Fusion"],
-  Folk: ["Indian Folk", "Country Folk", "Acoustic"],
-};
 const LANGUAGES = [
   "Hindi",
   "Tamil",
@@ -106,6 +63,39 @@ const getMimeType = (ext) => {
   return map[ext?.toLowerCase()] || "audio/mpeg";
 };
 
+// ─── ROBUST: CONVERT ANY FORMAT → ARRAY ───
+// Handles: null, undefined, "", " ", "A, B", ["A","B"], already array
+const strToArray = (val) => {
+  // Already an array — return a clean copy
+  if (Array.isArray(val)) {
+    return val.map((s) => String(s).trim()).filter(Boolean);
+  }
+  // null, undefined, number, boolean, empty
+  if (
+    val == null ||
+    val === "" ||
+    typeof val === "number" ||
+    typeof val === "boolean"
+  ) {
+    return [];
+  }
+  // Force to string, trim, split by comma, clean each item
+  const str = String(val).trim();
+  if (str === "") return [];
+  return str
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+};
+
+// ─── ROBUST: CONVERT ARRAY → DB STRING ───
+const arrayToStr = (arr) => {
+  if (!arr || !Array.isArray(arr) || arr.length === 0) return null;
+  const cleaned = arr.map((s) => String(s).trim()).filter(Boolean);
+  if (cleaned.length === 0) return null;
+  return cleaned.join(", ");
+};
+
 const StatusBadge = ({ status }) => {
   const map = {
     Published: "bg-green-100 text-green-700 border-green-200",
@@ -121,7 +111,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// ─── INLINE IMAGE UPLOAD (FIXED — no blob fallback) ───
+// ─── INLINE IMAGE UPLOAD ───
 const InlineImageUpload = ({ value, onChange, label }) => {
   const ref = useRef();
   const [uploading, setUploading] = useState(false);
@@ -215,7 +205,7 @@ const InlineImageUpload = ({ value, onChange, label }) => {
   );
 };
 
-// ─── INLINE AUDIO UPLOAD (FIXED — no blob fallback) ───
+// ─── INLINE AUDIO UPLOAD ───
 const InlineAudioUpload = ({ value, onChange }) => {
   const ref = useRef();
   const [uploading, setUploading] = useState(false);
@@ -289,6 +279,9 @@ const InlineAudioUpload = ({ value, onChange }) => {
           onChange={(e) => handleFile(e.target.files[0])}
         />
       </div>
+      {fileName && !uploading && (
+        <p className="text-[10px] text-teal-600 mb-1">{fileName}</p>
+      )}
       {error && (
         <div className="flex items-start gap-2 mt-1 text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs">
           <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
@@ -308,35 +301,19 @@ const InlineAudioUpload = ({ value, onChange }) => {
   );
 };
 
-// ─── FIXED SmallTagInput ───
-// Problem: tags string properly split nahi ho rahi thi
-// Fix: trim + filter properly kiya, empty string handle kiya
-const SmallTagInput = ({ label, tags, onChange, placeholder }) => {
+// ─── EDIT TAG INPUT ───
+const EditTagInput = ({ label, tags, onAdd, onRemove, placeholder }) => {
   const [val, setVal] = useState("");
-
-  // tags ek string hai — "Arijit, Shreya" — array mein convert karo
-  const tagList = tags
-    ? tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-    : [];
 
   const add = () => {
     const v = val.trim();
     if (!v) return;
-    if (tagList.includes(v)) {
+    if (tags.includes(v)) {
       setVal("");
       return;
     }
-    const newTags = [...tagList, v].join(", ");
-    onChange(newTags);
+    onAdd(v);
     setVal("");
-  };
-
-  const remove = (tag) => {
-    const newTags = tagList.filter((t) => t !== tag).join(", ");
-    onChange(newTags);
   };
 
   return (
@@ -367,40 +344,56 @@ const SmallTagInput = ({ label, tags, onChange, placeholder }) => {
           <Plus size={14} />
         </button>
       </div>
-      <div className="flex flex-wrap gap-1">
-        {tagList.map((t) => (
-          <span
-            key={t}
-            className="flex items-center gap-1 bg-teal-100 text-teal-700 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-          >
-            {t}
-            <button
-              type="button"
-              onClick={() => remove(t)}
-              className="hover:text-red-500 transition-colors"
-            >
-              <X size={10} />
-            </button>
-          </span>
-        ))}
-      </div>
-      {/* Debug: currently saved value */}
-      {tagList.length > 0 && (
-        <p className="text-[10px] text-slate-400 mt-1">
-          Saved: {tagList.join(", ")}
-        </p>
+      {/* ── TAGS: Show count even if 0 so user knows field is loaded ── */}
+      {tags.length === 0 ? (
+        <p className="text-[10px] text-slate-300 italic">No items added yet</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="flex items-center gap-1 bg-teal-100 text-teal-700 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              >
+                {t}
+                <button
+                  type="button"
+                  onClick={() => onRemove(t)}
+                  className="hover:text-red-500 transition-colors"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Saved: {tags.join(", ")}
+          </p>
+        </>
       )}
     </div>
   );
 };
 
-// ─── EDIT MODAL (FIXED) ───
+// ─── EDIT MODAL ───
 const EditModal = ({ song, onClose, onSaved }) => {
+  // ── DEBUG: Log raw values to verify data from DB ──
+  console.log("EDIT MODAL — raw song data:", {
+    id: song.id,
+    featuring_artists_raw: song.featuring_artists,
+    featuring_artists_type: typeof song.featuring_artists,
+    actor_names_raw: song.actor_names,
+    actor_names_type: typeof song.actor_names,
+    movie_name_raw: song.movie_name,
+    album_name_raw: song.album_name,
+  });
+
   const [form, setForm] = useState({
     title: song.title || "",
     primary_artist: song.primary_artist || "",
-    featuring_artists: song.featuring_artists || "", // string as-is
-    actor_names: song.actor_names || "",
+    featuring_artists: strToArray(song.featuring_artists),
+    actor_names: strToArray(song.actor_names),
+    movie_name: song.movie_name || "",
     album_name: song.album_name || "",
     album_cover_url: song.album_cover_url || "",
     genre: song.genre || "",
@@ -416,14 +409,21 @@ const EditModal = ({ song, onClose, onSaved }) => {
     publisher: song.publisher || "",
     format: song.format || "Single",
   });
+
+  // ── DEBUG: Log parsed values ──
+  console.log("EDIT MODAL — parsed arrays:", {
+    featuring_artists: form.featuring_artists,
+    actor_names: form.actor_names,
+  });
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [activeTab, setActiveTab] = useState("basic");
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const currentSubgenres = getSubgenres(form.genre);
 
-  // ─── FIXED handleSave ───
   const handleSave = async () => {
     setSaving(true);
     setSaveError("");
@@ -431,8 +431,9 @@ const EditModal = ({ song, onClose, onSaved }) => {
       const payload = {
         title: form.title,
         primary_artist: form.primary_artist,
-        featuring_artists: form.featuring_artists || null,
-        actor_names: form.actor_names || null,
+        featuring_artists: arrayToStr(form.featuring_artists),
+        actor_names: arrayToStr(form.actor_names),
+        movie_name: form.movie_name || null,
         album_name: form.album_name || null,
         album_cover_url: form.album_cover_url || null,
         genre: form.genre || null,
@@ -449,18 +450,22 @@ const EditModal = ({ song, onClose, onSaved }) => {
         format: form.format || null,
       };
 
-      console.log("Saving payload:", payload); // debug
+      console.log(
+        "EDIT MODAL — saving payload featuring_artists:",
+        payload.featuring_artists,
+      );
+      console.log(
+        "EDIT MODAL — saving payload actor_names:",
+        payload.actor_names,
+      );
 
       const { data, error } = await supabase
         .from("releases")
         .update(payload)
         .eq("id", song.id)
-        .select(); // .select() lagao — confirm karo update hua
-
-      console.log("Save result:", data, error); // debug
+        .select();
 
       if (error) throw error;
-
       setSaved(true);
       setTimeout(() => {
         onSaved();
@@ -504,8 +509,8 @@ const EditModal = ({ song, onClose, onSaved }) => {
             )}
             <div className="min-w-0">
               <h3 className="font-bold text-slate-900 text-sm truncate flex items-center gap-2">
-                <Edit3 size={14} className="text-teal-500 flex-shrink-0" />
-                Edit Release
+                <Edit3 size={14} className="text-teal-500 flex-shrink-0" /> Edit
+                Release
               </h3>
               <p className="text-xs text-slate-500 truncate">
                 {song.title} · {song.primary_artist}
@@ -526,11 +531,7 @@ const EditModal = ({ song, onClose, onSaved }) => {
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
-                activeTab === t.key
-                  ? "border-teal-500 text-teal-600"
-                  : "border-transparent text-slate-400 hover:text-slate-600"
-              }`}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${activeTab === t.key ? "border-teal-500 text-teal-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
             >
               {t.icon} {t.label}
             </button>
@@ -588,11 +589,19 @@ const EditModal = ({ song, onClose, onSaved }) => {
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                         Primary Artist *
                       </label>
-                      <input
-                        value={form.primary_artist}
-                        onChange={(e) => set("primary_artist", e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
-                      />
+                      <div className="relative">
+                        <User
+                          size={14}
+                          className="absolute left-3 top-3 text-slate-400"
+                        />
+                        <input
+                          value={form.primary_artist}
+                          onChange={(e) =>
+                            set("primary_artist", e.target.value)
+                          }
+                          className="w-full pl-8 p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -610,22 +619,68 @@ const EditModal = ({ song, onClose, onSaved }) => {
                     </div>
                   </div>
 
-                  {/* ─── FIXED: Featuring Artists ─── */}
-                  <SmallTagInput
-                    label="Featuring Artists"
-                    tags={form.featuring_artists}
-                    onChange={(v) => set("featuring_artists", v)}
-                    placeholder="Artist naam type karo, Enter dabao"
-                  />
+                  {/* ── FEATURING ARTISTS ── */}
+                  <div className="bg-teal-50 border border-teal-100 rounded-xl p-3">
+                    <EditTagInput
+                      label="Featuring Artists"
+                      tags={form.featuring_artists}
+                      onAdd={(v) =>
+                        set("featuring_artists", [...form.featuring_artists, v])
+                      }
+                      onRemove={(v) =>
+                        set(
+                          "featuring_artists",
+                          form.featuring_artists.filter((a) => a !== v),
+                        )
+                      }
+                      placeholder="Artist naam type karo, Enter dabao"
+                    />
+                  </div>
 
-                  {/* ─── FIXED: Actor Names ─── */}
-                  <SmallTagInput
-                    label="Actor / Cast Names (optional)"
-                    tags={form.actor_names}
-                    onChange={(v) => set("actor_names", v)}
-                    placeholder="Actor naam type karo, Enter dabao"
-                  />
+                  {/* ── ACTOR / CAST NAMES ── */}
+                  <div className="bg-purple-50 border border-purple-100 rounded-xl p-3">
+                    <EditTagInput
+                      label="Actor / Cast Names (optional)"
+                      tags={form.actor_names}
+                      onAdd={(v) =>
+                        set("actor_names", [...form.actor_names, v])
+                      }
+                      onRemove={(v) =>
+                        set(
+                          "actor_names",
+                          form.actor_names.filter((a) => a !== v),
+                        )
+                      }
+                      placeholder="Actor naam type karo, Enter dabao"
+                    />
+                  </div>
 
+                  {/* ── MOVIE NAME ── */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      <span className="flex items-center gap-1.5">
+                        <Film size={12} className="text-slate-400" /> Movie /
+                        Film Name
+                        <span className="font-normal normal-case text-slate-400 ml-1">
+                          (optional)
+                        </span>
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <Film
+                        size={14}
+                        className="absolute left-3 top-3 text-slate-400"
+                      />
+                      <input
+                        value={form.movie_name}
+                        onChange={(e) => set("movie_name", e.target.value)}
+                        placeholder="e.g. Pushpa 2, Animal, Jawan"
+                        className="w-full pl-8 p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Language & Genre */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -657,7 +712,7 @@ const EditModal = ({ song, onClose, onSaved }) => {
                         className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm bg-white"
                       >
                         <option value="">Select Genre</option>
-                        {GENRES.map((g) => (
+                        {genres.map((g) => (
                           <option key={g} value={g}>
                             {g}
                           </option>
@@ -666,32 +721,27 @@ const EditModal = ({ song, onClose, onSaved }) => {
                     </div>
                   </div>
 
-                  {form.genre && SUBGENRES[form.genre] && (
+                  {form.genre && currentSubgenres.length > 0 && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                         Sub-genre
                       </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {SUBGENRES[form.genre].map((sg) => (
-                          <button
-                            key={sg}
-                            type="button"
-                            onClick={() =>
-                              set("subgenre", form.subgenre === sg ? "" : sg)
-                            }
-                            className={`px-2.5 py-1 text-xs font-semibold rounded-full border transition-all ${
-                              form.subgenre === sg
-                                ? "bg-teal-500 text-white border-teal-500"
-                                : "bg-white text-slate-600 border-slate-300 hover:border-teal-400"
-                            }`}
-                          >
-                            {sg}
-                          </button>
+                      <select
+                        value={form.subgenre}
+                        onChange={(e) => set("subgenre", e.target.value)}
+                        className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm bg-white"
+                      >
+                        <option value="">Select Sub-genre (optional)</option>
+                        {currentSubgenres.map((sg) => (
+                          <option key={sg.value} value={sg.value}>
+                            {sg.text}
+                          </option>
                         ))}
-                      </div>
+                      </select>
                     </div>
                   )}
 
+                  {/* Status */}
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                       Status
@@ -718,10 +768,10 @@ const EditModal = ({ song, onClose, onSaved }) => {
                     </div>
                   </div>
 
+                  {/* Album Info */}
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                     <h4 className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
-                      <Disc3 size={13} className="text-teal-500" /> Album /
-                      Movie Info
+                      <Disc3 size={13} className="text-teal-500" /> Album Info
                     </h4>
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -761,9 +811,7 @@ const EditModal = ({ song, onClose, onSaved }) => {
                       value={form.lyrics}
                       onChange={(e) => set("lyrics", e.target.value)}
                       rows={12}
-                      placeholder={
-                        "[Verse 1]\nLyrics yahan...\n\n[Chorus]\n..."
-                      }
+                      placeholder="[Verse 1]\nLyrics yahan...\n\n[Chorus]\n..."
                       className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 focus:outline-none text-xs font-mono resize-y leading-relaxed"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">
@@ -819,7 +867,7 @@ const EditModal = ({ song, onClose, onSaved }) => {
                       />
                     </div>
                   </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-500">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-500 space-y-1">
                     <p>
                       <strong>ID:</strong> {song.id}
                     </p>
@@ -830,6 +878,27 @@ const EditModal = ({ song, onClose, onSaved }) => {
                     <p>
                       <strong>Release Date:</strong> {song.release_date || "—"}
                     </p>
+                    {form.featuring_artists.length > 0 && (
+                      <p>
+                        <strong>Featuring:</strong>{" "}
+                        {form.featuring_artists.join(", ")}
+                      </p>
+                    )}
+                    {form.actor_names.length > 0 && (
+                      <p>
+                        <strong>Cast:</strong> {form.actor_names.join(", ")}
+                      </p>
+                    )}
+                    {form.movie_name && (
+                      <p>
+                        <strong>Movie:</strong> {form.movie_name}
+                      </p>
+                    )}
+                    {form.album_name && (
+                      <p>
+                        <strong>Album:</strong> {form.album_name}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -858,11 +927,7 @@ const EditModal = ({ song, onClose, onSaved }) => {
             <button
               onClick={handleSave}
               disabled={saving || saved || !form.title || !form.primary_artist}
-              className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold text-white transition-all ${
-                saved
-                  ? "bg-green-500"
-                  : "bg-teal-500 hover:bg-teal-600 disabled:opacity-40"
-              }`}
+              className={`flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold text-white transition-all ${saved ? "bg-green-500" : "bg-teal-500 hover:bg-teal-600 disabled:opacity-40"}`}
             >
               {saving ? (
                 <>
@@ -968,6 +1033,21 @@ const SongEditAdmin = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
+      // ── DEBUG: Log first song's featuring_artists and actor_names ──
+      if (data && data.length > 0) {
+        console.log(
+          "FETCHED SONGS — sample featuring_artists:",
+          data[0].featuring_artists,
+          "type:",
+          typeof data[0].featuring_artists,
+        );
+        console.log(
+          "FETCHED SONGS — sample actor_names:",
+          data[0].actor_names,
+          "type:",
+          typeof data[0].actor_names,
+        );
+      }
       setSongs(data || []);
     } catch (e) {
       console.error("Fetch error:", e);
@@ -993,6 +1073,7 @@ const SongEditAdmin = () => {
         s.language,
         s.lyrics,
         s.actor_names,
+        s.movie_name,
       ].some((f) => f?.toLowerCase().includes(q));
     const matchStatus = statusFilter === "All" || s.status === statusFilter;
     return matchSearch && matchStatus;
@@ -1035,7 +1116,7 @@ const SongEditAdmin = () => {
               onClick={fetchSongs}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
             >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />{" "}
               Refresh
             </button>
           </div>
@@ -1053,7 +1134,7 @@ const SongEditAdmin = () => {
                   setSearchQuery(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Search by title, artist, album, lyrics, actors…"
+                placeholder="Search by title, artist, album, movie, actors, lyrics…"
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50"
               />
               {searchQuery && (
@@ -1076,11 +1157,7 @@ const SongEditAdmin = () => {
                     setStatusFilter(s);
                     setPage(1);
                   }}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                    statusFilter === s
-                      ? "bg-teal-500 text-white border-teal-500 shadow-sm"
-                      : "bg-white text-slate-500 border-slate-200 hover:border-teal-300"
-                  }`}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${statusFilter === s ? "bg-teal-500 text-white border-teal-500 shadow-sm" : "bg-white text-slate-500 border-slate-200 hover:border-teal-300"}`}
                 >
                   {s}
                 </button>
@@ -1126,107 +1203,119 @@ const SongEditAdmin = () => {
               </p>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {paginated.map((song) => (
-                <motion.div
-                  key={song.id}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
-                >
-                  <div className="flex items-start gap-3 p-4">
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={song.cover_url || ""}
-                        alt={song.title}
-                        className="w-16 h-16 rounded-xl object-cover border border-slate-100 bg-slate-100"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                        }}
-                      />
-                      {song.format === "Album" && (
-                        <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                          <Disc3 size={10} className="text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-slate-900 text-sm truncate leading-tight">
-                            {song.title}
-                          </h3>
-                          <p className="text-xs text-slate-500 truncate mt-0.5">
-                            {song.primary_artist}
-                          </p>
-                          {/* FIXED: featuring_artists properly display */}
-                          {song.featuring_artists && (
-                            <p className="text-[10px] text-slate-400 truncate">
-                              ft. {song.featuring_artists}
+              {paginated.map((song) => {
+                const featuringList = strToArray(song.featuring_artists);
+                const actorList = strToArray(song.actor_names);
+
+                return (
+                  <motion.div
+                    key={song.id}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden"
+                  >
+                    <div className="flex items-start gap-3 p-4">
+                      <div className="relative flex-shrink-0">
+                        <img
+                          src={song.cover_url || ""}
+                          alt={song.title}
+                          className="w-16 h-16 rounded-xl object-cover border border-slate-100 bg-slate-100"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                        {song.format === "Album" && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                            <Disc3 size={10} className="text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-bold text-slate-900 text-sm truncate leading-tight">
+                              {song.title}
+                            </h3>
+                            <p className="text-xs text-slate-600 truncate mt-0.5 font-medium">
+                              {song.primary_artist}
                             </p>
+
+                            {featuringList.length > 0 && (
+                              <p className="text-[10px] text-teal-600 truncate mt-0.5 flex items-center gap-1">
+                                <span className="font-semibold">ft.</span>{" "}
+                                {featuringList.join(", ")}
+                              </p>
+                            )}
+
+                            {song.movie_name && (
+                              <p className="text-[10px] text-purple-500 truncate flex items-center gap-1 mt-0.5">
+                                <Film size={9} /> {song.movie_name}
+                              </p>
+                            )}
+
+                            {actorList.length > 0 && (
+                              <p className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                                <User size={9} /> {actorList.join(", ")}
+                              </p>
+                            )}
+
+                            {song.album_name && (
+                              <p className="text-[10px] text-blue-500 truncate flex items-center gap-1 mt-0.5">
+                                <Disc3 size={9} /> {song.album_name}
+                              </p>
+                            )}
+                          </div>
+                          <StatusBadge status={song.status} />
+                        </div>
+
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {song.genre && (
+                            <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                              {song.genre}
+                            </span>
+                          )}
+                          {song.language && (
+                            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
+                              {song.language}
+                            </span>
                           )}
                         </div>
-                        <StatusBadge status={song.status} />
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {song.genre && (
-                          <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
-                            {song.genre}
+
+                        <div className="flex items-center gap-3 mt-2">
+                          <span
+                            className={`text-[10px] font-medium flex items-center gap-1 ${song.audio_url ? "text-green-600" : "text-red-400"}`}
+                          >
+                            <Music size={10} />{" "}
+                            {song.audio_url ? "Audio ✓" : "No Audio"}
                           </span>
-                        )}
-                        {song.language && (
-                          <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
-                            {song.language}
-                          </span>
-                        )}
-                        {song.album_name && (
-                          <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-medium truncate max-w-[100px]">
-                            {song.album_name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span
-                          className={`text-[10px] font-medium flex items-center gap-1 ${song.audio_url ? "text-green-600" : "text-red-400"}`}
-                        >
-                          <Music size={10} />{" "}
-                          {song.audio_url ? "Audio ✓" : "No Audio"}
-                        </span>
-                        {song.lyrics && (
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <FileText size={10} /> Lyrics
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-400 ml-auto">
-                          {new Date(song.created_at).toLocaleDateString(
-                            "en-IN",
-                            {
-                              day: "2-digit",
-                              month: "short",
-                              year: "2-digit",
-                            },
+                          {song.lyrics && (
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <FileText size={10} /> Lyrics
+                            </span>
                           )}
-                        </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-4 pb-4">
-                    <button
-                      onClick={() => setEditingSong(song)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold transition-colors border border-teal-100"
-                    >
-                      <Edit3 size={13} /> Edit
-                    </button>
-                    <button
-                      onClick={() => setDeletingSong(song)}
-                      className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 transition-colors border border-red-100"
-                      title="Delete"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
+
+                    <div className="flex border-t border-slate-100">
+                      <button
+                        onClick={() => setEditingSong(song)}
+                        className="flex-1 py-2.5 text-xs font-semibold text-teal-600 hover:bg-teal-50 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Edit3 size={13} /> Edit
+                      </button>
+                      <div className="w-px bg-slate-100" />
+                      <button
+                        onClick={() => setDeletingSong(song)}
+                        className="flex-1 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
 
             {totalPages > 1 && (
@@ -1234,38 +1323,27 @@ const SongEditAdmin = () => {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 disabled:opacity-30 hover:bg-slate-100 transition-colors"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
-                  ← Prev
+                  Prev
                 </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(
-                    (p) =>
-                      p === 1 || p === totalPages || Math.abs(p - page) <= 1,
-                  )
-                  .map((p, idx, arr) => (
-                    <React.Fragment key={p}>
-                      {idx > 0 && arr[idx - 1] !== p - 1 && (
-                        <span className="text-slate-300">…</span>
-                      )}
-                      <button
-                        onClick={() => setPage(p)}
-                        className={`w-9 h-9 rounded-xl text-sm font-bold transition-colors ${
-                          page === p
-                            ? "bg-teal-500 text-white"
-                            : "border border-slate-200 text-slate-600 hover:bg-slate-100"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    </React.Fragment>
-                  ))}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-9 h-9 rounded-lg text-sm font-bold transition-all ${page === p ? "bg-teal-500 text-white shadow-sm" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 disabled:opacity-30 hover:bg-slate-100 transition-colors"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
-                  Next →
+                  Next
                 </button>
               </div>
             )}
@@ -1276,16 +1354,17 @@ const SongEditAdmin = () => {
       <AnimatePresence>
         {editingSong && (
           <EditModal
+            key={editingSong.id}
             song={editingSong}
             onClose={() => setEditingSong(null)}
             onSaved={fetchSongs}
           />
         )}
       </AnimatePresence>
-
       <AnimatePresence>
         {deletingSong && (
           <DeleteConfirm
+            key={deletingSong.id}
             song={deletingSong}
             onClose={() => setDeletingSong(null)}
             onDeleted={fetchSongs}

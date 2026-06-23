@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -7,6 +7,7 @@ import {
   Users,
   Music,
   ChevronDown,
+  ChevronUp,
   Grid3x3,
   List,
   SkipBack,
@@ -15,32 +16,75 @@ import {
   VolumeX,
   X,
   Shuffle,
+  Film,
+  Disc3,
+  User,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-// ─── CONFIGURATION ───
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ─── UTILITIES ───
 const formatDuration = (val) => {
-  if (!val) return "0:00";
+  if (!val || !isFinite(val) || val <= 0) return "0:00";
   if (typeof val === "string") return val;
   const m = Math.floor(val / 60);
   const s = Math.floor(val % 60);
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 };
 
-const parseArtists = (artistStr) => {
-  if (!artistStr) return [];
-  return artistStr
+const parseArtists = (val) => {
+  if (Array.isArray(val))
+    return val.map((s) => String(s).trim()).filter(Boolean);
+  if (
+    val == null ||
+    val === "" ||
+    typeof val === "number" ||
+    typeof val === "boolean"
+  )
+    return [];
+  const str = String(val).trim();
+  if (str === "") return [];
+  return str
     .split(",")
     .map((a) => a.trim())
-    .filter(Boolean);
+    .filter((s) => s.length > 0);
 };
 
-// ─── SUB-COMPONENT: STICKY PLAYER ───
+const groupByAlbum = (songList) => {
+  const albumMap = {};
+  const singles = [];
+  songList.forEach((song) => {
+    if (song.albumName && song.albumName.trim() !== "") {
+      const key = song.albumName.trim().toLowerCase();
+      if (!albumMap[key]) {
+        albumMap[key] = {
+          albumName: song.albumName,
+          albumCoverUrl: song.albumCoverUrl || song.img,
+          primaryArtist: song.artist,
+          language: song.language,
+          genre: song.genre,
+          movieName: song.movieName,
+          tracks: [],
+        };
+      }
+      albumMap[key].tracks.push(song);
+      if (song.albumCoverUrl) albumMap[key].albumCoverUrl = song.albumCoverUrl;
+    } else {
+      singles.push(song);
+    }
+  });
+  const albums = Object.values(albumMap).map((album) => ({
+    ...album,
+    tracks: album.tracks.sort(
+      (a, b) => (a.trackNumber || 1) - (b.trackNumber || 1),
+    ),
+  }));
+  return { albums, singles };
+};
+
+// ─── STICKY PLAYER ───
 const StickyPlayer = ({
   song,
   isPlaying,
@@ -59,7 +103,7 @@ const StickyPlayer = ({
   onClose,
 }) => {
   if (!song) return null;
-
+  const featuringList = parseArtists(song.featuringArtists);
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -68,9 +112,8 @@ const StickyPlayer = ({
       className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-2xl border-t border-white/10 shadow-[0_-5px_30px_rgba(0,0,0,0.3)] z-[100]"
     >
       <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
-        {/* LEFT: Song Info */}
         <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
-          <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10">
+          <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10 flex-shrink-0">
             <img
               src={song.albumArt || "https://via.placeholder.com/50"}
               alt="Art"
@@ -81,11 +124,26 @@ const StickyPlayer = ({
             <h4 className="font-bold text-white truncate text-base leading-tight">
               {song.title}
             </h4>
-            <p className="text-xs text-gray-400 truncate mt-1">{song.artist}</p>
+            <p className="text-xs text-gray-400 truncate mt-0.5">
+              {song.artist}
+            </p>
+            {featuringList.length > 0 && (
+              <p className="text-xs text-gray-500 truncate">
+                ft. {featuringList.join(", ")}
+              </p>
+            )}
+            {song.movieName && (
+              <p className="text-[10px] text-purple-400 truncate flex items-center gap-1 mt-0.5">
+                <Film size={9} /> {song.movieName}
+              </p>
+            )}
+            {song.albumName && !song.movieName && (
+              <p className="text-[10px] text-blue-400 truncate flex items-center gap-1 mt-0.5">
+                <Disc3 size={9} /> {song.albumName}
+              </p>
+            )}
           </div>
         </div>
-
-        {/* CENTER: Controls */}
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
           <div className="flex items-center gap-4 md:gap-6 mb-2">
             <button
@@ -143,13 +201,11 @@ const StickyPlayer = ({
                   left: duration ? `${(currentTime / duration) * 100}%` : "0%",
                   marginLeft: "-6px",
                 }}
-              ></div>
+              />
             </div>
             <span className="w-10 font-mono">{formatDuration(duration)}</span>
           </div>
         </div>
-
-        {/* RIGHT: Volume & Close */}
         <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
           <div className="flex items-center gap-3 w-full justify-end">
             <button
@@ -200,11 +256,9 @@ const StickyPlayer = ({
   );
 };
 
-// ─── STYLES ───
 const TEXT_BLACK = "#0f172a";
 const BLUE_DARK = "#2563eb";
 
-// ─── DATA: LANGUAGE & GENRE FILTERS ───
 const LANGUAGE_OPTIONS = [
   "For You",
   "Hindi",
@@ -224,7 +278,6 @@ const LANGUAGE_OPTIONS = [
   "Odia",
   "Assamese",
 ];
-
 const GENRE_OPTIONS = [
   "All Genres",
   "Pop",
@@ -247,39 +300,35 @@ const GENRE_OPTIONS = [
   "World Music",
 ];
 
-// ─── REUSABLE DROPDOWN COMPONENT ───
-const FilterDropdown = ({ value, onChange, options, icon: Icon, label }) => {
+const FilterDropdown = ({ value, onChange, options, label }) => {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const ref = useRef(null);
-
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (ref.current && !ref.current.contains(event.target)) {
         setOpen(false);
+        setSearch("");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
+  const filtered = options.filter((opt) =>
+    opt.toLowerCase().includes(search.toLowerCase()),
+  );
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300 border shadow-sm select-none whitespace-nowrap ${
-          value === "For You" || value === "All Genres"
-            ? "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-            : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-blue-200 shadow-md"
-        }`}
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300 border shadow-sm select-none whitespace-nowrap ${value === "For You" || value === "All Genres" ? "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300" : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-blue-200 shadow-md"}`}
       >
-        {Icon && <Icon size={15} className="opacity-70" />}
         <span>{label || value}</span>
         <ChevronDown
           size={14}
           className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`}
         />
       </button>
-
       <AnimatePresence>
         {open && (
           <motion.div
@@ -289,29 +338,26 @@ const FilterDropdown = ({ value, onChange, options, icon: Icon, label }) => {
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="absolute top-full mt-2 right-0 bg-white rounded-xl shadow-2xl border border-slate-200 w-52 max-h-72 overflow-y-auto z-50"
           >
-            {/* Search Box */}
             <div className="sticky top-0 bg-white border-b border-slate-100 px-3 py-2">
               <input
                 type="text"
                 placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
                 className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 placeholder-slate-400"
                 onClick={(e) => e.stopPropagation()}
                 autoFocus
               />
             </div>
-
-            {options.map((opt) => (
+            {filtered.map((opt) => (
               <div
                 key={opt}
                 onClick={() => {
                   onChange(opt);
                   setOpen(false);
+                  setSearch("");
                 }}
-                className={`px-4 py-2.5 text-sm cursor-pointer transition-all duration-150 flex items-center justify-between ${
-                  value === opt
-                    ? "text-blue-600 font-bold bg-blue-50"
-                    : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                }`}
+                className={`px-4 py-2.5 text-sm cursor-pointer transition-all duration-150 flex items-center justify-between ${value === opt ? "text-blue-600 font-bold bg-blue-50" : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"}`}
               >
                 <span>{opt}</span>
                 {value === opt && (
@@ -319,6 +365,11 @@ const FilterDropdown = ({ value, onChange, options, icon: Icon, label }) => {
                 )}
               </div>
             ))}
+            {filtered.length === 0 && (
+              <p className="px-4 py-3 text-sm text-slate-400 text-center">
+                No results
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -326,7 +377,6 @@ const FilterDropdown = ({ value, onChange, options, icon: Icon, label }) => {
   );
 };
 
-// ─── CLICKABLE ARTIST NAME COMPONENT ───
 const ArtistLink = ({ name, className = "" }) => {
   const navigate = useNavigate();
   return (
@@ -342,17 +392,263 @@ const ArtistLink = ({ name, className = "" }) => {
   );
 };
 
+// ═══════════════════════════════════════════
+// ALBUM CARD
+// ═══════════════════════════════════════════
+const AlbumCard = ({
+  album,
+  index,
+  currentSong,
+  playing,
+  onPlayTrack,
+  onNavigateAlbum,
+  trackDurations,
+  fetchDurations,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const isActive =
+    currentSong && album.tracks.some((t) => t.id === currentSong.id);
+  const featuringList =
+    album.tracks.length > 0
+      ? parseArtists(album.tracks[0].featuringArtists)
+      : [];
+  const actors =
+    album.tracks.length > 0 ? parseArtists(album.tracks[0].actorNames) : [];
+
+  // Jab expand ho toh duration fetch karo
+  useEffect(() => {
+    if (expanded) {
+      fetchDurations(album.tracks);
+    }
+  }, [expanded, album.tracks, fetchDurations]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.04 }}
+      className="group"
+    >
+      <div
+        onClick={() => setExpanded(!expanded)}
+        className={`relative aspect-square rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-sm border cursor-pointer ${isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 group-hover:border-blue-400"} group-hover:shadow-xl transition-all duration-300`}
+      >
+        {!imgError && album.albumCoverUrl ? (
+          <img
+            src={album.albumCoverUrl}
+            alt={album.albumName}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+            <Disc3 size={48} className="text-blue-400" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
+          <motion.div
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayTrack(album.tracks[0], album.tracks, 0);
+            }}
+            className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl cursor-pointer bg-gradient-to-br from-blue-400 to-blue-600 text-white"
+          >
+            {isActive && playing ? (
+              <Pause size={20} className="text-white" />
+            ) : (
+              <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+            )}
+          </motion.div>
+        </div>
+        <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200 text-blue-600">
+          NEW
+        </div>
+        <div className="absolute top-2 right-2 bg-blue-600/90 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1">
+          <Disc3 size={9} /> {album.tracks.length}
+        </div>
+        {album.movieName && (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <span className="text-purple-200 text-[11px] font-semibold truncate flex items-center gap-1">
+              <Film size={9} /> {album.movieName}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="px-0.5">
+        <h3
+          className="font-bold text-sm truncate transition-colors leading-tight cursor-pointer hover:text-blue-600 text-slate-900"
+          onClick={() => onNavigateAlbum(album.albumName)}
+        >
+          {album.albumName}
+        </h3>
+        <p className="text-slate-500 text-xs truncate mt-1">
+          <ArtistLink
+            name={album.primaryArtist}
+            className="hover:text-blue-600 text-slate-500 text-xs"
+          />
+        </p>
+        {featuringList.length > 0 && (
+          <p className="text-[11px] text-teal-500 truncate mt-0.5 flex items-center gap-0.5 flex-wrap">
+            <span className="text-teal-400 font-semibold text-[10px]">ft.</span>
+            {featuringList.map((a, i) => (
+              <span key={a} className="flex items-center gap-0.5">
+                <ArtistLink
+                  name={a}
+                  className="hover:text-blue-600 text-teal-500 text-[11px]"
+                />
+                {i < featuringList.length - 1 && (
+                  <span className="text-teal-300 text-[11px]">,</span>
+                )}
+              </span>
+            ))}
+          </p>
+        )}
+        {album.movieName && (
+          <p className="text-[10px] text-purple-500 truncate mt-0.5 flex items-center gap-1">
+            <Film size={9} /> {album.movieName}
+          </p>
+        )}
+        {actors.length > 0 && (
+          <p className="text-[10px] text-slate-400 truncate mt-0.5 flex items-center gap-1">
+            <User size={9} /> {actors.join(", ")}
+          </p>
+        )}
+        <div className="flex gap-1 mt-1.5 flex-wrap">
+          {album.genre && (
+            <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
+              {album.genre}
+            </span>
+          )}
+          {album.language && (
+            <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium">
+              {album.language}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Expanded Track List with Duration ── */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden mt-3"
+          >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+              {album.tracks.map((track, i) => {
+                const isTrackActive = currentSong?.id === track.id;
+                const dur = trackDurations[track.id];
+                return (
+                  <motion.div
+                    key={track.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors group/row hover:bg-white ${isTrackActive ? "bg-blue-50" : ""} ${i < album.tracks.length - 1 ? "border-b border-slate-200" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlayTrack(track, album.tracks, i);
+                    }}
+                  >
+                    {/* Track # / Play */}
+                    <div className="w-7 flex items-center justify-center flex-shrink-0">
+                      {isTrackActive && playing ? (
+                        <Music
+                          size={13}
+                          className="text-blue-500 animate-pulse"
+                        />
+                      ) : (
+                        <>
+                          <span
+                            className={`text-xs font-semibold group-hover/row:hidden ${isTrackActive ? "text-blue-500" : "text-slate-400"}`}
+                          >
+                            {track.trackNumber || i + 1}
+                          </span>
+                          <Play
+                            size={13}
+                            className="text-blue-500 hidden group-hover/row:block"
+                            fill="currentColor"
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    {/* Title */}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`text-xs font-semibold truncate ${isTrackActive ? "text-blue-600" : "text-slate-800"}`}
+                      >
+                        {track.title}
+                      </p>
+                      {track.featuringArtists && (
+                        <p className="text-[10px] text-teal-500 truncate">
+                          ft. {track.featuringArtists}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Artist */}
+                    <p className="text-[10px] text-slate-500 truncate hidden sm:block max-w-[100px]">
+                      <ArtistLink
+                        name={track.artist}
+                        className="text-[10px] text-slate-500 hover:text-blue-600"
+                      />
+                    </p>
+
+                    {/* Movie */}
+                    {track.movieName && (
+                      <span className="text-[10px] text-purple-500 truncate hidden md:flex items-center gap-0.5 max-w-[80px]">
+                        <Film size={8} /> {track.movieName}
+                      </span>
+                    )}
+
+                    {/* ✅ DURATION — shows here */}
+                    <span
+                      className={`text-[10px] font-mono flex-shrink-0 w-10 text-right ${dur ? "text-slate-400" : "text-slate-300"}`}
+                    >
+                      {dur ? formatDuration(dur) : "—"}
+                    </span>
+                  </motion.div>
+                );
+              })}
+              <div className="px-3 py-2 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
+                <p className="text-[10px] text-slate-400 font-medium">
+                  {album.tracks.length} track
+                  {album.tracks.length > 1 ? "s" : ""}
+                </p>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(false);
+                  }}
+                  className="text-[10px] text-blue-500 font-bold hover:underline flex items-center gap-0.5"
+                >
+                  <ChevronUp size={10} /> Collapse
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
 // ─── MAIN COMPONENT ───
 const NewRelease = () => {
   const navigate = useNavigate();
   const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [activeLanguage, setActiveLanguage] = useState("For You");
   const [activeGenre, setActiveGenre] = useState("All Genres");
   const [viewMode, setViewMode] = useState("grid");
-
-  // --- PLAYER STATES ---
   const [playing, setPlaying] = useState(false);
   const [currentSong, setCurrentSong] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(null);
@@ -362,10 +658,51 @@ const NewRelease = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [currentList, setCurrentList] = useState([]);
-
   const audioRef = useRef(null);
 
-  // Fetch Data
+  // ✅ Track durations cache — album expand hone pe fetch hoti hain
+  const [trackDurations, setTrackDurations] = useState({});
+
+  // ✅ Duration fetch function — lightweight, only metadata load karta hai
+  const fetchDurations = useCallback(
+    (tracks) => {
+      tracks.forEach((track) => {
+        if (trackDurations[track.id] || !track.audioUrl) return;
+        try {
+          const tempAudio = new Audio();
+          tempAudio.crossOrigin = "anonymous";
+          tempAudio.preload = "metadata";
+          tempAudio.src = track.audioUrl;
+          const onMeta = () => {
+            if (
+              tempAudio.duration &&
+              isFinite(tempAudio.duration) &&
+              tempAudio.duration > 0
+            ) {
+              setTrackDurations((prev) => ({
+                ...prev,
+                [track.id]: tempAudio.duration,
+              }));
+            }
+            cleanup();
+          };
+          const onErr = () => cleanup();
+          const cleanup = () => {
+            tempAudio.removeEventListener("loadedmetadata", onMeta);
+            tempAudio.removeEventListener("error", onErr);
+            tempAudio.removeAttribute("src");
+            tempAudio.load();
+          };
+          tempAudio.addEventListener("loadedmetadata", onMeta);
+          tempAudio.addEventListener("error", onErr);
+        } catch (e) {
+          /* ignore */
+        }
+      });
+    },
+    [trackDurations],
+  );
+
   useEffect(() => {
     const fetchSongs = async () => {
       setLoading(true);
@@ -375,24 +712,27 @@ const NewRelease = () => {
           .select("*")
           .eq("status", "Published")
           .order("created_at", { ascending: false });
-
         if (error) throw error;
-
-        const formattedSongs = data.map((song) => ({
-          id: song.id,
-          title: song.title,
-          artist: song.primary_artist,
-          featuringArtists: song.featuring_artists || "",
-          img: song.cover_url || "https://via.placeholder.com/300",
-          audioUrl: song.audio_url,
-          language: song.language || "",
-          genre: song.genre || "",
-          albumName: song.album_name || "",
-          albumCoverUrl: song.album_cover_url || song.cover_url || "",
-          playCount: song.play_count || 0,
-        }));
-
-        setSongs(formattedSongs);
+        setSongs(
+          data.map((song) => ({
+            id: song.id,
+            title: song.title,
+            artist: song.primary_artist,
+            featuringArtists: song.featuring_artists || "",
+            actorNames: song.actor_names || "",
+            movieName: song.movie_name || "",
+            img: song.cover_url || "https://via.placeholder.com/300",
+            audioUrl: song.audio_url,
+            language: song.language || "",
+            genre: song.genre || "",
+            subgenre: song.subgenre || "",
+            albumName: song.album_name || "",
+            albumCoverUrl: song.album_cover_url || song.cover_url || "",
+            format: song.format || "Single",
+            trackNumber: song.track_number || 1,
+            playCount: song.play_count || 0,
+          })),
+        );
       } catch (error) {
         console.error("Error fetching songs:", error);
       } finally {
@@ -402,32 +742,56 @@ const NewRelease = () => {
     fetchSongs();
   }, []);
 
-  // Filter Logic
   const filteredSongs = songs.filter((song) => {
-    const songLang = (song.language || "").toLowerCase().trim();
-    const activeLang = activeLanguage.toLowerCase().trim();
-    const matchesLanguage = activeLang === "for you" || songLang === activeLang;
-
-    const songGen = (song.genre || "").toLowerCase().trim();
-    const activeGen = activeGenre.toLowerCase().trim();
-    const matchesGenre = activeGen === "all genres" || songGen === activeGen;
-
+    const matchesLanguage =
+      activeLanguage.toLowerCase().trim() === "for you" ||
+      (song.language || "").toLowerCase().trim() ===
+        activeLanguage.toLowerCase().trim();
+    const matchesGenre =
+      activeGenre.toLowerCase().trim() === "all genres" ||
+      (song.genre || "").toLowerCase().trim() ===
+        activeGenre.toLowerCase().trim();
     return matchesLanguage && matchesGenre;
   });
 
-  // --- AUDIO SYSTEM ---
+  const { albums, singles } = groupByAlbum(filteredSongs);
+
+  // ✅ FIXED: Audio setup with crossOrigin for CORS + proper metadata
   useEffect(() => {
     const audio = new Audio();
+    audio.crossOrigin = "anonymous";
+    audio.preload = "auto";
     audioRef.current = audio;
+
     audio.addEventListener("timeupdate", () =>
       setCurrentTime(audio.currentTime),
     );
-    audio.addEventListener("loadedmetadata", () => setDuration(audio.duration));
+    audio.addEventListener("loadedmetadata", () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setDuration(audio.duration);
+        // Cache this duration too
+        if (currentSong?.id) {
+          setTrackDurations((prev) => ({
+            ...prev,
+            [currentSong.id]: audio.duration,
+          }));
+        }
+      }
+    });
     audio.addEventListener("play", () => setPlaying(true));
     audio.addEventListener("pause", () => setPlaying(false));
+    // ✅ Handle waiting state — some browsers need this
+    audio.addEventListener("waiting", () => {
+      // Could show a loading indicator if needed
+    });
+    audio.addEventListener("canplay", () => {
+      // Audio is ready to play
+    });
+
     return () => {
       audio.pause();
-      audio.src = "";
+      audio.removeAttribute("src");
+      audio.load();
     };
   }, []);
 
@@ -438,29 +802,72 @@ const NewRelease = () => {
     }
   }, [volume, isMuted]);
 
+  // ✅ FIXED: handleNext with proper ref to avoid stale closure
+  const handleNextRef = useRef(handleNext);
+  handleNextRef.current = handleNext;
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const handleEnded = () => handleNext();
-    audio.addEventListener("ended", handleEnded);
-    return () => audio.removeEventListener("ended", handleEnded);
-  }, [currentList, currentIndex, isShuffle]);
+    const onEnded = () => handleNextRef.current();
+    audio.addEventListener("ended", onEnded);
+    return () => audio.removeEventListener("ended", onEnded);
+  }, []);
 
+  // ✅ FIXED: Robust playSong — handles async loading properly
   const playSong = (song) => {
-    if (!song) return;
+    if (!song || !song.audioUrl) {
+      console.warn("No audio URL for song:", song?.title);
+      return;
+    }
     const audio = audioRef.current;
-    if (currentSong?.id !== song.id) {
+    const isNewSong = currentSong?.id !== song.id;
+
+    if (isNewSong) {
       setCurrentSong(song);
+      setDuration(0);
+      setCurrentTime(0);
       audio.src = song.audioUrl;
       audio.load();
     }
-    audio
-      .play()
-      .then(() => setPlaying(true))
-      .catch((e) => console.error(e));
+
+    // Try to play — if not ready yet, wait for canplay
+    const tryPlay = () => {
+      const promise = audio.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => setPlaying(true))
+          .catch((err) => {
+            if (err.name === "NotAllowedError") {
+              console.warn("Autoplay blocked by browser");
+            } else if (err.name === "AbortError") {
+              // Song changed before play could start, ignore
+            } else {
+              console.error("Play error:", err);
+            }
+          });
+      }
+    };
+
+    if (audio.readyState >= 3) {
+      // HAVE_FUTURE_DATA or better — can play immediately
+      tryPlay();
+    } else {
+      // Wait for canplay event
+      const onCanPlay = () => {
+        audio.removeEventListener("canplay", onCanPlay);
+        tryPlay();
+      };
+      audio.addEventListener("canplay", onCanPlay, { once: true });
+      // Fallback: if canplay doesn't fire within 3s, try anyway
+      setTimeout(() => {
+        audio.removeEventListener("canplay", onCanPlay);
+        if (!playing) tryPlay();
+      }, 3000);
+    }
   };
 
-  const handleNext = () => {
+  function handleNext() {
     if (currentList.length === 0 || currentIndex === null) return;
     let nextIndex;
     if (isShuffle) {
@@ -472,15 +879,15 @@ const NewRelease = () => {
     }
     setCurrentIndex(nextIndex);
     playSong(currentList[nextIndex]);
-  };
+  }
 
-  const handlePrev = () => {
+  function handlePrev() {
     if (currentList.length === 0 || currentIndex === null) return;
     const prevIndex =
       (currentIndex - 1 + currentList.length) % currentList.length;
     setCurrentIndex(prevIndex);
     playSong(currentList[prevIndex]);
-  };
+  }
 
   const handlePlayPause = (song) => {
     const audio = audioRef.current;
@@ -493,9 +900,8 @@ const NewRelease = () => {
   };
 
   const handleSongClick = (index, song, list) => {
-    if (currentSong?.id === song.id) {
-      handlePlayPause(song);
-    } else {
+    if (currentSong?.id === song.id) handlePlayPause(song);
+    else {
       setCurrentList(list);
       setCurrentIndex(index);
       playSong(song);
@@ -508,51 +914,49 @@ const NewRelease = () => {
       setCurrentTime(time);
     }
   };
-
   const handleClosePlayer = () => {
     setPlaying(false);
     setCurrentSong(null);
+    setDuration(0);
+    setCurrentTime(0);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
   };
-
   const toggleMute = () => setIsMuted(!isMuted);
   const handleVolumeChange = (v) => {
     setVolume(v);
     setIsMuted(v === 0);
   };
 
-  // ─── HANDLE SONG CARD CLICK → Go to Album Detail ───
   const handleCardClick = (song) => {
-    if (song.albumName) {
+    if (song.albumName)
       navigate(`/album/${encodeURIComponent(song.albumName)}`);
-    } else {
-      const idx = filteredSongs.findIndex((s) => s.id === song.id);
-      handleSongClick(idx, song, filteredSongs);
+    else {
+      const idx = singles.findIndex((s) => s.id === song.id);
+      if (idx !== -1) handleSongClick(idx, song, singles);
     }
   };
 
-  // ─── HANDLE PLAY BUTTON ON CARD → Play directly (don't navigate) ───
   const handlePlayButtonClick = (e, index, song, list) => {
     e.stopPropagation();
     handleSongClick(index, song, list);
   };
-
-  // Build all artist names for a song
-  const getAllArtists = (song) => {
-    const artists = [song.artist];
-    if (song.featuringArtists) {
-      const feats = parseArtists(song.featuringArtists);
-      artists.push(...feats);
-    }
-    return [...new Set(artists)];
+  const handleAlbumTrackPlay = (track, trackList, trackIndex) => {
+    handleSongClick(trackIndex, track, trackList);
+  };
+  const getActorNames = (song) => parseArtists(song.actorNames);
+  const getFeaturingArtists = (song) => parseArtists(song.featuringArtists);
+  const getMovieOrAlbum = (song) => {
+    if (song.movieName) return { type: "movie", name: song.movieName };
+    if (song.albumName) return { type: "album", name: song.albumName };
+    return null;
   };
 
   return (
-    <div className="w-full min-h-screen text-slate-900 pt-6 pb-20 px-4 md:px-8 relative overflow-hidden bg-white">
-      {/* --- HEADER SECTION --- */}
+    <div className="w-full min-h-screen text-slate-900 pt-6 pb-32 px-4 md:px-8 relative overflow-hidden bg-white">
+      {/* ─── HEADER ─── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
         <div className="flex flex-col gap-4 w-full md:w-auto">
           <div>
@@ -564,9 +968,15 @@ const NewRelease = () => {
             </h1>
             <p className="text-slate-500 text-sm md:text-base">
               Fresh tracks and trending hits just for you.
+              {albums.length > 0 && (
+                <span className="text-blue-500 font-medium">
+                  {" "}
+                  {albums.length} album{albums.length !== 1 ? "s" : ""},{" "}
+                  {singles.length} single{singles.length !== 1 ? "s" : ""}
+                </span>
+              )}
             </p>
           </div>
-
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 w-fit">
             <Link
               to="/topartist"
@@ -585,42 +995,27 @@ const NewRelease = () => {
             </Link>
           </div>
         </div>
-
-        {/* ─── FILTER BAR: View Toggle + Language Dropdown + Genre Dropdown ─── */}
         <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
-          {/* View Mode Toggle */}
           <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm flex-shrink-0">
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 rounded-lg transition-all duration-200 ${
-                viewMode === "grid"
-                  ? "bg-blue-100 text-blue-700 shadow-sm"
-                  : "text-gray-400 hover:text-gray-600"
-              }`}
+              className={`p-2 rounded-lg transition-all duration-200 ${viewMode === "grid" ? "bg-blue-100 text-blue-700 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
             >
               <Grid3x3 size={16} />
             </button>
             <button
               onClick={() => setViewMode("table")}
-              className={`p-2 rounded-lg transition-all duration-200 ${
-                viewMode === "table"
-                  ? "bg-blue-100 text-blue-700 shadow-sm"
-                  : "text-gray-400 hover:text-gray-600"
-              }`}
+              className={`p-2 rounded-lg transition-all duration-200 ${viewMode === "table" ? "bg-blue-100 text-blue-700 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}
             >
               <List size={16} />
             </button>
           </div>
-
-          {/* Language Dropdown */}
           <FilterDropdown
             value={activeLanguage}
             onChange={setActiveLanguage}
             options={LANGUAGE_OPTIONS}
             label={activeLanguage}
           />
-
-          {/* Genre Dropdown */}
           <FilterDropdown
             value={activeGenre}
             onChange={setActiveGenre}
@@ -630,10 +1025,10 @@ const NewRelease = () => {
         </div>
       </div>
 
-      {/* Content Area */}
+      {/* ─── CONTENT ─── */}
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
         </div>
       ) : (
         <>
@@ -651,46 +1046,60 @@ const NewRelease = () => {
             </div>
           ) : (
             <div className="flex flex-col h-full">
-              {/* ─── GRID VIEW ─── */}
+              {/* ═══════ GRID VIEW ═══════ */}
               {viewMode === "grid" && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pb-10">
-                  {filteredSongs.map((song, index) => {
+                  {albums.map((album, i) => (
+                    <AlbumCard
+                      key={album.albumName.toLowerCase()}
+                      album={album}
+                      index={i}
+                      currentSong={currentSong}
+                      playing={playing}
+                      onPlayTrack={handleAlbumTrackPlay}
+                      onNavigateAlbum={(name) =>
+                        navigate(`/album/${encodeURIComponent(name)}`)
+                      }
+                      trackDurations={trackDurations}
+                      fetchDurations={fetchDurations}
+                    />
+                  ))}
+
+                  {singles.map((song, index) => {
                     const isActive = currentSong?.id === song.id;
-                    const allArtists = getAllArtists(song);
+                    const featuringList = getFeaturingArtists(song);
+                    const actors = getActorNames(song);
+                    const movieOrAlbum = getMovieOrAlbum(song);
+
                     return (
                       <motion.div
                         key={song.id}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: index * 0.05 }}
+                        transition={{
+                          duration: 0.4,
+                          delay: (albums.length + index) * 0.04,
+                        }}
                         className="group cursor-pointer"
                         onClick={() => handleCardClick(song)}
                       >
                         <div
-                          className={`relative aspect-square rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-sm border ${
-                            isActive
-                              ? "border-blue-500 ring-2 ring-blue-200"
-                              : "border-slate-200 group-hover:border-blue-400"
-                          } group-hover:shadow-xl transition-all duration-300`}
+                          className={`relative aspect-square rounded-xl overflow-hidden mb-3 bg-slate-100 shadow-sm border ${isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 group-hover:border-blue-400"} group-hover:shadow-xl transition-all duration-300`}
                         >
                           <img
                             src={song.img}
                             alt={song.title}
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                            onError={(e) => {
+                              e.target.src = "https://via.placeholder.com/300";
+                            }}
                           />
-
-                          {/* Hover Play Button */}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
                             <motion.div
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
                               onClick={(e) =>
-                                handlePlayButtonClick(
-                                  e,
-                                  index,
-                                  song,
-                                  filteredSongs,
-                                )
+                                handlePlayButtonClick(e, index, song, singles)
                               }
                               className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl cursor-pointer bg-gradient-to-br from-blue-400 to-blue-600 text-white"
                             >
@@ -701,67 +1110,73 @@ const NewRelease = () => {
                               )}
                             </motion.div>
                           </div>
-
-                          {/* NEW Badge */}
-                          <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200 text-blue-600">
+                          <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200 text-blue-600">
                             NEW
                           </div>
-
-                          {/* Album Name Badge */}
-                          {song.albumName && (
-                            <div
-                              className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(
-                                  `/album/${encodeURIComponent(song.albumName)}`,
-                                );
-                              }}
-                            >
-                              <span className="text-white text-[11px] font-semibold truncate block hover:underline">
-                                {song.albumName}
+                          {movieOrAlbum && movieOrAlbum.type === "movie" && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                              <span className="text-purple-200 text-[11px] font-semibold truncate flex items-center gap-1">
+                                <Film size={9} /> {movieOrAlbum.name}
                               </span>
                             </div>
                           )}
                         </div>
-
-                        <div className="px-1">
+                        <div className="px-0.5">
                           <h3
-                            className={`font-bold text-base truncate transition-colors ${
-                              isActive
-                                ? "text-blue-600"
-                                : "group-hover:text-blue-600 text-slate-900"
-                            }`}
+                            className={`font-bold text-sm truncate transition-colors leading-tight ${isActive ? "text-blue-600" : "group-hover:text-blue-600 text-slate-900"}`}
                           >
                             {song.title}
                           </h3>
-
-                          <p className="text-slate-500 text-sm truncate mt-1 flex items-center gap-0.5 flex-wrap">
-                            {allArtists.map((a, i) => (
-                              <span
-                                key={a}
-                                className="flex items-center gap-0.5"
-                              >
-                                <ArtistLink
-                                  name={a}
-                                  className="hover:text-blue-600 text-slate-500"
-                                />
-                                {i < allArtists.length - 1 && (
-                                  <span className="text-slate-300 text-xs">
-                                    ,
-                                  </span>
-                                )}
-                              </span>
-                            ))}
+                          <p className="text-slate-500 text-xs truncate mt-1">
+                            <ArtistLink
+                              name={song.artist}
+                              className="hover:text-blue-600 text-slate-500 text-xs"
+                            />
                           </p>
-
-                          <div className="flex gap-2 mt-1">
-                            <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                              {song.genre || "Unknown"}
-                            </span>
-                            <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                              {song.language || "Unknown"}
-                            </span>
+                          {featuringList.length > 0 && (
+                            <p className="text-[11px] text-teal-500 truncate mt-0.5 flex items-center gap-0.5 flex-wrap">
+                              <span className="text-teal-400 font-semibold text-[10px]">
+                                ft.
+                              </span>
+                              {featuringList.map((a, i) => (
+                                <span
+                                  key={a}
+                                  className="flex items-center gap-0.5"
+                                >
+                                  <ArtistLink
+                                    name={a}
+                                    className="hover:text-blue-600 text-teal-500 text-[11px]"
+                                  />
+                                  {i < featuringList.length - 1 && (
+                                    <span className="text-teal-300 text-[11px]">
+                                      ,
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                            </p>
+                          )}
+                          {movieOrAlbum && movieOrAlbum.type === "movie" && (
+                            <p className="text-[10px] text-purple-500 truncate mt-0.5 flex items-center gap-1">
+                              <Film size={9} /> {movieOrAlbum.name}
+                            </p>
+                          )}
+                          {actors.length > 0 && (
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5 flex items-center gap-1">
+                              <User size={9} /> {actors.join(", ")}
+                            </p>
+                          )}
+                          <div className="flex gap-1 mt-1.5 flex-wrap">
+                            {song.genre && (
+                              <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
+                                {song.genre}
+                              </span>
+                            )}
+                            {song.language && (
+                              <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-medium">
+                                {song.language}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </motion.div>
@@ -770,145 +1185,321 @@ const NewRelease = () => {
                 </div>
               )}
 
-              {/* ─── TABLE VIEW ─── */}
+              {/* ═══════ TABLE VIEW ═══════ */}
               {viewMode === "table" && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-slate-200">
                       <thead className="bg-slate-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-16">
-                            Cover
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-14">
+                            #
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            Release Info
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            Song
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">
-                            Album
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">
+                            Artists
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            Movie / Album
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">
+                            Cast
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                             Genre
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">
                             Language
-                          </th>
-                          <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            Action
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-slate-200">
-                        {filteredSongs.map((song, index) => {
+                      <tbody className="bg-white divide-y divide-slate-100">
+                        {albums.map((album) => (
+                          <React.Fragment key={album.albumName.toLowerCase()}>
+                            <tr
+                              className="bg-blue-50/70 hover:bg-blue-50 cursor-pointer"
+                              onClick={() =>
+                                navigate(
+                                  `/album/${encodeURIComponent(album.albumName)}`,
+                                )
+                              }
+                            >
+                              <td colSpan={7} className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 rounded-lg overflow-hidden border border-blue-200 flex-shrink-0 shadow-sm">
+                                    <img
+                                      src={
+                                        album.albumCoverUrl ||
+                                        "https://via.placeholder.com/40"
+                                      }
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        e.target.src =
+                                          "https://via.placeholder.com/40";
+                                      }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                    Album
+                                  </span>
+                                  <span className="text-sm font-bold text-blue-800 hover:underline">
+                                    {album.albumName}
+                                  </span>
+                                  <span className="text-xs text-blue-500 font-medium">
+                                    — {album.primaryArtist}
+                                  </span>
+                                  <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-semibold">
+                                    {album.tracks.length} tracks
+                                  </span>
+                                  {album.genre && (
+                                    <span className="text-[10px] text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded font-medium">
+                                      {album.genre}
+                                    </span>
+                                  )}
+                                  {album.movieName && (
+                                    <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                                      <Film size={8} /> {album.movieName}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {album.tracks.map((song, idx) => {
+                              const isActive = currentSong?.id === song.id;
+                              const fList = getFeaturingArtists(song);
+                              const aList = getActorNames(song);
+                              const dur = trackDurations[song.id];
+                              return (
+                                <tr
+                                  key={song.id}
+                                  className={`hover:bg-slate-50 transition-colors cursor-pointer ${isActive ? "bg-blue-50/50" : ""}`}
+                                  onClick={() =>
+                                    handleSongClick(idx, song, album.tracks)
+                                  }
+                                >
+                                  <td className="px-4 py-2.5 whitespace-nowrap">
+                                    <div className="relative w-10 h-10">
+                                      <img
+                                        className="w-10 h-10 rounded-lg object-cover shadow-sm"
+                                        src={song.img}
+                                        alt=""
+                                        onError={(e) => {
+                                          e.target.src =
+                                            "https://via.placeholder.com/40";
+                                        }}
+                                      />
+                                      {isActive && playing && (
+                                        <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
+                                          <Music
+                                            size={12}
+                                            className="text-white animate-pulse"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2.5 max-w-[180px]">
+                                    <div
+                                      className={`text-sm font-semibold truncate ${isActive ? "text-blue-600" : "text-slate-900"}`}
+                                    >
+                                      {song.title}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400">
+                                      Track {song.trackNumber || idx + 1}
+                                      {dur ? ` · ${formatDuration(dur)}` : ""}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2.5 hidden md:table-cell max-w-[200px]">
+                                    <ArtistLink
+                                      name={song.artist}
+                                      className="text-xs text-slate-700 hover:text-blue-600 font-medium"
+                                    />
+                                    {fList.length > 0 && (
+                                      <div className="text-[10px] text-teal-500 truncate mt-0.5">
+                                        <span className="font-semibold text-teal-400">
+                                          ft.
+                                        </span>{" "}
+                                        {fList.join(", ")}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5 max-w-[180px]">
+                                    <span className="text-[10px] text-slate-300">
+                                      —
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 hidden sm:table-cell max-w-[150px]">
+                                    {aList.length > 0 ? (
+                                      <span className="text-xs text-slate-500 truncate flex items-center gap-1">
+                                        <User
+                                          size={10}
+                                          className="text-slate-400 flex-shrink-0"
+                                        />
+                                        {aList.slice(0, 2).join(", ")}
+                                        {aList.length > 2 &&
+                                          ` +${aList.length - 2}`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-slate-300">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5 whitespace-nowrap">
+                                    {song.genre ? (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        {song.genre}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-slate-300">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5 whitespace-nowrap hidden sm:table-cell">
+                                    {song.language ? (
+                                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">
+                                        {song.language}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-slate-300">
+                                        —
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
+                        ))}
+                        {singles.map((song, index) => {
                           const isActive = currentSong?.id === song.id;
-                          const allArtists = getAllArtists(song);
+                          const featuringList = getFeaturingArtists(song);
+                          const actors = getActorNames(song);
+                          const movieOrAlbum = getMovieOrAlbum(song);
                           return (
                             <tr
                               key={song.id}
-                              className={`hover:bg-slate-50 transition-colors cursor-pointer ${
-                                isActive ? "bg-blue-50" : ""
-                              }`}
+                              className={`hover:bg-slate-50 transition-colors cursor-pointer ${isActive ? "bg-blue-50" : ""}`}
+                              onClick={() => handleCardClick(song)}
                             >
-                              <td
-                                className="px-6 py-4 whitespace-nowrap"
-                                onClick={() => handleCardClick(song)}
-                              >
-                                <img
-                                  className="h-12 w-12 rounded-lg object-cover shadow-sm"
-                                  src={song.img}
-                                  alt=""
-                                />
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="relative w-10 h-10">
+                                  <img
+                                    className="w-10 h-10 rounded-lg object-cover shadow-sm"
+                                    src={song.img}
+                                    alt=""
+                                    onError={(e) => {
+                                      e.target.src =
+                                        "https://via.placeholder.com/40";
+                                    }}
+                                  />
+                                  {isActive && playing && (
+                                    <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
+                                      <Music
+                                        size={12}
+                                        className="text-white animate-pulse"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                               </td>
-                              <td
-                                className="px-6 py-4"
-                                onClick={() => handleCardClick(song)}
-                              >
+                              <td className="px-4 py-3 max-w-[180px]">
                                 <div
-                                  className={`text-sm font-medium ${
-                                    isActive
-                                      ? "text-blue-600"
-                                      : "text-slate-900"
-                                  }`}
+                                  className={`text-sm font-semibold truncate ${isActive ? "text-blue-600" : "text-slate-900"}`}
                                 >
                                   {song.title}
                                 </div>
-                                <div className="text-sm text-slate-500 flex items-center gap-0.5 flex-wrap mt-0.5">
-                                  {allArtists.map((a, i) => (
-                                    <span
-                                      key={a}
-                                      className="flex items-center gap-0.5"
-                                    >
-                                      <ArtistLink
-                                        name={a}
-                                        className="text-sm text-slate-500"
-                                      />
-                                      {i < allArtists.length - 1 && (
-                                        <span className="text-slate-300">
-                                          ,
-                                        </span>
-                                      )}
-                                    </span>
-                                  ))}
-                                </div>
                               </td>
-                              <td
-                                className="px-6 py-4 whitespace-nowrap hidden md:table-cell"
-                                onClick={() => handleCardClick(song)}
-                              >
-                                {song.albumName ? (
+                              <td className="px-4 py-3 hidden md:table-cell max-w-[200px]">
+                                <ArtistLink
+                                  name={song.artist}
+                                  className="text-xs text-slate-700 hover:text-blue-600 font-medium"
+                                />
+                                {featuringList.length > 0 && (
+                                  <div className="text-[10px] text-teal-500 truncate mt-0.5">
+                                    <span className="font-semibold text-teal-400">
+                                      ft.
+                                    </span>{" "}
+                                    {featuringList.join(", ")}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 max-w-[180px]">
+                                {movieOrAlbum ? (
                                   <span
+                                    className={`text-xs font-medium truncate flex items-center gap-1 ${movieOrAlbum.type === "movie" ? "text-purple-600" : "text-blue-600 hover:underline cursor-pointer"}`}
                                     onClick={(e) => {
-                                      e.stopPropagation();
-                                      navigate(
-                                        `/album/${encodeURIComponent(song.albumName)}`,
-                                      );
+                                      if (movieOrAlbum.type === "album") {
+                                        e.stopPropagation();
+                                        navigate(
+                                          `/album/${encodeURIComponent(movieOrAlbum.name)}`,
+                                        );
+                                      }
                                     }}
-                                    className="text-sm text-blue-600 hover:underline cursor-pointer"
                                   >
-                                    {song.albumName}
+                                    {movieOrAlbum.type === "movie" ? (
+                                      <Film
+                                        size={10}
+                                        className="flex-shrink-0"
+                                      />
+                                    ) : (
+                                      <Disc3
+                                        size={10}
+                                        className="flex-shrink-0"
+                                      />
+                                    )}
+                                    <span className="truncate">
+                                      {movieOrAlbum.name}
+                                    </span>
                                   </span>
                                 ) : (
-                                  <span className="text-sm text-slate-400">
+                                  <span className="text-xs text-slate-300">
                                     —
                                   </span>
                                 )}
                               </td>
-                              <td
-                                className="px-6 py-4 whitespace-nowrap"
-                                onClick={() => handleCardClick(song)}
-                              >
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                  {song.genre || "Unknown"}
-                                </span>
-                              </td>
-                              <td
-                                className="px-6 py-4 whitespace-nowrap"
-                                onClick={() => handleCardClick(song)}
-                              >
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">
-                                  {song.language || "Unknown"}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <button
-                                  onClick={(e) =>
-                                    handlePlayButtonClick(
-                                      e,
-                                      index,
-                                      song,
-                                      filteredSongs,
-                                    )
-                                  }
-                                  className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors"
-                                >
-                                  {isActive && playing ? (
-                                    <Pause size={14} />
-                                  ) : (
-                                    <Play size={14} />
-                                  )}{" "}
-                                  <span>
-                                    {isActive && playing ? "Pause" : "Play"}
+                              <td className="px-4 py-3 hidden sm:table-cell max-w-[150px]">
+                                {actors.length > 0 ? (
+                                  <span className="text-xs text-slate-500 truncate flex items-center gap-1">
+                                    <User
+                                      size={10}
+                                      className="text-slate-400 flex-shrink-0"
+                                    />
+                                    {actors.slice(0, 2).join(", ")}
+                                    {actors.length > 2 &&
+                                      ` +${actors.length - 2}`}
                                   </span>
-                                </button>
+                                ) : (
+                                  <span className="text-xs text-slate-300">
+                                    —
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {song.genre ? (
+                                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                    {song.genre}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-300">
+                                    —
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
+                                {song.language ? (
+                                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-600">
+                                    {song.language}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-300">
+                                    —
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -923,7 +1514,6 @@ const NewRelease = () => {
         </>
       )}
 
-      {/* --- STICKY PLAYER --- */}
       <AnimatePresence>
         {currentSong && (
           <StickyPlayer
@@ -948,7 +1538,7 @@ const NewRelease = () => {
           />
         )}
       </AnimatePresence>
-    </div>  
+    </div>
   );
 };
 

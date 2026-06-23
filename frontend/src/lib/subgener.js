@@ -748,6 +748,32 @@ export const getSubgenres = (genre) => {
   return subgenres[genre] || [];
 };
 
+export function getSubgenreLabel(subgenreValue, parentGenre) {
+  if (!subgenreValue) return null;
+
+  // If value is not a number (already text), return as is
+  if (isNaN(subgenreValue)) return subgenreValue;
+
+  const searchId = String(subgenreValue); // Convert ID to String for comparison
+
+  // 1. Try finding in the specific parent genre first (Faster)
+  if (parentGenre && subgenres[parentGenre]) {
+    const found = subgenres[parentGenre].find((g) => g.value === searchId);
+    if (found) return found.text;
+  }
+
+  // 2. Fallback: Search ALL genres if parent is wrong or unknown
+  for (const key in subgenres) {
+    const found = subgenres[key].find((g) => g.value === searchId);
+    if (found) return found.text;
+  }
+
+  // 3. Fallback: Return original ID if not found anywhere
+  return subgenreValue;
+}
+
+
+
 // You can export if using modules:
 // export default musicGenres;
 // You can export if using modules:
