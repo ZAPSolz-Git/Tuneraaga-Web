@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -18,6 +18,9 @@ import {
   Volume2,
   VolumeX,
   Heart,
+  Headphones,
+  Users,
+  Clock,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -36,18 +39,55 @@ const LANGUAGES = [
   "International",
 ];
 
+// ─── DURATION HELPERS ───
+const parseDurationToSeconds = (val) => {
+  if (!val || val === "") return 0;
+  if (typeof val === "number") return Math.max(0, val);
+  if (typeof val === "string") {
+    if (val.includes(":")) {
+      const parts = val.split(":");
+      if (parts.length === 2) {
+        const m = parseInt(parts[0], 10);
+        const s = parseFloat(parts[1]);
+        return (isNaN(m) ? 0 : m * 60) + (isNaN(s) ? 0 : s);
+      }
+      if (parts.length === 3) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const s = parseFloat(parts[2]);
+        return (
+          (isNaN(h) ? 0 : h * 3600) +
+          (isNaN(m) ? 0 : m * 60) +
+          (isNaN(s) ? 0 : s)
+        );
+      }
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num)) return Math.max(0, num);
+  }
+  return 0;
+};
+
 const formatDuration = (val) => {
-  if (!val) return "0:00";
-  if (typeof val === "string" && val.includes(":")) return val;
-  const num = parseFloat(val);
-  if (isNaN(num)) return "0:00";
-  const m = Math.floor(num / 60);
-  const s = Math.floor(num % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
+  const s = parseDurationToSeconds(val);
+  if (!s || s <= 0) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec < 10 ? "0" : ""}${sec}`;
+};
+
+const formatTotalDuration = (seconds) => {
+  if (!seconds || seconds <= 0) return "0 min";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const sec = Math.floor(seconds % 60);
+  if (h > 0) return `${h} hr ${m} min`;
+  if (m > 0) return `${m} min ${sec} sec`;
+  return `${sec} sec`;
 };
 
 const formatCount = (num) => {
-  if (!num) return "0";
+  if (!num || num === 0) return "0";
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
   if (num >= 1000) return (num / 1000).toFixed(0) + "K";
   return String(num);
@@ -59,6 +99,40 @@ const parseArtists = (str) => {
     .split(/,\s*/)
     .map((a) => a.trim())
     .filter(Boolean);
+};
+
+// ─── ARTIST LINK — navigates using the CORRECT release primary_artist name ───
+const ArtistLink = ({ name, className = "" }) => {
+  const navigate = useNavigate();
+  if (!name) return null;
+  return (
+    <span
+      onClick={(e) => {
+        e.stopPropagation();
+        navigate(`/artist/${encodeURIComponent(name.trim())}`);
+      }}
+      className={`cursor-pointer hover:text-blue-600 hover:underline transition-colors ${className}`}
+    >
+      {name}
+    </span>
+  );
+};
+
+// ─── Renders multiple artists with comma separators, each clickable ───
+const ArtistList = ({ names, baseClassName = "", separator = ", " }) => {
+  if (!names || names.length === 0) return null;
+  return (
+    <span className="flex items-center flex-wrap">
+      {names.map((name, i) => (
+        <span key={`${name}-${i}`} className="flex items-center">
+          <ArtistLink name={name} className={baseClassName} />
+          {i < names.length - 1 && (
+            <span className="text-slate-400 text-inherit">{separator}</span>
+          )}
+        </span>
+      ))}
+    </span>
+  );
 };
 
 // ─── STICKY PLAYER ───
@@ -80,6 +154,12 @@ const StickyPlayer = ({
   onClose,
 }) => {
   if (!song) return null;
+  // ✅ Use _primaryArtist from releases table (not chart_songs.artist)
+  const displayName = song._primaryArtist || song.artist || "";
+  const featArtists = parseArtists(
+    song._primaryFeatArtists || song.featuringArtists || "",
+  );
+
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -100,10 +180,26 @@ const StickyPlayer = ({
             <h4 className="font-bold text-white truncate text-base leading-tight">
               {song.title}
             </h4>
+            {/* ✅ Clickable primary artist from releases table */}
             <p className="text-xs text-gray-400 truncate mt-1">
-              {song.artist}
-              {song.featuringArtists ? ` ft. ${song.featuringArtists}` : ""}
+              <ArtistLink
+                name={displayName}
+                className="text-xs text-gray-400 hover:text-blue-400"
+              />
             </p>
+            {/* ✅ Clickable featuring artists from releases table */}
+            {featArtists.length > 0 && (
+              <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                <span className="text-gray-600 text-[10px] font-semibold">
+                  ft.
+                </span>
+                <ArtistList
+                  names={featArtists}
+                  baseClassName="text-xs text-gray-500 hover:text-blue-400"
+                  separator=", "
+                />
+              </p>
+            )}
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
@@ -215,7 +311,9 @@ const StickyPlayer = ({
   );
 };
 
-// ─── MAIN COMPONENT ───
+// ═══════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════
 const TopChart = () => {
   const navigate = useNavigate();
   const [charts, setCharts] = useState([]);
@@ -229,31 +327,116 @@ const TopChart = () => {
 
   const [playing, setPlaying] = useState(false);
   const [currentSong, setCurrentSong] = useState(null);
+  const [currentList, setCurrentList] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
 
-  // Duration cache — jab song play hoga toh audio se exact duration save hogi
   const [durationCache, setDurationCache] = useState({});
   const audioRef = useRef(null);
   const currentSongIdRef = useRef(null);
+  const currentListRef = useRef([]);
+  const currentIndexRef = useRef(0);
+  const playingRef = useRef(false);
+  const chartsRef = useRef([]);
+  const activeChartRef = useRef(null);
 
+  useEffect(() => {
+    currentListRef.current = currentList;
+  }, [currentList]);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
+  useEffect(() => {
+    chartsRef.current = charts;
+  }, [charts]);
+  useEffect(() => {
+    activeChartRef.current = activeChart;
+  }, [activeChart]);
+
+  // ─── FETCH: Also grabs primary_artist & featuring_artists from releases ───
   useEffect(() => {
     const fetchCharts = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        const { data: chartsData, error: chartsError } = await supabase
           .from("charts")
           .select(
-            `*, chart_songs ( id, title, artist, featuring_artists, album_name, cover_url, audio_url, duration, release_id )`,
+            `
+            *,
+            chart_songs (
+              id, title, artist, featuring_artists,
+              album_name, cover_url, audio_url, duration, release_id
+            )
+          `,
           )
           .order("created_at", { ascending: false });
-        if (error) throw error;
-        setCharts(data || []);
+        if (chartsError) throw chartsError;
+
+        const allSongs = (chartsData || []).flatMap((c) => c.chart_songs || []);
+        const uniqueReleaseIds = [
+          ...new Set(allSongs.map((s) => s.release_id).filter(Boolean)),
+        ];
+
+        const releaseMap = {};
+        if (uniqueReleaseIds.length > 0) {
+          for (let i = 0; i < uniqueReleaseIds.length; i += 100) {
+            const chunk = uniqueReleaseIds.slice(i, i + 100);
+            // ✅ KEY FIX: Also fetch primary_artist & featuring_artists from releases
+            const { data: relData, error: relError } = await supabase
+              .from("releases")
+              .select(
+                "id, play_count, listeners_count, duration, primary_artist, featuring_artists",
+              )
+              .in("id", chunk);
+            if (relError) {
+              console.error("releases fetch error:", relError);
+            } else {
+              (relData || []).forEach((r) => {
+                releaseMap[r.id] = {
+                  play_count:
+                    typeof r.play_count === "number" ? r.play_count : 0,
+                  listeners_count:
+                    typeof r.listeners_count === "number"
+                      ? r.listeners_count
+                      : 0,
+                  _durationFallbackSec: parseDurationToSeconds(r.duration),
+                  // ✅ Store actual release names for correct navigation
+                  _primaryArtist: r.primary_artist || "",
+                  _primaryFeatArtists: r.featuring_artists || "",
+                };
+              });
+            }
+          }
+        }
+
+        const patchedCharts = (chartsData || []).map((chart) => ({
+          ...chart,
+          chart_songs: (chart.chart_songs || []).map((cs) => {
+            const rel = cs.release_id ? releaseMap[cs.release_id] || {} : {};
+            return {
+              ...cs,
+              _playCount: rel.play_count ?? 0,
+              _listenersCount: rel.listeners_count ?? 0,
+              _durationFallbackSec: rel._durationFallbackSec ?? 0,
+              // ✅ These come from releases table — ensures correct artist name for navigation
+              _primaryArtist: rel._primaryArtist || cs.artist || "",
+              _primaryFeatArtists:
+                rel._primaryFeatArtists || cs.featuring_artists || "",
+            };
+          }),
+        }));
+
+        setCharts(patchedCharts);
+        chartsRef.current = patchedCharts;
       } catch (err) {
-        console.error("Error fetching charts:", err);
+        console.error("fetchCharts error:", err);
       } finally {
         setLoading(false);
       }
@@ -261,6 +444,7 @@ const TopChart = () => {
     fetchCharts();
   }, []);
 
+  // ─── AUDIO SETUP ───
   useEffect(() => {
     const audio = new Audio();
     audioRef.current = audio;
@@ -269,7 +453,6 @@ const TopChart = () => {
     );
     audio.addEventListener("loadedmetadata", () => {
       setAudioDuration(audio.duration);
-      // Audio se exact duration fetch karke cache mein save karo
       if (currentSongIdRef.current && audio.duration > 0) {
         setDurationCache((prev) => ({
           ...prev,
@@ -277,8 +460,14 @@ const TopChart = () => {
         }));
       }
     });
-    audio.addEventListener("play", () => setPlaying(true));
-    audio.addEventListener("pause", () => setPlaying(false));
+    audio.addEventListener("play", () => {
+      setPlaying(true);
+      playingRef.current = true;
+    });
+    audio.addEventListener("pause", () => {
+      setPlaying(false);
+      playingRef.current = false;
+    });
     return () => {
       audio.pause();
       audio.src = "";
@@ -292,95 +481,280 @@ const TopChart = () => {
     }
   }, [volume, isMuted]);
 
+  // ─── INCREMENT PLAY COUNT ───
+  const incrementPlayCount = useCallback(async (releaseId) => {
+    if (!releaseId) return;
+    const updateSongField = (prev) =>
+      prev.map((chart) => ({
+        ...chart,
+        chart_songs: chart.chart_songs.map((cs) =>
+          cs.release_id === releaseId
+            ? { ...cs, _playCount: (cs._playCount || 0) + 1 }
+            : cs,
+        ),
+      }));
+    setCharts((prev) => {
+      chartsRef.current = updateSongField(prev);
+      return chartsRef.current;
+    });
+    setActiveChart((prev) => {
+      if (!prev) return prev;
+      activeChartRef.current = {
+        ...prev,
+        chart_songs: prev.chart_songs.map((cs) =>
+          cs.release_id === releaseId
+            ? { ...cs, _playCount: (cs._playCount || 0) + 1 }
+            : cs,
+        ),
+      };
+      return activeChartRef.current;
+    });
+    setCurrentSong((prev) => {
+      if (prev && prev.release_id === releaseId)
+        return { ...prev, _playCount: (prev._playCount || 0) + 1 };
+      return prev;
+    });
+    try {
+      const { data, error } = await supabase
+        .from("releases")
+        .select("play_count")
+        .eq("id", releaseId)
+        .single();
+      if (!error && data) {
+        await supabase
+          .from("releases")
+          .update({ play_count: (data.play_count || 0) + 1 })
+          .eq("id", releaseId);
+      }
+    } catch (err) {
+      console.error("incrementPlayCount error:", err);
+    }
+  }, []);
+
+  // ─── PLAY SONG ───
+  const playSong = useCallback(
+    (song) => {
+      if (!song) return;
+      const audio = audioRef.current;
+      currentSongIdRef.current = song.id;
+      setCurrentSong((prev) => {
+        if (prev?.id !== song.id) {
+          setCurrentTime(0);
+          setAudioDuration(0);
+          audio.src = song.audio_url;
+          audio.load();
+        }
+        return song;
+      });
+      if (song.release_id) incrementPlayCount(song.release_id);
+      audio
+        .play()
+        .then(() => {
+          setPlaying(true);
+          playingRef.current = true;
+        })
+        .catch((err) => console.warn("Play blocked:", err.message));
+    },
+    [incrementPlayCount],
+  );
+
+  const handlePlayPause = useCallback(
+    (song) => {
+      if (currentSongIdRef.current === song.id && playingRef.current) {
+        audioRef.current.pause();
+        setPlaying(false);
+        playingRef.current = false;
+      } else {
+        playSong(song);
+      }
+    },
+    [playSong],
+  );
+
+  const handleSongClick = useCallback(
+    (index, song, list) => {
+      if (currentSongIdRef.current === song.id) {
+        handlePlayPause(song);
+      } else {
+        setCurrentList(list);
+        currentListRef.current = list;
+        setCurrentIndex(index);
+        currentIndexRef.current = index;
+        playSong(song);
+      }
+    },
+    [handlePlayPause, playSong],
+  );
+
+  const handlePlayButtonClick = useCallback(
+    (e, index, song, list) => {
+      e.stopPropagation();
+      handleSongClick(index, song, list);
+    },
+    [handleSongClick],
+  );
+
+  const handleChartTrackPlay = useCallback(
+    (track, trackList, trackIndex) => {
+      handleSongClick(trackIndex, track, trackList);
+    },
+    [handleSongClick],
+  );
+
+  const handleNext = useCallback(() => {
+    const list = currentListRef.current;
+    let curIdx = currentIndexRef.current;
+    if (list && list.length > 0) {
+      const f = list.findIndex((s) => s.id === currentSongIdRef.current);
+      if (f !== -1) curIdx = f;
+    }
+    if (!list || list.length === 0) return;
+    let nextIdx = isShuffle
+      ? (() => {
+          let n;
+          do {
+            n = Math.floor(Math.random() * list.length);
+          } while (list.length > 1 && n === curIdx);
+          return n;
+        })()
+      : (curIdx + 1) % list.length;
+    const nextSong = list[nextIdx];
+    if (nextSong) {
+      currentListRef.current = list;
+      currentIndexRef.current = nextIdx;
+      setCurrentIndex(nextIdx);
+      playSong(nextSong);
+    }
+  }, [isShuffle, playSong]);
+
+  const handlePrev = useCallback(() => {
+    const list = currentListRef.current;
+    let curIdx = currentIndexRef.current;
+    if (list && list.length > 0) {
+      const f = list.findIndex((s) => s.id === currentSongIdRef.current);
+      if (f !== -1) curIdx = f;
+    }
+    if (!list || list.length === 0) return;
+    const prevIdx = (curIdx - 1 + list.length) % list.length;
+    const prevSong = list[prevIdx];
+    if (prevSong) {
+      currentListRef.current = list;
+      currentIndexRef.current = prevIdx;
+      setCurrentIndex(prevIdx);
+      playSong(prevSong);
+    }
+  }, [playSong]);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const handleEnded = () => handleNext();
-    audio.addEventListener("ended", handleEnded);
-    return () => audio.removeEventListener("ended", handleEnded);
-  }, [activeChart, currentSong, isShuffle]);
+    const h = () => handleNext();
+    audio.addEventListener("ended", h);
+    return () => audio.removeEventListener("ended", h);
+  }, [handleNext]);
 
-  const playSong = (song) => {
-    if (!song) return;
-    const audio = audioRef.current;
-    currentSongIdRef.current = song.id;
-    if (currentSong?.id !== song.id) {
-      setCurrentSong(song);
-      setCurrentTime(0);
-      setAudioDuration(0);
-      audio.src = song.audio_url;
-      audio.load();
-    }
-    audio
-      .play()
-      .then(() => setPlaying(true))
-      .catch(console.error);
-  };
-
-  const handleNext = () => {
-    if (!activeChart || !currentSong) return;
-    const songs = activeChart.chart_songs;
-    if (!songs?.length) return;
-    let nextIdx;
-    if (isShuffle) {
-      const cur = songs.findIndex((s) => s.id === currentSong.id);
-      do {
-        nextIdx = Math.floor(Math.random() * songs.length);
-      } while (songs.length > 1 && nextIdx === cur);
-    } else {
-      nextIdx =
-        (songs.findIndex((s) => s.id === currentSong.id) + 1) % songs.length;
-    }
-    playSong(songs[nextIdx]);
-  };
-
-  const handlePrev = () => {
-    if (!activeChart || !currentSong) return;
-    const songs = activeChart.chart_songs;
-    if (!songs?.length) return;
-    const prevIdx =
-      (songs.findIndex((s) => s.id === currentSong.id) - 1 + songs.length) %
-      songs.length;
-    playSong(songs[prevIdx]);
-  };
-
-  const handlePlayPause = (song) => {
-    if (currentSong?.id === song.id && playing) {
-      audioRef.current.pause();
-      setPlaying(false);
-    } else {
-      playSong(song);
-    }
-  };
-
-  const handleSeek = (time) => {
+  const handleSeek = useCallback((time) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
-  };
-
-  const handleClosePlayer = () => {
+  }, []);
+  const handleClosePlayer = useCallback(() => {
     setPlaying(false);
+    playingRef.current = false;
     setCurrentSong(null);
+    currentSongIdRef.current = null;
     setCurrentTime(0);
     setAudioDuration(0);
+    setCurrentList([]);
+    currentListRef.current = [];
+    setCurrentIndex(0);
+    currentIndexRef.current = 0;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-  };
+  }, []);
 
-  const handleChartClick = (chart) => {
-    setActiveChart(chart);
-    if (chart.chart_songs?.length > 0) playSong(chart.chart_songs[0]);
-  };
+  const handleChartClick = useCallback(
+    (chart) => {
+      setActiveChart(chart);
+      activeChartRef.current = chart;
+      const songList = chart.chart_songs || [];
+      setCurrentList(songList);
+      currentListRef.current = songList;
+      setCurrentIndex(0);
+      currentIndexRef.current = 0;
+      if (songList.length > 0) playSong(songList[0]);
+    },
+    [playSong],
+  );
 
-  const handleBack = () => setActiveChart(null);
-
-  const toggleLike = (songId, e) => {
+  const handleBack = useCallback(() => {
+    setActiveChart(null);
+    activeChartRef.current = null;
+  }, []);
+  const toggleLike = useCallback((songId, e) => {
     e.stopPropagation();
     setLikedSongs((prev) => ({ ...prev, [songId]: !prev[songId] }));
+  }, []);
+
+  // ─── COMPUTED HELPERS — use _primaryArtist from releases for correct names ───
+  const getAllArtists = (chart) => {
+    if (!chart?.chart_songs) return [];
+    const set = new Set();
+    chart.chart_songs.forEach((s) => {
+      // ✅ Use _primaryArtist from releases table (not chart_songs.artist)
+      parseArtists(s._primaryArtist).forEach((a) => {
+        if (a) set.add(a);
+      });
+      parseArtists(s._primaryFeatArtists).forEach((a) => {
+        if (a) set.add(a);
+      });
+    });
+    return [...set];
+  };
+
+  const getTotalListeners = (chart) => {
+    if (!chart?.chart_songs) return 0;
+    return chart.chart_songs.reduce(
+      (sum, s) => sum + (s._listenersCount || 0),
+      0,
+    );
+  };
+
+  const getSongListeners = (song) => song._listenersCount || 0;
+
+  const getSongDurationSeconds = (song) => {
+    if (currentSong?.id === song.id && audioDuration > 0) return audioDuration;
+    if (durationCache[song.id] > 0) return durationCache[song.id];
+    const fromDB = parseDurationToSeconds(song.duration);
+    if (fromDB > 0) return fromDB;
+    return song._durationFallbackSec || 0;
+  };
+
+  const getTotalDuration = (chart) => {
+    if (!chart?.chart_songs) return 0;
+    return chart.chart_songs.reduce(
+      (sum, s) => sum + getSongDurationSeconds(s),
+      0,
+    );
+  };
+
+  const getSongDisplayDuration = (song) => {
+    if (currentSong?.id === song.id && audioDuration > 0)
+      return `${formatDuration(currentTime)} / ${formatDuration(audioDuration)}`;
+    const sec = getSongDurationSeconds(song);
+    return sec > 0 ? formatDuration(sec) : "—";
+  };
+
+  // Helper: get all artist names for a single song from releases data
+  const getSongAllArtists = (song) => {
+    const primary = parseArtists(song._primaryArtist || song.artist);
+    const feat = parseArtists(
+      song._primaryFeatArtists || song.featuring_artists,
+    );
+    return [...new Set([...primary, ...feat])];
   };
 
   const filteredCharts = charts.filter((chart) => {
@@ -400,28 +774,9 @@ const TopChart = () => {
     ? [...filteredCharts].sort(() => Math.random() - 0.5)
     : filteredCharts;
 
-  // Song ka exact duration nikalo — cache > DB > audio live > "—"
-  const getSongDisplayDuration = (song) => {
-    const isActive = currentSong?.id === song.id;
-
-    // Agar song abhi play ho raha hai toh "current / total" dikhao
-    if (isActive && audioDuration > 0) {
-      return `${formatDuration(currentTime)} / ${formatDuration(audioDuration)}`;
-    }
-
-    // Cache mein hai (pehle play hua tha)
-    if (durationCache[song.id]) {
-      return formatDuration(durationCache[song.id]);
-    }
-
-    // DB mein stored hai
-    if (song.duration) {
-      return formatDuration(song.duration);
-    }
-
-    return "—";
-  };
-
+  // ═══════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════
   return (
     <div className="w-full h-full pb-20 relative animate-in fade-in duration-500">
       {/* ─── CHARTS LIST VIEW ─── */}
@@ -514,6 +869,7 @@ const TopChart = () => {
             </div>
           ) : (
             <>
+              {/* ── GRID VIEW ── */}
               {viewMode === "grid" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {displayCharts.map((chart, index) => (
@@ -543,13 +899,29 @@ const TopChart = () => {
                             <h3 className="text-xl font-bold leading-tight mb-1 group-hover:text-blue-300 transition-colors line-clamp-2">
                               {chart.title}
                             </h3>
-                            <p className="text-xs text-slate-300 flex items-center gap-1">
-                              <Music size={10} />{" "}
-                              {chart.chart_songs?.length || 0} Songs
-                            </p>
+                            <div className="flex items-center gap-3 text-xs text-slate-300">
+                              <span className="flex items-center gap-1">
+                                <Music size={10} />{" "}
+                                {chart.chart_songs?.length || 0} Songs
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Headphones size={10} />{" "}
+                                {formatCount(getTotalListeners(chart))}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock size={10} />{" "}
+                                {formatTotalDuration(getTotalDuration(chart))}
+                              </span>
+                            </div>
                           </div>
                           <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
+                            <div
+                              className="w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleChartClick(chart);
+                              }}
+                            >
                               <Play size={16} fill="white" className="ml-0.5" />
                             </div>
                           </div>
@@ -560,6 +932,7 @@ const TopChart = () => {
                 </div>
               )}
 
+              {/* ── TABLE VIEW ── */}
               {viewMode === "table" && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="overflow-x-auto">
@@ -571,6 +944,9 @@ const TopChart = () => {
                             "Title",
                             "Details",
                             "Tracks",
+                            "Duration",
+                            "Listeners",
+                            "Artists",
                             "Action",
                           ].map((h) => (
                             <th
@@ -583,50 +959,110 @@ const TopChart = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-200">
-                        {displayCharts.map((chart) => (
-                          <tr
-                            key={chart.id}
-                            className="hover:bg-slate-50 transition-colors cursor-pointer"
-                            onClick={() => handleChartClick(chart)}
-                          >
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <img
-                                className="h-16 w-16 rounded-lg object-cover shadow-sm"
-                                src={
-                                  chart.image_url ||
-                                  "https://via.placeholder.com/100"
-                                }
-                                alt=""
-                              />
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm font-bold text-slate-900">
-                                {chart.title}
-                              </div>
-                              <div className="text-sm text-slate-500">
-                                {chart.artist || "Various Artists"}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-slate-700">
-                                {chart.type}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {chart.year || ""} • {chart.language}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                {chart.chart_songs?.length || 0} Songs
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                              <button className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors text-xs font-bold flex items-center justify-end gap-2 ml-auto">
-                                View <ChevronRight size={14} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {displayCharts.map((chart) => {
+                          const allArtists = getAllArtists(chart);
+                          return (
+                            <tr
+                              key={chart.id}
+                              className="hover:bg-slate-50 transition-colors cursor-pointer"
+                              onClick={() => handleChartClick(chart)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <img
+                                  className="h-16 w-16 rounded-lg object-cover shadow-sm"
+                                  src={
+                                    chart.image_url ||
+                                    "https://via.placeholder.com/100"
+                                  }
+                                  alt=""
+                                />
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="text-sm font-bold text-slate-900">
+                                  {chart.title}
+                                </div>
+                                {/* ✅ Use _primaryArtist for first artist in table */}
+                                <div className="text-sm text-slate-500">
+                                  <ArtistLink
+                                    name={
+                                      allArtists[0] ||
+                                      chart.artist ||
+                                      "Various Artists"
+                                    }
+                                    className="text-sm text-slate-500 hover:text-blue-600"
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-slate-700">
+                                  {chart.type}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {chart.year || ""}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                  {chart.chart_songs?.length || 0} Songs
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="flex items-center gap-1 text-sm text-slate-600">
+                                  <Clock size={14} className="text-slate-400" />
+                                  {formatTotalDuration(getTotalDuration(chart))}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="flex items-center gap-1 text-sm font-semibold text-slate-700">
+                                  <Headphones
+                                    size={14}
+                                    className="text-blue-500"
+                                  />
+                                  {formatCount(getTotalListeners(chart))}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-1 text-sm text-slate-600">
+                                  <Users size={14} className="text-slate-400" />
+                                  {allArtists.length} Artists
+                                </div>
+                                {/* ✅ All artist names clickable using _primaryArtist from releases */}
+                                <div className="text-xs text-slate-400 truncate max-w-[150px] flex flex-wrap gap-0.5">
+                                  {allArtists.slice(0, 3).map((a, i) => (
+                                    <span key={a} className="flex items-center">
+                                      <ArtistLink
+                                        name={a}
+                                        className="text-xs text-slate-400 hover:text-blue-600"
+                                      />
+                                      {i <
+                                        Math.min(allArtists.length, 3) - 1 && (
+                                        <span className="text-slate-300 text-xs">
+                                          ,
+                                        </span>
+                                      )}
+                                    </span>
+                                  ))}
+                                  {allArtists.length > 3 && (
+                                    <span className="text-slate-300 text-xs">
+                                      ...
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleChartClick(chart);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors text-xs font-bold flex items-center justify-end gap-2 ml-auto"
+                                >
+                                  View <ChevronRight size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -637,7 +1073,7 @@ const TopChart = () => {
         </>
       )}
 
-      {/* ─── DETAIL VIEW — 6 COLUMN TABLE ─── */}
+      {/* ─── CHART DETAIL / PROFILE VIEW ─── */}
       <AnimatePresence>
         {activeChart && (
           <motion.div
@@ -646,8 +1082,8 @@ const TopChart = () => {
             exit={{ opacity: 0, x: -20 }}
             className="w-full"
           >
-            {/* Chart Header */}
-            <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-8 p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
+            {/* Profile Header */}
+            <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-6 p-6 bg-white rounded-2xl shadow-sm border border-slate-100">
               <button
                 onClick={handleBack}
                 className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors self-start group"
@@ -658,7 +1094,6 @@ const TopChart = () => {
                 />
                 <span className="text-sm font-medium">Back</span>
               </button>
-
               <div className="w-44 h-44 rounded-2xl overflow-hidden shadow-xl border border-slate-200 flex-shrink-0 mx-auto md:mx-0">
                 <img
                   src={activeChart.image_url}
@@ -669,37 +1104,76 @@ const TopChart = () => {
                   }}
                 />
               </div>
-
-              <div className="flex flex-col justify-center flex-1">
+              <div className="flex flex-col justify-center flex-1 min-w-0">
                 <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full mb-3 uppercase tracking-wide w-fit">
                   {activeChart.type}
                 </span>
-                <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-2">
+                <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3">
                   {activeChart.title}
                 </h1>
-                <div className="flex items-center gap-2 text-sm text-slate-500 mb-2 flex-wrap">
-                  <span className="font-semibold text-slate-700">
-                    {formatCount(activeChart.fans_count || 0)} Fans
+
+                {/* ✅ Stats: Listeners count from releases.listeners_count */}
+                <div className="flex items-center gap-4 text-sm flex-wrap mb-3">
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                    <Headphones size={16} className="text-blue-500" />
+                    {formatCount(getTotalListeners(activeChart))} Listeners
                   </span>
                   <span className="text-slate-300">·</span>
-                  <span>{activeChart.chart_songs?.length || 0} Songs</span>
-                  {activeChart.language && (
-                    <>
-                      <span className="text-slate-300">·</span>
-                      <span>{activeChart.language}</span>
-                    </>
-                  )}
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                    <Music size={16} className="text-blue-500" />
+                    {activeChart.chart_songs?.length || 0} Songs
+                  </span>
+                  <span className="text-slate-300">·</span>
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                    <Clock size={16} className="text-blue-500" />
+                    {formatTotalDuration(getTotalDuration(activeChart))}
+                  </span>
+                  <span className="text-slate-300">·</span>
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                    <Users size={16} className="text-blue-500" />
+                    {getAllArtists(activeChart).length} Artists
+                  </span>
                 </div>
+
                 {activeChart.description && (
                   <p className="text-slate-500 text-sm mb-4 max-w-xl">
                     {activeChart.description}
                   </p>
                 )}
+
+                {/* ✅ Artist pills — all using _primaryArtist from releases */}
+                <div className="mb-4">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    Artists
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllArtists(activeChart).map((artist, i) => (
+                      <button
+                        key={`${artist}-${i}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(
+                            `/artist/${encodeURIComponent(artist.trim())}`,
+                          );
+                        }}
+                        className="px-3 py-1 bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700 text-xs font-semibold rounded-full transition-colors"
+                      >
+                        {artist}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
                       if (activeChart.chart_songs?.length > 0)
-                        handlePlayPause(activeChart.chart_songs[0]);
+                        handlePlayButtonClick(
+                          e,
+                          0,
+                          activeChart.chart_songs[0],
+                          activeChart.chart_songs,
+                        );
                     }}
                     className="px-8 py-3 bg-teal-500 hover:bg-teal-600 text-white font-bold rounded-full flex items-center gap-2 shadow-lg transition-all hover:scale-105"
                   >
@@ -718,14 +1192,14 @@ const TopChart = () => {
               </div>
             </div>
 
-            {/* ─── 6 COLUMN SONG TABLE ─── */}
+            {/* Song List */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              {/* Table Header */}
-              <div className="grid grid-cols-[2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,6rem)_2.5rem_5.5rem] gap-2 px-5 py-3 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="hidden md:grid grid-cols-[2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,6rem)_minmax(0,5rem)_2.5rem_5.5rem] gap-2 px-5 py-3 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <span className="text-center">#</span>
                 <span>Title</span>
-                <span className="hidden md:block">Artists</span>
-                <span className="hidden md:block">Movie</span>
+                <span>Artists</span>
+                <span>Movie / Album</span>
+                <span className="text-center">Listeners</span>
                 <span></span>
                 <span className="text-right pr-1">Duration</span>
               </div>
@@ -739,66 +1213,54 @@ const TopChart = () => {
                 activeChart.chart_songs.map((song, index) => {
                   const isActive = currentSong?.id === song.id;
                   const isLiked = likedSongs[song.id];
-                  const primaryArtists = parseArtists(song.artist);
-                  const featArtists = parseArtists(song.featuring_artists);
-                  const allArtists = [
-                    ...new Set([...primaryArtists, ...featArtists]),
-                  ];
+                  // ✅ Get artist names from releases table data
+                  const allSongArtists = getSongAllArtists(song);
+                  const listeners = getSongListeners(song);
 
                   return (
-                    <motion.div
-                      key={song.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.15, delay: index * 0.02 }}
-                      onClick={() => handlePlayPause(song)}
-                      className={`grid grid-cols-[2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,6rem)_2.5rem_5.5rem] gap-2 px-5 py-3 border-b border-slate-50 last:border-b-0 transition-colors group cursor-pointer items-center ${isActive ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
-                    >
-                      {/* ── 1. Serial # / Playing bars ── */}
-                      <div className="flex items-center justify-center">
-                        {isActive && playing ? (
-                          <div className="flex items-end gap-[3px] h-4">
-                            <motion.div
-                              animate={{ height: ["30%", "100%", "30%"] }}
-                              transition={{ repeat: Infinity, duration: 0.6 }}
-                              className="w-[3px] bg-blue-600 rounded-full"
-                            />
-                            <motion.div
-                              animate={{ height: ["100%", "30%", "100%"] }}
-                              transition={{
-                                repeat: Infinity,
-                                duration: 0.6,
-                                delay: 0.15,
-                              }}
-                              className="w-[3px] bg-blue-600 rounded-full"
-                            />
-                            <motion.div
-                              animate={{ height: ["50%", "100%", "50%"] }}
-                              transition={{
-                                repeat: Infinity,
-                                duration: 0.6,
-                                delay: 0.3,
-                              }}
-                              className="w-[3px] bg-blue-600 rounded-full"
-                            />
-                          </div>
-                        ) : (
-                          <>
+                    <div key={song.id}>
+                      {/* ── MOBILE ── */}
+                      <div
+                        onClick={() =>
+                          handleSongClick(index, song, activeChart.chart_songs)
+                        }
+                        className={`md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-b-0 transition-colors cursor-pointer ${isActive ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
+                      >
+                        <div className="flex items-center justify-center w-6 shrink-0">
+                          {isActive && playing ? (
+                            <div className="flex items-end gap-[2px] h-3.5">
+                              <motion.div
+                                animate={{ height: ["30%", "100%", "30%"] }}
+                                transition={{ repeat: Infinity, duration: 0.6 }}
+                                className="w-[2.5px] bg-blue-600 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ height: ["100%", "30%", "100%"] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 0.6,
+                                  delay: 0.15,
+                                }}
+                                className="w-[2.5px] bg-blue-600 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ height: ["50%", "100%", "50%"] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 0.6,
+                                  delay: 0.3,
+                                }}
+                                className="w-[2.5px] bg-blue-600 rounded-full"
+                              />
+                            </div>
+                          ) : (
                             <span
-                              className={`text-sm font-semibold tabular-nums group-hover:hidden ${isActive ? "text-blue-600" : "text-slate-400"}`}
+                              className={`text-xs font-semibold tabular-nums ${isActive ? "text-blue-600" : "text-slate-400"}`}
                             >
                               {index + 1}
                             </span>
-                            <Play
-                              size={15}
-                              className="text-blue-600 hidden group-hover:block fill-blue-600"
-                            />
-                          </>
-                        )}
-                      </div>
-
-                      {/* ── 2. Song Image + Song Name ── */}
-                      <div className="flex items-center gap-3 min-w-0">
+                          )}
+                        </div>
                         {song.cover_url ? (
                           <img
                             src={song.cover_url}
@@ -813,66 +1275,47 @@ const TopChart = () => {
                             <Music size={16} className="text-slate-300" />
                           </div>
                         )}
-                        <p
-                          className={`text-[15px] font-bold truncate leading-tight ${isActive ? "text-blue-600" : "text-slate-900"}`}
-                        >
-                          {song.title}
-                        </p>
-                      </div>
-
-                      {/* ── 3. All Artist Names ── */}
-                      <div className="hidden md:flex items-center min-w-0">
-                        <div className="flex flex-wrap items-center">
-                          {allArtists.map((artist, i) => (
-                            <span
-                              key={`${artist}-${i}`}
-                              className="flex items-center"
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(
-                                    `/artist/${encodeURIComponent(artist)}`,
-                                  );
-                                }}
-                                className={`text-[13px] hover:text-blue-600 hover:underline transition-colors truncate ${isActive ? "text-blue-400" : "text-slate-500"}`}
-                              >
-                                {artist}
-                              </button>
-                              {i < allArtists.length - 1 && (
-                                <span className="text-slate-300 text-[13px] mx-[2px]">
-                                  ,
-                                </span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* ── 4. Movie / Album Name ── */}
-                      <div className="hidden md:flex items-center min-w-0">
-                        {song.album_name ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(
-                                `/album/${encodeURIComponent(song.album_name)}`,
-                              );
-                            }}
-                            className="text-[13px] text-slate-600 hover:text-blue-600 hover:underline transition-colors truncate"
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-sm font-bold truncate leading-tight ${isActive ? "text-blue-600" : "text-slate-900"}`}
                           >
-                            {song.album_name}
-                          </button>
-                        ) : (
-                          <span className="text-[13px] text-slate-300">—</span>
-                        )}
-                      </div>
-
-                      {/* ── 5. Like Button ── */}
-                      <div className="flex items-center justify-center">
+                            {song.title}
+                          </p>
+                          {/* ✅ Clickable primary artist from releases */}
+                          <p className="text-[11px] text-slate-500 truncate">
+                            <ArtistLink
+                              name={song._primaryArtist || song.artist}
+                              className={`text-[11px] truncate ${isActive ? "text-blue-400 hover:text-blue-500" : "text-slate-500 hover:text-blue-600"}`}
+                            />
+                          </p>
+                          {/* ✅ Clickable featuring artists from releases */}
+                          {song._primaryFeatArtists && (
+                            <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
+                              <span className="text-slate-500 text-[10px] font-semibold">
+                                ft.
+                              </span>
+                              <ArtistList
+                                names={parseArtists(song._primaryFeatArtists)}
+                                baseClassName={`text-[11px] truncate ${isActive ? "text-blue-400 hover:text-blue-500" : "text-slate-400 hover:text-blue-600"}`}
+                                separator=", "
+                              />
+                            </p>
+                          )}
+                          {/* ✅ Per-song listeners count */}
+                          <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <Headphones size={10} />
+                              {formatCount(listeners)}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock size={10} />
+                              {getSongDisplayDuration(song)}
+                            </span>
+                          </div>
+                        </div>
                         <button
                           onClick={(e) => toggleLike(song.id, e)}
-                          className={`transition-all duration-200 hover:scale-125 ${isLiked ? "text-red-500" : "text-slate-300 hover:text-slate-500"}`}
+                          className={`shrink-0 p-1 transition-all duration-200 hover:scale-125 ${isLiked ? "text-red-500" : "text-slate-300 hover:text-slate-500"}`}
                         >
                           <Heart
                             size={16}
@@ -881,13 +1324,147 @@ const TopChart = () => {
                         </button>
                       </div>
 
-                      {/* ── 6. Exact Duration — live current/total ya cached total ── */}
-                      <div
-                        className={`text-right font-mono tabular-nums pr-1 ${isActive ? "text-blue-500" : "text-slate-400"} text-[13px]`}
+                      {/* ── DESKTOP ── */}
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.15, delay: index * 0.02 }}
+                        onClick={() =>
+                          handleSongClick(index, song, activeChart.chart_songs)
+                        }
+                        className={`hidden md:grid grid-cols-[2.5rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,6rem)_minmax(0,5rem)_2.5rem_5.5rem] gap-2 px-5 py-3 border-b border-slate-50 last:border-b-0 transition-colors group cursor-pointer items-center ${isActive ? "bg-blue-50/50" : "hover:bg-slate-50"}`}
                       >
-                        {getSongDisplayDuration(song)}
-                      </div>
-                    </motion.div>
+                        <div className="flex items-center justify-center">
+                          {isActive && playing ? (
+                            <div className="flex items-end gap-[3px] h-4">
+                              <motion.div
+                                animate={{ height: ["30%", "100%", "30%"] }}
+                                transition={{ repeat: Infinity, duration: 0.6 }}
+                                className="w-[3px] bg-blue-600 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ height: ["100%", "30%", "100%"] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 0.6,
+                                  delay: 0.15,
+                                }}
+                                className="w-[3px] bg-blue-600 rounded-full"
+                              />
+                              <motion.div
+                                animate={{ height: ["50%", "100%", "50%"] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 0.6,
+                                  delay: 0.3,
+                                }}
+                                className="w-[3px] bg-blue-600 rounded-full"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <span
+                                className={`text-sm font-semibold tabular-nums group-hover:hidden ${isActive ? "text-blue-600" : "text-slate-400"}`}
+                              >
+                                {index + 1}
+                              </span>
+                              <Play
+                                size={15}
+                                className="text-blue-600 hidden group-hover:block fill-blue-600"
+                              />
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 min-w-0">
+                          {song.cover_url ? (
+                            <img
+                              src={song.cover_url}
+                              alt={song.title}
+                              className="w-11 h-11 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
+                              onError={(e) => {
+                                e.target.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                              <Music size={16} className="text-slate-300" />
+                            </div>
+                          )}
+                          <p
+                            className={`text-[15px] font-bold truncate leading-tight ${isActive ? "text-blue-600" : "text-slate-900"}`}
+                          >
+                            {song.title}
+                          </p>
+                        </div>
+                        {/* ✅ All artists clickable — using _primaryArtist from releases */}
+                        <div className="flex items-center min-w-0">
+                          <div className="flex flex-wrap items-center">
+                            {allSongArtists.map((artist, i) => (
+                              <span
+                                key={`${artist}-${i}`}
+                                className="flex items-center"
+                              >
+                                <ArtistLink
+                                  name={artist}
+                                  className={`text-[13px] hover:text-blue-600 hover:underline transition-colors truncate ${isActive ? "text-blue-400" : "text-slate-500"}`}
+                                />
+                                {i < allSongArtists.length - 1 && (
+                                  <span className="text-slate-300 text-[13px] mx-[2px]">
+                                    ,
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center min-w-0">
+                    
+{song.album_name ? (
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      navigate(`/album/${encodeURIComponent(song.album_name)}`);
+    }}
+    className="text-[13px] text-slate-600 hover:text-blue-600 hover:underline transition-colors truncate"
+  >
+    {song.album_name}
+  </button>
+) : (
+  <span className="text-[13px] text-slate-300">—</span>
+)}
+                        </div>
+                        {/* ✅ Per-song listeners count */}
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Headphones
+                            size={13}
+                            className={
+                              isActive ? "text-blue-500" : "text-slate-400"
+                            }
+                          />
+                          <span
+                            className={`text-[13px] font-semibold tabular-nums ${isActive ? "text-blue-500" : "text-slate-500"}`}
+                          >
+                            {formatCount(listeners)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <button
+                            onClick={(e) => toggleLike(song.id, e)}
+                            className={`transition-all duration-200 hover:scale-125 ${isLiked ? "text-red-500" : "text-slate-300 hover:text-slate-500"}`}
+                          >
+                            <Heart
+                              size={16}
+                              fill={isLiked ? "currentColor" : "none"}
+                            />
+                          </button>
+                        </div>
+                        <div
+                          className={`text-right font-mono tabular-nums pr-1 text-[13px] ${isActive ? "text-blue-500" : "text-slate-400"}`}
+                        >
+                          {getSongDisplayDuration(song)}
+                        </div>
+                      </motion.div>
+                    </div>
                   );
                 })
               )}
@@ -896,27 +1473,28 @@ const TopChart = () => {
         )}
       </AnimatePresence>
 
-      {/* STICKY PLAYER */}
+      {/* ─── STICKY PLAYER — uses _primaryArtist from releases ─── */}
       <AnimatePresence>
         {currentSong && (
           <StickyPlayer
             song={{
               ...currentSong,
-              albumArt:
-                currentSong.cover_url ||
-                activeChart?.image_url ||
-                "https://via.placeholder.com/50",
-              featuringArtists: currentSong.featuring_artists || "",
+              albumArt: currentSong.cover_url,
+              // ✅ Pass releases table names so player shows correct clickable artists
+              artist: currentSong._primaryArtist || currentSong.artist,
+              featuringArtists:
+                currentSong._primaryFeatArtists ||
+                currentSong.featuring_artists,
             }}
             isPlaying={playing}
             onPlayPause={handlePlayPause}
             onSeek={handleSeek}
-            onNext={handleNext}
             onPrev={handlePrev}
+            onNext={handleNext}
             currentTime={currentTime}
             duration={audioDuration}
             volume={volume}
-            onVolumeChange={(v) => setVolume(v)}
+            onVolumeChange={setVolume}
             isMuted={isMuted}
             toggleMute={() => setIsMuted(!isMuted)}
             isShuffle={isShuffle}

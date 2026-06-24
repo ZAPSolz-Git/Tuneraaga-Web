@@ -1838,9 +1838,6 @@ const AlbumReleaseForm = () => {
   );
 };
 
-// ═══════════════════════════════════════════
-// FORMAT SELECTOR (Landing Page)
-// ═══════════════════════════════════════════
 
 const LatestReleasesAdmin = () => {
   const [selectedFormat, setSelectedFormat] = useState(null);
@@ -1921,7 +1918,4 @@ const LatestReleasesAdmin = () => {
   );
 };
 
-// ═══════════════════════════════════════════
-// DEFAULT EXPORT — ye line missing thi
-// ═══════════════════════════════════════════
 export default LatestReleasesAdmin;

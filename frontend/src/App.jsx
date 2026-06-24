@@ -69,6 +69,7 @@ function App() {
           <Route path="footer" element={<Footer />} />
           <Route path="new-release" element={<NewRelease />} />
           <Route path="topartist" element={<TopArtist />} />
+          
           <Route path="top-chart" element={<TopChart />} />
           <Route path="top-playlist" element={<TopPlayList />} />
           <Route path="new-releases" element={<NewRelease />} />
@@ -78,6 +79,7 @@ function App() {
 
         {/* --- NEW: Album Detail Page (outside Layout — full page) --- */}
         <Route path="/album/:albumName" element={<AlbumDetail />} />
+        
 
         {/* --- NEW: Artist Profile Page (outside Layout — full page) --- */}
         <Route path="/artist/:artistName" element={<ArtistProfile />} />
