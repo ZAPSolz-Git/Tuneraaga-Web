@@ -13,6 +13,7 @@ import {
   Info,
   TrendingUp,
   Podcast,
+  Radio,
   Flame,
   Users,
   LogOut,
@@ -90,11 +91,11 @@ const AdminLayout = () => {
         initial={{ width: 240 }}
         animate={{ width: sidebarOpen ? 240 : 80 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className="h-full bg-white border-r border-slate-200 flex flex-col justify-between py-6 px-3 relative z-20 shadow-sm"
+        className="h-full bg-white border-r border-slate-200 flex flex-col justify-between py-6 px-3 relative z-20 shadow-sm overflow-hidden"
       >
-        <div>
+        <div className="flex flex-col h-full overflow-hidden">
           {/* Logo Area */}
-          <div className="flex items-center gap-3 px-2 mb-6">
+          <div className="flex items-center gap-3 px-2 mb-6 flex-shrink-0">
             {sidebarOpen ? (
               <div
                 className="flex items-center p-2 rounded-lg backdrop-blur-sm w-full justify-between cursor-pointer hover:bg-slate-100 transition-colors"
@@ -116,7 +117,7 @@ const AdminLayout = () => {
 
           {/* Tabs */}
           {sidebarOpen && (
-            <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-6 mx-2">
+            <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-6 mx-2 flex-shrink-0">
               <button
                 onClick={() => setActiveTab("browse")}
                 className={`flex-1 text-xs font-bold py-2 rounded-md transition-all ${
@@ -140,111 +141,125 @@ const AdminLayout = () => {
             </div>
           )}
 
-          <nav className="flex flex-col gap-2">
-            {activeTab === "browse" && (
-              <>
-                <NavItem
-                  to="/admin"
-                  icon={Home}
-                  label="Dashboard"
-                  sidebarOpen={sidebarOpen}
-                />
+          {/* Scrollable Navigation Area */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+            <nav className="flex flex-col gap-2 pb-2">
+              {activeTab === "browse" && (
+                <>
+                  <NavItem
+                    to="/admin"
+                    icon={Home}
+                    label="Dashboard"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                {/* TRENDING SONGS */}
-                <NavItem
-                  to="/admin/trending-songs"
-                  icon={Flame}
-                  label="Trending Songs"
-                  sidebarOpen={sidebarOpen}
-                />
+                  {/* TRENDING SONGS */}
+                  <NavItem
+                    to="/admin/trending-songs"
+                    icon={Flame}
+                    label="Trending Songs"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                {/* LATEST RELEASES */}
-                <NavItem
-                  to="/admin/latest-releases"
-                  icon={Sparkles}
-                  label="Latest Releases"
-                  sidebarOpen={sidebarOpen}
-                />
+                  {/* LATEST RELEASES */}
+                  <NavItem
+                    to="/admin/latest-releases"
+                    icon={Sparkles}
+                    label="Latest Releases"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                {/* TOP 10 INDIA */}
-                <NavItem
-                  to="/admin/top-10-india"
-                  icon={Award}
-                  label="Top 10 India"
-                  sidebarOpen={sidebarOpen}
-                />
+                  {/* TOP 10 INDIA */}
+                  <NavItem
+                    to="/admin/top-10-india"
+                    icon={Award}
+                    label="Top 10 India"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                <NavItem
-                  to="/admin/top-charts"
-                  icon={TrendingUp}
-                  label="Top Charts"
-                  sidebarOpen={sidebarOpen}
-                />
-                <NavItem
-                  to="/admin/artist"
-                  icon={Music}
-                  label="Artist Management"
-                  sidebarOpen={sidebarOpen}
-                />
-                <NavItem
-                  to="/admin/top-playlists"
-                  icon={ListMusic}
-                  label="Top Playlists"
-                  sidebarOpen={sidebarOpen}
-                />
-                <NavItem
-                  to="/admin/new-release"
-                  icon={Upload}
-                  label="Release Song"
-                  sidebarOpen={sidebarOpen}
-                />
+                  <NavItem
+                    to="/admin/top-charts"
+                    icon={TrendingUp}
+                    label="Top Charts"
+                    sidebarOpen={sidebarOpen}
+                  />
+                  <NavItem
+                    to="/admin/artist"
+                    icon={Music}
+                    label="Artist Management"
+                    sidebarOpen={sidebarOpen}
+                  />
+                  <NavItem
+                    to="/admin/top-playlists"
+                    icon={ListMusic}
+                    label="Top Playlists"
+                    sidebarOpen={sidebarOpen}
+                  />
+                  <NavItem
+                    to="/admin/new-release"
+                    icon={Upload}
+                    label="Release Song"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                <NavItem
-                  to="/admin/song-edit"
-                  icon={Edit3}
-                  label="Edit Songs"
-                  sidebarOpen={sidebarOpen}
-                />
+                  <NavItem
+                    to="/admin/song-edit"
+                    icon={Edit3}
+                    label="Edit Songs"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                <NavItem
-                  to="/admin/podcasts"
-                  icon={Podcast}
-                  label="Podcast Admin"
-                  sidebarOpen={sidebarOpen}
-                />
+                  <NavItem
+                    to="/admin/podcasts"
+                    icon={Podcast}
+                    label="Podcast Admin"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-                <div className="border-t border-slate-200 my-2" />
-                <NavItem
-                  to="/"
-                  icon={Home}
-                  label="Back to Home"
-                  sidebarOpen={sidebarOpen}
-                />
-              </>
-            )}
-            {activeTab === "tuneraaga" && (
-              <>
-                <div className="border-t border-slate-200 my-2" />
-                <NavItem
-                  to="/"
-                  icon={Home}
-                  label="Back to Home"
-                  sidebarOpen={sidebarOpen}
-                />
-              </>
-            )}
-          </nav>
-        </div>
+                  <NavItem
+                    to="/admin/radio"
+                    icon={Radio}
+                    label="Radio Admin"
+                    sidebarOpen={sidebarOpen}
+                  />
 
-        {/* --- PROPER LOGOUT BUTTON --- */}
-        <div className="px-2">
-          <button
-            onClick={handleLogout}
-            className={`flex items-center gap-4 px-3 py-2.5 w-full rounded-lg transition-all duration-200 group text-red-500 hover:text-red-600 hover:bg-red-50 ${!sidebarOpen && "justify-center"}`}
-          >
-            <LogOut className="w-5 h-5 flex-shrink-0" />
-            {sidebarOpen && <span className="font-medium text-sm">Logout</span>}
-          </button>
+                  <div className="border-t border-slate-200 my-2" />
+                  <NavItem
+                    to="/"
+                    icon={Home}
+                    label="Back to Home"
+                    sidebarOpen={sidebarOpen}
+                  />
+                </>
+              )}
+              {activeTab === "tuneraaga" && (
+                <>
+                  <div className="border-t border-slate-200 my-2" />
+                  <NavItem
+                    to="/"
+                    icon={Home}
+                    label="Back to Home"
+                    sidebarOpen={sidebarOpen}
+                  />
+                </>
+              )}
+            </nav>
+          </div>
+
+          {/* Logout Button - Fixed at Bottom */}
+          <div className="px-2 flex-shrink-0 pt-2 border-t border-slate-200 mt-2">
+            <button
+              onClick={handleLogout}
+              className={`flex items-center gap-4 px-3 py-2.5 w-full rounded-lg transition-all duration-200 group text-red-500 hover:text-red-600 hover:bg-red-50 ${
+                !sidebarOpen && "justify-center"
+              }`}
+            >
+              <LogOut className="w-5 h-5 flex-shrink-0" />
+              {sidebarOpen && (
+                <span className="font-medium text-sm">Logout</span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Toggle Button */}

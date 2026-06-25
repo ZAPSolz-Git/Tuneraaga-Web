@@ -17,6 +17,8 @@ import NewRelease from "./pages/NewRelease";
 import TopChart from "./pages/TopChart";
 import TopPlayList from "./pages/TopPlayList";
 import Podcast from "./pages/Podcast";
+import Radio from "./pages/Radio";
+
 import TopArtist from "./pages/TopArtist";
 import Footer from "./components/Footer";
 
@@ -43,6 +45,7 @@ import AdminNewRelease from "./admin/AdminNewRelease";
 import SongEditAdmin from "./admin/SongEditAdmin";
 
 import PodcastAdmin from "./admin/PodcastAdmin";
+import RadioAdmin from "./admin/RadioAdmin";
 
 // --- PROTECTED ROUTE IMPORT ---
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -69,17 +72,17 @@ function App() {
           <Route path="footer" element={<Footer />} />
           <Route path="new-release" element={<NewRelease />} />
           <Route path="topartist" element={<TopArtist />} />
-          
+
           <Route path="top-chart" element={<TopChart />} />
           <Route path="top-playlist" element={<TopPlayList />} />
           <Route path="new-releases" element={<NewRelease />} />
 
           <Route path="podcast" element={<Podcast />} />
+          <Route path="radio" element={<Radio />} />
         </Route>
 
         {/* --- NEW: Album Detail Page (outside Layout — full page) --- */}
         <Route path="/album/:albumName" element={<AlbumDetail />} />
-        
 
         {/* --- NEW: Artist Profile Page (outside Layout — full page) --- */}
         <Route path="/artist/:artistName" element={<ArtistProfile />} />
@@ -120,6 +123,7 @@ function App() {
           <Route path="new-release" element={<AdminNewRelease />} />
           <Route path="song-edit" element={<SongEditAdmin />} />
           <Route path="podcasts" element={<PodcastAdmin />} />
+          <Route path="radio" element={<RadioAdmin />} />
         </Route>
 
         {/* --- 404 / FALLBACK --- */}

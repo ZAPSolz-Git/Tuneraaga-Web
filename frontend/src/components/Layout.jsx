@@ -128,7 +128,9 @@ const Layout = () => {
   const [activeTab, setActiveTab] = useState("browse");
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 768 : false,
+  );
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
@@ -146,12 +148,10 @@ const Layout = () => {
         setSidebarOpen(true);
       }
     };
-    handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Debounced global search
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
@@ -183,7 +183,6 @@ const Layout = () => {
     }, 300);
   }, [searchQuery]);
 
-  // Close dropdown on route change
   useEffect(() => {
     setShowSearchDropdown(false);
     setSearchQuery("");
@@ -218,6 +217,7 @@ const Layout = () => {
     { path: "/top-chart", label: "TopChart", icon: TrendingUp },
     { path: "/top-playlist", label: "TopPlayList", icon: ListMusic },
     { path: "/podcast", label: "Podcast", icon: Podcast },
+    { path: "/radio", label: "Radio", icon: Mic2 },
     { path: "/topartist", label: "TopArtist", icon: Mic2 },
   ];
 
@@ -230,7 +230,6 @@ const Layout = () => {
     { path: "/what", label: "What we offer", icon: Info },
   ];
 
-  // MOBILE VIEW
   if (isMobile) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -259,7 +258,6 @@ const Layout = () => {
             </div>
           </div>
 
-          {/* Mobile Search Bar */}
           <div className="px-4 pb-3 relative">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -329,7 +327,6 @@ const Layout = () => {
     );
   }
 
-  // DESKTOP VIEW
   return (
     <div className="fixed inset-0 flex bg-slate-50 text-slate-900 font-sans overflow-hidden">
       <motion.aside
@@ -447,7 +444,6 @@ const Layout = () => {
       </motion.aside>
 
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
-        {/* Top Search Bar */}
         <div className="sticky top-0 z-30 pointer-events-none bg-gradient-to-b from-slate-50 via-slate-50 to-transparent pb-2 pt-4">
           <div className="flex items-center justify-center px-4 md:px-12 pointer-events-auto relative">
             <div className="relative w-full max-w-lg">
