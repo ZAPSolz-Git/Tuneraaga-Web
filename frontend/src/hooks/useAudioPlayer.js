@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 export const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
-  if (typeof val === "string") return val;
+  if (typeof val === "string") return val.includes(":") ? val : "0:00";
   const m = Math.floor(val / 60);
   const s = Math.floor(val % 60);
   return `${m}:${s < 10 ? "0" : ""}${s}`;
@@ -18,9 +18,7 @@ export const parseArtists = (val) => {
     typeof val === "boolean"
   )
     return [];
-  const str = String(val).trim();
-  if (str === "") return [];
-  return str
+  return String(val)
     .split(",")
     .map((a) => a.trim())
     .filter((s) => s.length > 0);
@@ -29,6 +27,7 @@ export const parseArtists = (val) => {
 export const useAudioPlayer = () => {
   const [playing, setPlaying] = useState(false);
   const [currentSong, setCurrentSong] = useState(null);
+  const [currentRadioStation, setCurrentRadioStation] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -36,14 +35,13 @@ export const useAudioPlayer = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [currentList, setCurrentList] = useState([]);
-  const [trackDurations, setTrackDurations] = useState({});
 
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
   const currentIndexRef = useRef(null);
   const isShuffleRef = useRef(false);
-  const trackDurationsRef = useRef({});
+  const isPlayingRef = useRef(false);
 
   useEffect(() => {
     currentSongRef.current = currentSong;
@@ -57,79 +55,101 @@ export const useAudioPlayer = () => {
   useEffect(() => {
     isShuffleRef.current = isShuffle;
   }, [isShuffle]);
+  useEffect(() => {
+    isPlayingRef.current = playing;
+  }, [playing]);
 
-  const fetchDurations = useCallback((tracks) => {
-    tracks.forEach((track) => {
-      const audioUrl = track.audioUrl || track.audio_url;
-      if (trackDurationsRef.current[track.id] || !audioUrl) return;
-      try {
-        const tempAudio = new Audio();
-        tempAudio.preload = "metadata";
-        tempAudio.src = audioUrl;
-        const onMeta = () => {
-          if (
-            tempAudio.duration &&
-            isFinite(tempAudio.duration) &&
-            tempAudio.duration > 0
-          ) {
-            trackDurationsRef.current[track.id] = tempAudio.duration;
-            setTrackDurations((prev) => ({
-              ...prev,
-              [track.id]: tempAudio.duration,
-            }));
-          }
-          cleanup();
-        };
-        const onErr = () => cleanup();
-        const cleanup = () => {
-          tempAudio.removeEventListener("loadedmetadata", onMeta);
-          tempAudio.removeEventListener("error", onErr);
-          tempAudio.removeAttribute("src");
-          tempAudio.load();
-        };
-        tempAudio.addEventListener("loadedmetadata", onMeta);
-        tempAudio.addEventListener("error", onErr);
-      } catch (e) {
-        /* ignore */
+  // Core: load and play a song at index
+  const _playSongAtIndex = useCallback((index, list) => {
+    const song = list[index];
+    if (!song || !song.audioUrl) return;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Pause current before loading new
+    audio.pause();
+
+    setCurrentSong(song);
+    currentSongRef.current = song;
+    setCurrentIndex(index);
+    currentIndexRef.current = index;
+    setCurrentList(list);
+    currentListRef.current = list;
+    setDuration(0);
+    setCurrentTime(0);
+
+    audio.src = song.audioUrl;
+    audio.load();
+
+    const tryPlay = () => {
+      const p = audio.play();
+      if (p !== undefined) {
+        p.then(() => setPlaying(true)).catch((err) => {
+          if (err.name !== "AbortError") console.error("Play error:", err);
+        });
       }
-    });
+    };
+
+    if (audio.readyState >= 2) {
+      tryPlay();
+    } else {
+      const onCanPlay = () => {
+        audio.removeEventListener("canplay", onCanPlay);
+        tryPlay();
+      };
+      audio.addEventListener("canplay", onCanPlay, { once: true });
+    }
   }, []);
 
+  // Init audio element once
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
+
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration)) {
+      if (audio.duration && isFinite(audio.duration))
         setDuration(audio.duration);
-        if (currentSongRef.current?.id) {
-          setTrackDurations((prev) => ({
-            ...prev,
-            [currentSongRef.current.id]: audio.duration,
-          }));
-        }
-      }
     };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onEnded = () => handleNext();
+    const onError = () => setPlaying(false);
+    const onEnded = () => {
+      const list = currentListRef.current;
+      const idx = currentIndexRef.current;
+      if (!list || list.length === 0 || idx === null) return;
+      let next;
+      if (isShuffleRef.current) {
+        do {
+          next = Math.floor(Math.random() * list.length);
+        } while (list.length > 1 && next === idx);
+      } else {
+        next = (idx + 1) % list.length;
+      }
+      _playSongAtIndex(next, list);
+    };
+
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
+    audio.addEventListener("error", onError);
     audio.addEventListener("ended", onEnded);
+
     return () => {
       audio.pause();
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("error", onError);
       audio.removeEventListener("ended", onEnded);
       audio.removeAttribute("src");
       audio.load();
     };
-  }, [handleNext]);
+  }, [_playSongAtIndex]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -138,157 +158,127 @@ export const useAudioPlayer = () => {
     }
   }, [volume, isMuted]);
 
-  const playSong = useCallback((song) => {
-    const audioUrl = song.audioUrl || song.audio_url;
-    if (!song || !audioUrl) return;
+  // Public: play radio station → plays first song from list
+  const playRadioStation = useCallback(
+    (station, songs) => {
+      if (!songs || songs.length === 0) return;
+      setCurrentRadioStation(station);
+      _playSongAtIndex(0, songs);
+    },
+    [_playSongAtIndex],
+  );
+
+  // Public: play a specific song with list context
+  const handleSongClick = useCallback(
+    (index, song, list) => {
+      const audio = audioRef.current;
+      if (currentSongRef.current?.id === song.id && audio) {
+        // Toggle play/pause for same song
+        if (audio.paused) {
+          audio
+            .play()
+            .then(() => setPlaying(true))
+            .catch(() => {});
+        } else {
+          audio.pause();
+          setPlaying(false);
+        }
+      } else {
+        _playSongAtIndex(index, list);
+      }
+    },
+    [_playSongAtIndex],
+  );
+
+  // Public: global play/pause toggle
+  const handlePlayPause = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const isNewSong = currentSongRef.current?.id !== song.id;
-    if (isNewSong) {
-      setCurrentSong(song);
-      currentSongRef.current = song;
-      setDuration(0);
-      setCurrentTime(0);
-      audio.src = audioUrl;
-      audio.load();
-    }
-    let hasStarted = false;
-    const tryPlay = () => {
-      if (hasStarted) return;
-      const promise = audio.play();
-      if (promise !== undefined) {
-        promise
-          .then(() => {
-            hasStarted = true;
-            setPlaying(true);
-          })
-          .catch((err) => {
-            if (err.name !== "AbortError") console.error("Play error:", err);
-          });
-      }
-    };
-    if (audio.readyState >= 2) tryPlay();
-    else {
-      const onCanPlay = () => {
-        audio.removeEventListener("canplay", onCanPlay);
-        clearTimeout(fallbackTimer);
-        tryPlay();
-      };
-      audio.addEventListener("canplay", onCanPlay, { once: true });
-      const fallbackTimer = setTimeout(() => {
-        audio.removeEventListener("canplay", onCanPlay);
-        tryPlay();
-      }, 3000);
+    if (audio.paused) {
+      audio
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => {});
+    } else {
+      audio.pause();
+      setPlaying(false);
     }
   }, []);
 
-  // ✅ FIXED — function declarations are hoisted above all const/let
-  function handleNext() {
-    if (!currentSong || !playlist || playlist.length === 0) return;
-    const idx = playlist.findIndex((s) => s.id === currentSong.id);
-    const nextIdx = (idx + 1) % playlist.length;
-    handleSongClick(nextIdx, playlist[nextIdx], playlist);
-  }
-
-  function handlePrev() {
-    if (!currentSong || !playlist || playlist.length === 0) return;
-    const idx = playlist.findIndex((s) => s.id === currentSong.id);
-    const prevIdx = (idx - 1 + playlist.length) % playlist.length;
-    handleSongClick(prevIdx, playlist[prevIdx], playlist);
-  }
+  const handleNext = useCallback(() => {
+    const list = currentListRef.current;
+    const idx = currentIndexRef.current;
+    if (!list || list.length === 0 || idx === null) return;
+    let next;
+    if (isShuffleRef.current) {
+      do {
+        next = Math.floor(Math.random() * list.length);
+      } while (list.length > 1 && next === idx);
+    } else {
+      next = (idx + 1) % list.length;
+    }
+    _playSongAtIndex(next, list);
+  }, [_playSongAtIndex]);
 
   const handlePrev = useCallback(() => {
-    if (currentListRef.current.length === 0 || currentIndexRef.current === null)
-      return;
-    const prevIndex =
-      (currentIndexRef.current - 1 + currentListRef.current.length) %
-      currentListRef.current.length;
-    setCurrentIndex(prevIndex);
-    currentIndexRef.current = prevIndex;
-    playSong(currentListRef.current[prevIndex]);
-  }, [playSong]);
+    const list = currentListRef.current;
+    const idx = currentIndexRef.current;
+    if (!list || list.length === 0 || idx === null) return;
+    const prev = (idx - 1 + list.length) % list.length;
+    _playSongAtIndex(prev, list);
+  }, [_playSongAtIndex]);
 
-  const handlePlayPause = useCallback(
-    (song) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      if (
-        currentSongRef.current &&
-        currentSongRef.current.id === song.id &&
-        !audio.paused
-      ) {
-        audio.pause();
-        setPlaying(false);
-      } else {
-        playSong(song);
-      }
-    },
-    [playSong],
-  );
-
-  const handleSongClick = useCallback(
-    (index, song, list) => {
-      if (currentSongRef.current?.id === song.id) {
-        handlePlayPause(song);
-      } else {
-        setCurrentList(list);
-        currentListRef.current = list;
-        setCurrentIndex(index);
-        currentIndexRef.current = index;
-        playSong(song);
-      }
-    },
-    [handlePlayPause, playSong],
-  );
-
-  const handleSeek = (time) => {
+  const handleSeek = useCallback((time) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
-  };
+  }, []);
 
-  const handleClosePlayer = () => {
+  const handleClosePlayer = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
     setPlaying(false);
     setCurrentSong(null);
     currentSongRef.current = null;
+    setCurrentRadioStation(null);
     setCurrentIndex(null);
     currentIndexRef.current = null;
     setCurrentList([]);
     currentListRef.current = [];
     setDuration(0);
     setCurrentTime(0);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.removeAttribute("src");
-      audioRef.current.load();
-    }
-  };
+  }, []);
 
-  const toggleMute = () => setIsMuted(!isMuted);
-  const handleVolumeChange = (v) => {
+  const toggleMute = useCallback(() => setIsMuted((p) => !p), []);
+
+  const handleVolumeChange = useCallback((v) => {
     setVolume(v);
     setIsMuted(v === 0);
-  };
-  const onToggleShuffle = () => setIsShuffle(!isShuffle);
+  }, []);
+
+  const onToggleShuffle = useCallback(() => setIsShuffle((p) => !p), []);
 
   return {
     playing,
     currentSong,
+    currentRadioStation,
     currentTime,
     duration,
     volume,
     isMuted,
     isShuffle,
     currentList,
-    trackDurations,
-    fetchDurations,
-    playSong,
+    currentIndex,
+    playRadioStation,
+    handleSongClick,
+    handlePlayPause,
     handleNext,
     handlePrev,
-    handlePlayPause,
-    handleSongClick,
     handleSeek,
     handleClosePlayer,
     toggleMute,

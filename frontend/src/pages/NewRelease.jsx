@@ -19,6 +19,8 @@ import {
   Film,
   Disc3,
   User,
+  ArrowLeft,
+  Maximize2,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -84,7 +86,7 @@ const groupByAlbum = (songList) => {
   return { albums, singles };
 };
 
-// ─── STICKY PLAYER ───
+// ─── STICKY PLAYER (with Maximize2 expand arrow) ───
 const StickyPlayer = ({
   song,
   isPlaying,
@@ -101,6 +103,8 @@ const StickyPlayer = ({
   isShuffle,
   onToggleShuffle,
   onClose,
+  onExpand,
+  profileOpen,
 }) => {
   if (!song) return null;
   const featuringList = parseArtists(song.featuringArtists);
@@ -208,8 +212,45 @@ const StickyPlayer = ({
             <span className="w-10 font-mono">{formatDuration(duration)}</span>
           </div>
         </div>
+
+        {/* ── Mobile Right: Expand + Close ── */}
+        <div className="flex md:hidden items-center gap-1 flex-shrink-0">
+          {onExpand && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onExpand();
+              }}
+              className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-1.5 rounded-lg hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
+              title="View Details"
+            >
+              <Maximize2 size={18} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300 p-1.5 rounded-lg hover:bg-white/10"
+            title="Close Player"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* ── Desktop Right: Expand + Close + Volume ── */}
         <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
           <div className="flex items-center gap-3 w-full justify-end">
+            {onExpand && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExpand();
+                }}
+                className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-0.5 rounded hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
+                title="View Details"
+              >
+                <Maximize2 size={18} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300"
@@ -403,7 +444,7 @@ const AlbumCard = ({
   currentSong,
   playing,
   onPlayTrack,
-  onNavigateAlbum,
+  onOpenProfile,
   trackDurations,
   fetchDurations,
 }) => {
@@ -482,7 +523,7 @@ const AlbumCard = ({
       <div className="px-0.5">
         <h3
           className="font-bold text-sm truncate transition-colors leading-tight cursor-pointer hover:text-blue-600 text-slate-900"
-          onClick={() => onNavigateAlbum(album.albumName)}
+          onClick={() => onOpenProfile(album)}
         >
           {album.albumName}
         </h3>
@@ -650,7 +691,11 @@ const NewRelease = () => {
   const [isShuffle, setIsShuffle] = useState(false);
   const [currentList, setCurrentList] = useState([]);
 
-  // ✅ Refs for bulletproof audio handling (No stale closures)
+  // ✅ Profile panel state (same as radio)
+  const [profileAlbum, setProfileAlbum] = useState(null);
+  const [profileSongs, setProfileSongs] = useState([]);
+  const [profileOpen, setProfileOpen] = useState(false);
+
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
@@ -660,7 +705,6 @@ const NewRelease = () => {
 
   const [trackDurations, setTrackDurations] = useState({});
 
-  // Sync state to refs
   useEffect(() => {
     currentSongRef.current = currentSong;
   }, [currentSong]);
@@ -704,9 +748,7 @@ const NewRelease = () => {
         };
         tempAudio.addEventListener("loadedmetadata", onMeta);
         tempAudio.addEventListener("error", onErr);
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) {}
     });
   }, []);
 
@@ -763,28 +805,20 @@ const NewRelease = () => {
 
   const { albums, singles } = groupByAlbum(filteredSongs);
 
-  // ✅ 100% Stable playSong function
   const playSong = useCallback((song) => {
-    if (!song || !song.audioUrl) {
-      console.warn("No audio URL for song:", song?.title);
-      return;
-    }
+    if (!song || !song.audioUrl) return;
     const audio = audioRef.current;
     if (!audio) return;
-
     const isNewSong = currentSongRef.current?.id !== song.id;
-
     if (isNewSong) {
       setCurrentSong(song);
-      currentSongRef.current = song; // Immediate update for ref
+      currentSongRef.current = song;
       setDuration(0);
       setCurrentTime(0);
       audio.src = song.audioUrl;
       audio.load();
     }
-
     let hasStarted = false;
-
     const tryPlay = () => {
       if (hasStarted) return;
       const promise = audio.play();
@@ -795,36 +829,26 @@ const NewRelease = () => {
             setPlaying(true);
           })
           .catch((err) => {
-            if (err.name === "NotAllowedError") {
-              console.warn(
-                "Autoplay blocked by browser — user interaction needed",
-              );
-            } else if (err.name === "AbortError") {
-              // Song changed before play could start — ignore
-            } else {
+            if (err.name !== "AbortError" && err.name !== "NotAllowedError")
               console.error("Play error:", err);
-            }
           });
       }
     };
-
-    if (audio.readyState >= 2) {
-      tryPlay();
-    } else {
+    if (audio.readyState >= 2) tryPlay();
+    else {
       const onCanPlay = () => {
         audio.removeEventListener("canplay", onCanPlay);
-        clearTimeout(fallbackTimer);
+        clearTimeout(fb);
         tryPlay();
       };
       audio.addEventListener("canplay", onCanPlay, { once: true });
-      const fallbackTimer = setTimeout(() => {
+      const fb = setTimeout(() => {
         audio.removeEventListener("canplay", onCanPlay);
         tryPlay();
       }, 3000);
     }
   }, []);
 
-  // ✅ 100% Stable handleNext
   const handleNext = useCallback(() => {
     if (currentListRef.current.length === 0 || currentIndexRef.current === null)
       return;
@@ -840,7 +864,7 @@ const NewRelease = () => {
       nextIndex = (currentIndexRef.current + 1) % currentListRef.current.length;
     }
     setCurrentIndex(nextIndex);
-    currentIndexRef.current = nextIndex; // Immediate update
+    currentIndexRef.current = nextIndex;
     playSong(currentListRef.current[nextIndex]);
   }, [playSong]);
 
@@ -851,7 +875,7 @@ const NewRelease = () => {
       (currentIndexRef.current - 1 + currentListRef.current.length) %
       currentListRef.current.length;
     setCurrentIndex(prevIndex);
-    currentIndexRef.current = prevIndex; // Immediate update
+    currentIndexRef.current = prevIndex;
     playSong(currentListRef.current[prevIndex]);
   }, [playSong]);
 
@@ -873,16 +897,15 @@ const NewRelease = () => {
     [playSong],
   );
 
-  // ✅ Stable handleSongClick
   const handleSongClick = useCallback(
     (index, song, list) => {
       if (currentSongRef.current?.id === song.id) {
         handlePlayPause(song);
       } else {
         setCurrentList(list);
-        currentListRef.current = list; // Immediate update
+        currentListRef.current = list;
         setCurrentIndex(index);
-        currentIndexRef.current = index; // Immediate update
+        currentIndexRef.current = index;
         playSong(song);
       }
     },
@@ -900,7 +923,6 @@ const NewRelease = () => {
     const audio = new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
-
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onLoadedMetadata = () => {
       if (audio.duration && isFinite(audio.duration)) {
@@ -916,13 +938,11 @@ const NewRelease = () => {
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => handleNext();
-
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("ended", onEnded);
-
     return () => {
       audio.pause();
       audio.removeEventListener("timeupdate", onTimeUpdate);
@@ -972,14 +992,12 @@ const NewRelease = () => {
     setVolume(v);
     setIsMuted(v === 0);
   };
+  const onToggleShuffle = () => setIsShuffle(!isShuffle);
 
+  // ✅ Click card → directly play (no navigation)
   const handleCardClick = (song) => {
-    if (song.albumName)
-      navigate(`/album/${encodeURIComponent(song.albumName)}`);
-    else {
-      const idx = singles.findIndex((s) => s.id === song.id);
-      if (idx !== -1) handleSongClick(idx, song, singles);
-    }
+    const idx = singles.findIndex((s) => s.id === song.id);
+    if (idx !== -1) handleSongClick(idx, song, singles);
   };
 
   const handlePlayButtonClick = (e, index, song, list) => {
@@ -987,7 +1005,61 @@ const NewRelease = () => {
     handleSongClick(index, song, list);
   };
 
-  const onToggleShuffle = () => setIsShuffle(!isShuffle);
+  // ✅ Open profile panel for an album (same as radio)
+  const handleOpenAlbumProfile = useCallback(
+    (album) => {
+      if (
+        profileOpen &&
+        profileAlbum?.albumName?.toLowerCase() ===
+          album.albumName?.toLowerCase()
+      ) {
+        setProfileOpen(false);
+        return;
+      }
+      setProfileAlbum(album);
+      setProfileSongs(album.tracks);
+      setProfileOpen(true);
+      fetchDurations(album.tracks);
+    },
+    [profileOpen, profileAlbum, fetchDurations],
+  );
+
+  // ✅ Expand toggle from StickyPlayer (same as radio)
+  const handlePlayerExpandToggle = useCallback(() => {
+    if (!currentSongRef.current) return;
+    const foundAlbum = albums.find((a) =>
+      a.tracks.some((t) => t.id === currentSongRef.current.id),
+    );
+    if (foundAlbum) {
+      if (
+        profileOpen &&
+        profileAlbum?.albumName?.toLowerCase() ===
+          foundAlbum.albumName?.toLowerCase()
+      ) {
+        setProfileOpen(false);
+      } else {
+        setProfileAlbum(foundAlbum);
+        setProfileSongs(foundAlbum.tracks);
+        setProfileOpen(true);
+        fetchDurations(foundAlbum.tracks);
+      }
+    } else {
+      // Single song — create a pseudo album context
+      const singleContext = {
+        albumName: "Single",
+        albumCoverUrl: currentSongRef.current.img,
+        primaryArtist: currentSongRef.current.artist,
+        language: currentSongRef.current.language,
+        genre: currentSongRef.current.genre,
+        movieName: currentSongRef.current.movieName,
+        tracks: [currentSongRef.current],
+      };
+      setProfileAlbum(singleContext);
+      setProfileSongs([currentSongRef.current]);
+      setProfileOpen(true);
+    }
+  }, [albums, profileOpen, profileAlbum, fetchDurations]);
+
   const getActorNames = (song) => parseArtists(song.actorNames);
   const getFeaturingArtists = (song) => parseArtists(song.featuringArtists);
   const getMovieOrAlbum = (song) => {
@@ -1071,6 +1143,241 @@ const NewRelease = () => {
         </div>
       </div>
 
+      {/* ── PROFILE PANEL (absolute, solid bg, navbar/sidebar visible) ── */}
+      <AnimatePresence>
+        {profileOpen && profileAlbum && (
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="absolute inset-0 z-[95] bg-slate-50 overflow-y-auto"
+            style={{ paddingBottom: "100px" }}
+          >
+            <div className="max-w-5xl mx-auto px-4 md:px-8 pt-6">
+              <button
+                onClick={() => setProfileOpen(false)}
+                className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors group mb-8"
+              >
+                <ArrowLeft
+                  size={20}
+                  className="group-hover:-translate-x-1 transition-transform"
+                />
+                <span className="font-medium text-sm">
+                  Back to New Releases
+                </span>
+              </button>
+
+              <div className="flex flex-col md:flex-row gap-8 mb-10">
+                <div className="relative flex-shrink-0 mx-auto md:mx-0">
+                  <div className="w-44 h-44 md:w-56 md:h-56 rounded-2xl overflow-hidden shadow-2xl border border-slate-200">
+                    <img
+                      src={
+                        profileAlbum.albumCoverUrl ||
+                        "https://via.placeholder.com/200"
+                      }
+                      alt={profileAlbum.albumName}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.src = "https://via.placeholder.com/200";
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col justify-center text-center md:text-left flex-1">
+                  <span className="text-xs font-bold uppercase tracking-widest text-blue-600 mb-2">
+                    {profileAlbum.genre || "Album"}
+                  </span>
+                  <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 mb-2">
+                    {profileAlbum.albumName}
+                  </h1>
+                  <p className="text-sm text-slate-500 mb-4">
+                    <ArtistLink
+                      name={profileAlbum.primaryArtist}
+                      className="text-sm text-slate-500 hover:text-blue-600"
+                    />
+                  </p>
+                  <div className="flex items-center gap-4 flex-wrap justify-center md:justify-start text-sm text-slate-600 mb-6">
+                    {profileAlbum.language && (
+                      <span className="font-semibold">
+                        {profileAlbum.language}
+                      </span>
+                    )}
+                    {profileAlbum.language && profileAlbum.movieName && (
+                      <span className="text-slate-300">|</span>
+                    )}
+                    {profileAlbum.movieName && (
+                      <span className="text-purple-500 font-semibold flex items-center gap-1">
+                        <Film size={14} /> {profileAlbum.movieName}
+                      </span>
+                    )}
+                    <span className="text-slate-300">|</span>
+                    <span className="font-semibold">
+                      {profileSongs.length} Tracks
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 justify-center md:justify-start">
+                    <button
+                      onClick={() => {
+                        if (profileSongs.length > 0) {
+                          handleAlbumTrackPlay(
+                            profileSongs[0],
+                            profileSongs,
+                            0,
+                          );
+                        }
+                      }}
+                      className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-3 rounded-full font-bold flex items-center gap-2 shadow-lg shadow-blue-500/30 transition-all hover:scale-105"
+                    >
+                      <Play size={18} fill="white" /> Play All
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Track List */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+                  <Music size={18} className="text-blue-600" />
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Tracklist
+                  </h2>
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-bold">
+                    {profileSongs.length} Tracks
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-12">
+                          #
+                        </th>
+                        <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          Song
+                        </th>
+                        <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">
+                          Artist
+                        </th>
+                        <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell w-20">
+                          Duration
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {profileSongs.map((song, index) => {
+                        const isActive = currentSong?.id === song.id;
+                        const featuringList = parseArtists(
+                          song.featuringArtists,
+                        );
+                        const dur = trackDurations[song.id];
+                        return (
+                          <tr
+                            key={song.id}
+                            onClick={() =>
+                              handleAlbumTrackPlay(song, profileSongs, index)
+                            }
+                            className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
+                          >
+                            <td className="px-4 md:px-6 py-3 whitespace-nowrap">
+                              <div className="w-8 h-8 flex items-center justify-center">
+                                {isActive && playing ? (
+                                  <div className="flex items-end gap-0.5 h-4">
+                                    <motion.div
+                                      animate={{
+                                        height: ["40%", "100%", "40%"],
+                                      }}
+                                      transition={{
+                                        repeat: Infinity,
+                                        duration: 0.6,
+                                      }}
+                                      className="w-1 bg-blue-600 rounded-full"
+                                    />
+                                    <motion.div
+                                      animate={{
+                                        height: ["100%", "40%", "100%"],
+                                      }}
+                                      transition={{
+                                        repeat: Infinity,
+                                        duration: 0.6,
+                                        delay: 0.15,
+                                      }}
+                                      className="w-1 bg-blue-600 rounded-full"
+                                    />
+                                    <motion.div
+                                      animate={{
+                                        height: ["60%", "100%", "60%"],
+                                      }}
+                                      transition={{
+                                        repeat: Infinity,
+                                        duration: 0.6,
+                                        delay: 0.3,
+                                      }}
+                                      className="w-1 bg-blue-600 rounded-full"
+                                    />
+                                  </div>
+                                ) : (
+                                  <>
+                                    <span
+                                      className={`text-sm font-medium group-hover:hidden ${isActive ? "text-blue-600" : "text-slate-500"}`}
+                                    >
+                                      {index + 1}
+                                    </span>
+                                    <Play
+                                      size={16}
+                                      className="text-blue-600 hidden group-hover:block fill-blue-600"
+                                    />
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 md:px-6 py-3">
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={song.img}
+                                  alt=""
+                                  className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
+                                  onError={(e) => {
+                                    e.target.src =
+                                      "https://via.placeholder.com/40";
+                                  }}
+                                />
+                                <div className="min-w-0">
+                                  <p
+                                    className={`text-sm font-semibold truncate transition-colors ${isActive ? "text-blue-600" : "text-slate-900 group-hover:text-blue-600"}`}
+                                  >
+                                    {song.title}
+                                  </p>
+                                  {featuringList.length > 0 && (
+                                    <p className="text-xs text-teal-500 truncate">
+                                      ft. {featuringList.join(", ")}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 md:px-6 py-3 text-sm text-slate-600 hidden md:table-cell truncate">
+                              <ArtistLink
+                                name={song.artist}
+                                className="text-sm text-slate-600 hover:text-blue-600"
+                              />
+                            </td>
+                            <td className="px-4 md:px-6 py-3 text-sm text-slate-400 hidden sm:table-cell font-mono text-right">
+                              {dur ? formatDuration(dur) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MAIN CONTENT ── */}
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
@@ -1101,9 +1408,7 @@ const NewRelease = () => {
                       currentSong={currentSong}
                       playing={playing}
                       onPlayTrack={handleAlbumTrackPlay}
-                      onNavigateAlbum={(name) =>
-                        navigate(`/album/${encodeURIComponent(name)}`)
-                      }
+                      onOpenProfile={handleOpenAlbumProfile}
                       trackDurations={trackDurations}
                       fetchDurations={fetchDurations}
                     />
@@ -1114,7 +1419,6 @@ const NewRelease = () => {
                     const featuringList = getFeaturingArtists(song);
                     const actors = getActorNames(song);
                     const movieOrAlbum = getMovieOrAlbum(song);
-
                     return (
                       <motion.div
                         key={song.id}
@@ -1148,9 +1452,9 @@ const NewRelease = () => {
                               className="w-12 h-12 rounded-full flex items-center justify-center shadow-xl cursor-pointer bg-gradient-to-br from-blue-400 to-blue-600 text-white"
                             >
                               {isActive && playing ? (
-                                <Pause size={20} className="text-white" />
+                                <Pause size={20} />
                               ) : (
-                                <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                                <Play className="w-5 h-5 fill-white ml-0.5" />
                               )}
                             </motion.div>
                           </div>
@@ -1248,9 +1552,6 @@ const NewRelease = () => {
                             Movie / Album
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">
-                            Cast
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">
                             Genre
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:table-cell">
@@ -1259,236 +1560,233 @@ const NewRelease = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
-                        {albums.map((album) => (
-                          <React.Fragment key={album.albumName.toLowerCase()}>
-                            <tr
-                              className="bg-blue-50/70 hover:bg-blue-50 cursor-pointer"
-                              onClick={() =>
-                                navigate(
-                                  `/album/${encodeURIComponent(album.albumName)}`,
-                                )
-                              }
-                            >
-                              <td colSpan={7} className="px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 rounded-lg overflow-hidden border border-blue-200 flex-shrink-0 shadow-sm">
+                        {albums.map((album) => {
+                          const isAlbumActive = album.tracks.some(
+                            (t) => t.id === currentSong?.id,
+                          );
+                          return (
+                            <React.Fragment key={album.albumName.toLowerCase()}>
+                              <tr
+                                className={`bg-blue-50/70 hover:bg-blue-50 cursor-pointer ${isAlbumActive ? "ring-1 ring-inset ring-blue-300" : ""}`}
+                                onClick={() => handleOpenAlbumProfile(album)}
+                              >
+                                <td colSpan={6} className="px-4 py-3">
+                                  <div className="flex items-center gap-3">
                                     <img
                                       src={
                                         album.albumCoverUrl ||
                                         "https://via.placeholder.com/40"
                                       }
                                       alt=""
-                                      className="w-full h-full object-cover"
+                                      className="w-10 h-10 rounded-lg object-cover border border-slate-200 flex-shrink-0"
                                       onError={(e) => {
                                         e.target.src =
                                           "https://via.placeholder.com/40";
                                       }}
                                     />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
                                       <Disc3
-                                        size={13}
-                                        className="text-blue-500"
+                                        size={14}
+                                        className="text-blue-500 flex-shrink-0"
                                       />
-                                      {album.albumName}
-                                    </p>
-                                    <p className="text-xs text-slate-500 truncate">
-                                      {album.primaryArtist} •{" "}
-                                      {album.tracks.length} tracks
-                                    </p>
-                                  </div>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAlbumTrackPlay(
-                                        album.tracks[0],
-                                        album.tracks,
-                                        0,
-                                      );
-                                    }}
-                                    className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors flex-shrink-0"
-                                  >
-                                    <Play
-                                      size={14}
-                                      fill="white"
-                                      className="ml-0.5"
-                                    />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                            {album.tracks.map((track, trackIdx) => {
-                              const isTrackActive =
-                                currentSong?.id === track.id;
-                              return (
-                                <tr
-                                  key={track.id}
-                                  className={`hover:bg-slate-50 cursor-pointer ${isTrackActive ? "bg-blue-50" : ""}`}
-                                  onClick={() =>
-                                    handleAlbumTrackPlay(
-                                      track,
-                                      album.tracks,
-                                      trackIdx,
-                                    )
-                                  }
-                                >
-                                  <td className="px-4 py-2.5 text-xs text-slate-400 font-medium">
-                                    {isTrackActive && playing ? (
-                                      <Music
-                                        size={12}
-                                        className="text-blue-500 animate-pulse"
-                                      />
-                                    ) : (
-                                      track.trackNumber || trackIdx + 1
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <div className="flex items-center gap-2">
-                                      <img
-                                        src={
-                                          track.img ||
-                                          "https://via.placeholder.com/30"
-                                        }
-                                        alt=""
-                                        className="w-8 h-8 rounded object-cover flex-shrink-0"
-                                        onError={(e) => {
-                                          e.target.src =
-                                            "https://via.placeholder.com/30";
-                                        }}
-                                      />
-                                      <span
-                                        className={`text-sm font-medium truncate ${isTrackActive ? "text-blue-600" : "text-slate-800"}`}
-                                      >
-                                        {track.title}
+                                      <span className="font-bold text-blue-700 text-sm truncate">
+                                        {album.albumName}
                                       </span>
+                                      <span className="text-slate-400 text-xs">
+                                        ·
+                                      </span>
+                                      <span className="text-slate-500 text-xs truncate">
+                                        <ArtistLink
+                                          name={album.primaryArtist}
+                                          className="text-xs text-slate-500 hover:text-blue-600"
+                                        />
+                                      </span>
+                                      {album.movieName && (
+                                        <>
+                                          <span className="text-slate-400 text-xs hidden sm:inline">
+                                            ·
+                                          </span>
+                                          <span className="text-purple-500 text-xs truncate hidden sm:inline flex items-center gap-0.5">
+                                            <Film size={10} /> {album.movieName}
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
-                                  </td>
-                                  <td className="px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell">
-                                    <ArtistLink
-                                      name={track.artist}
-                                      className="text-xs text-slate-500 hover:text-blue-600"
-                                    />
-                                  </td>
-                                  <td className="px-4 py-2.5 text-xs text-slate-500">
-                                    {track.movieName ? (
-                                      <span className="flex items-center gap-1 text-purple-500">
-                                        <Film size={10} /> {track.movieName}
-                                      </span>
-                                    ) : track.albumName ? (
-                                      <span className="flex items-center gap-1 text-blue-500">
-                                        <Disc3 size={10} /> {track.albumName}
-                                      </span>
-                                    ) : (
-                                      "—"
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-xs text-slate-400 hidden sm:table-cell">
-                                    {parseArtists(track.actorNames).join(
-                                      ", ",
-                                    ) || "—"}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    {track.genre ? (
-                                      <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
-                                        {track.genre}
-                                      </span>
-                                    ) : (
-                                      "—"
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-xs text-slate-400 hidden sm:table-cell">
-                                    {track.language || "—"}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </React.Fragment>
-                        ))}
+                                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                                      {album.tracks.length} tracks
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                              {album.tracks.map((track, ti) => {
+                                const isTrackActive =
+                                  currentSong?.id === track.id;
+                                const feat = parseArtists(
+                                  track.featuringArtists,
+                                );
+                                const dur = trackDurations[track.id];
+                                return (
+                                  <tr
+                                    key={track.id}
+                                    onClick={() =>
+                                      handleAlbumTrackPlay(
+                                        track,
+                                        album.tracks,
+                                        ti,
+                                      )
+                                    }
+                                    className={`hover:bg-slate-50 cursor-pointer group ${isTrackActive ? "bg-blue-50" : ""}`}
+                                  >
+                                    <td className="px-4 py-2.5 whitespace-nowrap">
+                                      <div className="w-7 flex items-center justify-center">
+                                        {isTrackActive && playing ? (
+                                          <Music
+                                            size={12}
+                                            className="text-blue-500 animate-pulse"
+                                          />
+                                        ) : (
+                                          <>
+                                            <span
+                                              className={`text-xs font-medium group-hover:hidden ${isTrackActive ? "text-blue-500" : "text-slate-400"}`}
+                                            >
+                                              {track.trackNumber || ti + 1}
+                                            </span>
+                                            <Play
+                                              size={12}
+                                              className="text-blue-500 hidden group-hover:block"
+                                              fill="currentColor"
+                                            />
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <div className="flex items-center gap-3">
+                                        <img
+                                          src={track.img}
+                                          alt=""
+                                          className="w-9 h-9 rounded-lg object-cover border border-slate-100 flex-shrink-0"
+                                          onError={(e) => {
+                                            e.target.src =
+                                              "https://via.placeholder.com/36";
+                                          }}
+                                        />
+                                        <div className="min-w-0">
+                                          <p
+                                            className={`text-sm font-semibold truncate ${isTrackActive ? "text-blue-600" : "text-slate-800"}`}
+                                          >
+                                            {track.title}
+                                          </p>
+                                          {feat.length > 0 && (
+                                            <p className="text-[10px] text-teal-500 truncate">
+                                              ft. {feat.join(", ")}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-sm text-slate-600 hidden md:table-cell truncate">
+                                      <ArtistLink
+                                        name={track.artist}
+                                        className="text-sm text-slate-600 hover:text-blue-600"
+                                      />
+                                    </td>
+                                    <td className="px-4 py-2.5 text-sm text-slate-500 truncate">
+                                      {track.movieName ||
+                                        track.albumName ||
+                                        "—"}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
+                                      {track.genre || "—"}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
+                                      {track.language || "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          );
+                        })}
 
                         {singles.map((song, index) => {
                           const isActive = currentSong?.id === song.id;
-                          const albumIdx = albums.reduce(
-                            (acc, a) => acc + a.tracks.length,
-                            0,
-                          );
-                          const globalIdx = albumIdx + index;
+                          const feat = parseArtists(song.featuringArtists);
+                          const actors = parseArtists(song.actorNames);
                           return (
                             <tr
                               key={song.id}
-                              className={`hover:bg-slate-50 cursor-pointer ${isActive ? "bg-blue-50" : ""}`}
                               onClick={() =>
-                                handleSongClick(
-                                  globalIdx,
-                                  song,
-                                  allSongsForTable,
-                                )
+                                handleSongClick(index, song, singles)
                               }
+                              className={`hover:bg-slate-50 cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
                             >
-                              <td className="px-4 py-2.5 text-xs text-slate-400 font-medium">
-                                {isActive && playing ? (
-                                  <Music
-                                    size={12}
-                                    className="text-blue-500 animate-pulse"
-                                  />
-                                ) : (
-                                  globalIdx + 1
-                                )}
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <img
-                                    src={
-                                      song.img ||
-                                      "https://via.placeholder.com/30"
-                                    }
-                                    alt=""
-                                    className="w-8 h-8 rounded object-cover flex-shrink-0"
-                                    onError={(e) => {
-                                      e.target.src =
-                                        "https://via.placeholder.com/30";
-                                    }}
-                                  />
-                                  <span
-                                    className={`text-sm font-medium truncate ${isActive ? "text-blue-600" : "text-slate-800"}`}
-                                  >
-                                    {song.title}
-                                  </span>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="w-7 flex items-center justify-center">
+                                  {isActive && playing ? (
+                                    <Music
+                                      size={12}
+                                      className="text-blue-500 animate-pulse"
+                                    />
+                                  ) : (
+                                    <>
+                                      <span
+                                        className={`text-xs font-medium group-hover:hidden ${isActive ? "text-blue-500" : "text-slate-400"}`}
+                                      >
+                                        {albums.length * 100 + index + 1}
+                                      </span>
+                                      <Play
+                                        size={12}
+                                        className="text-blue-500 hidden group-hover:block"
+                                        fill="currentColor"
+                                      />
+                                    </>
+                                  )}
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-500 hidden md:table-cell">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <img
+                                    src={song.img}
+                                    alt=""
+                                    className="w-9 h-9 rounded-lg object-cover border border-slate-100 flex-shrink-0"
+                                    onError={(e) => {
+                                      e.target.src =
+                                        "https://via.placeholder.com/36";
+                                    }}
+                                  />
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`text-sm font-semibold truncate ${isActive ? "text-blue-600" : "text-slate-800"}`}
+                                    >
+                                      {song.title}
+                                    </p>
+                                    {feat.length > 0 && (
+                                      <p className="text-[10px] text-teal-500 truncate">
+                                        ft. {feat.join(", ")}
+                                      </p>
+                                    )}
+                                    {actors.length > 0 && (
+                                      <p className="text-[10px] text-slate-400 truncate">
+                                        Actors: {actors.join(", ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-slate-600 hidden md:table-cell truncate">
                                 <ArtistLink
                                   name={song.artist}
-                                  className="text-xs text-slate-500 hover:text-blue-600"
+                                  className="text-sm text-slate-600 hover:text-blue-600"
                                 />
                               </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-500">
-                                {song.movieName ? (
-                                  <span className="flex items-center gap-1 text-purple-500">
-                                    <Film size={10} /> {song.movieName}
-                                  </span>
-                                ) : song.albumName ? (
-                                  <span className="flex items-center gap-1 text-blue-500">
-                                    <Disc3 size={10} /> {song.albumName}
-                                  </span>
-                                ) : (
-                                  "—"
-                                )}
+                              <td className="px-4 py-3 text-sm text-slate-500 truncate">
+                                {song.movieName || "Single"}
                               </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-400 hidden sm:table-cell">
-                                {parseArtists(song.actorNames).join(", ") ||
-                                  "—"}
+                              <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">
+                                {song.genre || "—"}
                               </td>
-                              <td className="px-4 py-2.5">
-                                {song.genre ? (
-                                  <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
-                                    {song.genre}
-                                  </span>
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                              <td className="px-4 py-2.5 text-xs text-slate-400 hidden sm:table-cell">
+                              <td className="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">
                                 {song.language || "—"}
                               </td>
                             </tr>
@@ -1504,6 +1802,7 @@ const NewRelease = () => {
         </>
       )}
 
+      {/* ── STICKY PLAYER with expand arrow ── */}
       <AnimatePresence>
         {currentSong && (
           <StickyPlayer
@@ -1522,6 +1821,8 @@ const NewRelease = () => {
             isShuffle={isShuffle}
             onToggleShuffle={onToggleShuffle}
             onClose={handleClosePlayer}
+            onExpand={handlePlayerExpandToggle}
+            profileOpen={profileOpen}
           />
         )}
       </AnimatePresence>
