@@ -33,11 +33,13 @@ import {
   Loader2,
   Maximize2,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+// ✅ FIX: use the SAME shared Supabase client instance used everywhere else
+// (Auth, TopPlaylist, History). Previously this file created its OWN client
+// with createClient(...) directly — that spins up a second, separate
+// GoTrueClient/auth session that does not reliably share the logged-in
+// session with the rest of the app. That's why userRef.current ended up
+// null here and saveToHistory() was silently skipped on this page only.
+import { supabase } from "../lib/supabaseClient";
 
 const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -276,6 +278,10 @@ const TopChart = () => {
   const [profileSongs, setProfileSongs] = useState([]);
   const [profileOpen, setProfileOpen] = useState(false);
 
+  // ✅ AUTH STATES
+  const [user, setUser] = useState(null);
+  const userRef = useRef(null);
+
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
@@ -304,6 +310,26 @@ const TopChart = () => {
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // ✅ AUTH & SESSION (now reads from the shared client, so it correctly
+  // sees the same logged-in session as the rest of the app)
+  useEffect(() => {
+    const getSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      userRef.current = session?.user ?? null;
+    };
+    getSession();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      userRef.current = session?.user ?? null;
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   // Fetch Charts
@@ -407,6 +433,46 @@ const TopChart = () => {
     });
   }, [uniqueFilteredSongs, profileSongs, searchQuery, profileOpen, durations]);
 
+  // ✅ SAVE TO HISTORY DB
+  const saveToHistory = async (releaseId) => {
+    const currentUser = userRef.current;
+    if (!currentUser || !releaseId) {
+      // Helpful while debugging: if this fires often, user session isn't
+      // ready yet — but with the shared client this should now be rare.
+      return;
+    }
+    try {
+      const { data: existing, error: fetchErr } = await supabase
+        .from("history")
+        .select("id")
+        .eq("user_id", currentUser.id)
+        .eq("release_id", releaseId)
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error("History lookup error:", fetchErr.message);
+      }
+
+      if (existing) {
+        const { error: updateErr } = await supabase
+          .from("history")
+          .update({ played_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        if (updateErr)
+          console.error("History update error:", updateErr.message);
+      } else {
+        const { error: insertErr } = await supabase
+          .from("history")
+          .insert({ user_id: currentUser.id, release_id: releaseId });
+        if (insertErr)
+          console.error("History insert error:", insertErr.message);
+      }
+    } catch (error) {
+      console.error("History save error:", error);
+    }
+  };
+
   const incrementSongCounts = useCallback(async (song) => {
     if (!song || !song.release_id || countedSongIds.current.has(song.id))
       return;
@@ -441,6 +507,11 @@ const TopChart = () => {
         audio.src = song.audioUrl;
         audio.load();
         incrementSongCounts(song);
+
+        // ✅ SAVE TO HISTORY (use song.release_id because song.id is chart_songs.id)
+        if (song.release_id) {
+          saveToHistory(song.release_id);
+        }
       }
       let hasStarted = false;
       const tryPlay = () => {
@@ -706,7 +777,7 @@ const TopChart = () => {
       ]
     : [];
 
-  // ✅ FIXED SongRow — skipAnimation prevents blink, showLike adds like column
+  // ✅ SongRow — skipAnimation prevents blink, showLike adds like column
   const SongRow = ({
     song,
     index,
@@ -831,8 +902,6 @@ const TopChart = () => {
       </>
     );
 
-    // ✅ skipAnimation = true → plain <tr> (no blink in profile panel)
-    // skipAnimation = false → motion.tr with stagger (nice entrance in search)
     if (skipAnimation) {
       return (
         <tr
@@ -1001,7 +1070,7 @@ const TopChart = () => {
                 </div>
               </div>
 
-              {/* ✅ FIXED: Song Table with Like column, no blink */}
+              {/* Song Table with Like column, no blink */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200">

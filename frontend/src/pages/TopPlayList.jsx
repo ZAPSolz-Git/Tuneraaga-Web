@@ -5,7 +5,12 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  useParams,
+  useNavigate,
+  Link,
+  useSearchParams,
+} from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
@@ -33,6 +38,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import Auth from "../components/Auth";
 
 const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -57,7 +63,7 @@ const parseArtists = (artistStr) => {
     .filter(Boolean);
 };
 
-// ─── STICKY PLAYER (with Maximize2 expand arrow) ───
+// ─── STICKY PLAYER ───
 const StickyPlayer = ({
   song,
   isPlaying,
@@ -166,7 +172,6 @@ const StickyPlayer = ({
           </div>
         </div>
 
-        {/* Mobile Right */}
         <div className="flex md:hidden items-center gap-1 flex-shrink-0">
           {onExpand && (
             <button
@@ -189,7 +194,6 @@ const StickyPlayer = ({
           </button>
         </div>
 
-        {/* Desktop Right */}
         <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
           <div className="flex items-center gap-3 w-full justify-end">
             {onExpand && (
@@ -246,8 +250,165 @@ const StickyPlayer = ({
   );
 };
 
+// ─── EXTRACTED SONG ROW (Prevents unmount/remount bugs) ───
+const SongRow = ({
+  song,
+  index,
+  list,
+  skipAnimation = false,
+  showLike = false,
+  onLike,
+  isLiked,
+  currentSong,
+  playing,
+  durations,
+  onSongClick,
+}) => {
+  const isActive = currentSong?.id === song.id;
+  const uniqueSongArtists = [
+    ...new Set([song.artist, ...parseArtists(song.featuring_artists)]),
+  ];
+  const actualDuration = durations[song.id];
+
+  const rowContent = (
+    <>
+      <td className="px-4 md:px-6 py-3 whitespace-nowrap">
+        <div className="w-8 h-8 flex items-center justify-center">
+          {isActive && playing ? (
+            <div className="flex items-end gap-0.5 h-4">
+              <motion.div
+                animate={{ height: ["40%", "100%", "40%"] }}
+                transition={{ repeat: Infinity, duration: 0.6 }}
+                className="w-1 bg-blue-600 rounded-full"
+              />
+              <motion.div
+                animate={{ height: ["100%", "40%", "100%"] }}
+                transition={{ repeat: Infinity, duration: 0.6, delay: 0.15 }}
+                className="w-1 bg-blue-600 rounded-full"
+              />
+              <motion.div
+                animate={{ height: ["60%", "100%", "60%"] }}
+                transition={{ repeat: Infinity, duration: 0.6, delay: 0.3 }}
+                className="w-1 bg-blue-600 rounded-full"
+              />
+            </div>
+          ) : (
+            <>
+              <span
+                className={`text-sm font-medium group-hover:hidden ${isActive ? "text-blue-600" : "text-slate-500"}`}
+              >
+                {index + 1}
+              </span>
+              <Play
+                size={16}
+                className="text-blue-600 hidden group-hover:block fill-blue-600"
+              />
+            </>
+          )}
+        </div>
+      </td>
+      <td className="px-4 md:px-6 py-3">
+        <div className="flex items-center gap-3">
+          <img
+            src={song.img}
+            alt={song.title}
+            className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
+            onError={(e) => {
+              e.target.src = "https://via.placeholder.com/40";
+            }}
+          />
+          <div className="min-w-0">
+            <div
+              className={`text-sm font-semibold truncate ${isActive ? "text-blue-600" : "text-slate-900"}`}
+            >
+              {song.title}
+            </div>
+            <div className="md:hidden text-xs text-slate-500 truncate mt-0.5 flex items-center gap-1 flex-wrap">
+              {uniqueSongArtists.map((a, i) => (
+                <span key={i} className="flex items-center gap-0.5">
+                  <Link
+                    to={`/artist/${encodeURIComponent(a)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:text-blue-600 hover:underline"
+                  >
+                    {a}
+                  </Link>
+                  {i < uniqueSongArtists.length - 1 && (
+                    <span className="text-slate-300">,</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 md:px-6 py-3 hidden md:table-cell">
+        <div className="flex items-center gap-1 flex-wrap text-sm text-slate-600">
+          {uniqueSongArtists.map((a, i) => (
+            <span key={i} className="flex items-center gap-1">
+              <Link
+                to={`/artist/${encodeURIComponent(a)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="hover:text-blue-600 hover:underline transition-colors"
+              >
+                {a}
+              </Link>
+              {i < uniqueSongArtists.length - 1 && (
+                <span className="text-slate-300">,</span>
+              )}
+            </span>
+          ))}
+        </div>
+      </td>
+      <td className="px-4 md:px-6 py-3 text-right text-sm text-slate-500 font-mono">
+        {formatDuration(actualDuration)}
+      </td>
+      {showLike && (
+        <td className="px-4 md:px-6 py-3 text-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onLike) onLike(song.release_id || song.id);
+            }}
+            className={`transition-all hover:scale-110 ${isLiked ? "text-red-500" : "text-slate-300 hover:text-red-400"}`}
+          >
+            <Heart size={16} fill={isLiked ? "currentColor" : "none"} />
+          </button>
+        </td>
+      )}
+    </>
+  );
+
+  if (skipAnimation) {
+    return (
+      <tr
+        onClick={() => onSongClick(index, song, list)}
+        className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
+      >
+        {rowContent}
+      </tr>
+    );
+  }
+
+  return (
+    <motion.tr
+      onClick={() => onSongClick(index, song, list)}
+      className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.02 }}
+    >
+      {rowContent}
+    </motion.tr>
+  );
+};
+
+// ═══════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════
 const TopPlaylist = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -270,6 +431,10 @@ const TopPlaylist = () => {
   const [profilePlaylist, setProfilePlaylist] = useState(null);
   const [profileSongs, setProfileSongs] = useState([]);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  // ✅ AUTH & DB STATES
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
@@ -300,6 +465,42 @@ const TopPlaylist = () => {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // ✅ AUTH & DB LIKES FETCH
+  useEffect(() => {
+    const getSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      if (session?.user) fetchLikes(session.user.id);
+    };
+    getSession();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchLikes(session.user.id);
+      else setLikedSongs(new Set());
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchLikes = async (userId) => {
+    const { data } = await supabase
+      .from("likes")
+      .select("release_id")
+      .eq("user_id", userId);
+    if (data) setLikedSongs(new Set(data.map((l) => l.release_id)));
+  };
+
+  // ✅ SAVE TO HISTORY DB
+  const saveToHistory = async (releaseId) => {
+    if (!user || !releaseId) return;
+    await supabase
+      .from("history")
+      .insert({ user_id: user.id, release_id: releaseId });
+  };
 
   // Fetch Playlists
   useEffect(() => {
@@ -353,6 +554,36 @@ const TopPlaylist = () => {
     };
     fetchPlaylists();
   }, []);
+
+  // Handle playlist query parameter from footer (FIXED: Flexible matching)
+  useEffect(() => {
+    const playlistParam = searchParams.get("playlist");
+
+    if (playlistParam && playlists.length > 0) {
+      const normalizedParam = playlistParam.toLowerCase().trim();
+
+      // Flexible match to handle minor typos or extra words (e.g. "Pathan" vs "Pathaan")
+      const foundPlaylist = playlists.find((p) => {
+        const normalizedTitle = p.title.toLowerCase().trim();
+        return (
+          normalizedTitle.includes(normalizedParam) ||
+          normalizedParam.includes(normalizedTitle)
+        );
+      });
+
+      if (foundPlaylist) {
+        setProfilePlaylist(foundPlaylist);
+        setProfileSongs(foundPlaylist.playlist_songs || []);
+        setProfileOpen(true);
+        setIsAllLiked(
+          foundPlaylist.playlist_songs.length > 0 &&
+            foundPlaylist.playlist_songs.every((s) =>
+              likedSongs.has(s.release_id || s.id),
+            ),
+        );
+      }
+    }
+  }, [searchParams, playlists, likedSongs]);
 
   const filteredPlaylists = playlists.filter((p) => {
     if (!searchQuery.trim()) return true;
@@ -439,6 +670,8 @@ const TopPlaylist = () => {
         audio.src = song.audioUrl;
         audio.load();
         incrementSongCounts(song);
+        // ✅ SAVE TO HISTORY
+        if (song.release_id) saveToHistory(song.release_id);
       }
       let hasStarted = false;
       const tryPlay = () => {
@@ -468,7 +701,7 @@ const TopPlaylist = () => {
         }, 3000);
       }
     },
-    [incrementSongCounts],
+    [incrementSongCounts, user],
   );
 
   const handleNext = useCallback(() => {
@@ -606,18 +839,28 @@ const TopPlaylist = () => {
     setIsMuted(v === 0);
   };
 
-  const toggleLikeSong = (songId) => {
+  // ✅ DB TOGGLE LIKE
+  const toggleLikeSong = async (releaseId) => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    const isLiked = likedSongs.has(releaseId);
     setLikedSongs((prev) => {
       const n = new Set(prev);
-      if (n.has(songId)) n.delete(songId);
-      else n.add(songId);
-      if (profilePlaylist)
-        setIsAllLiked(
-          n.size === profilePlaylist.playlist_songs.length &&
-            profilePlaylist.playlist_songs.length > 0,
-        );
+      if (isLiked) n.delete(releaseId);
+      else n.add(releaseId);
       return n;
     });
+    if (isLiked)
+      await supabase
+        .from("likes")
+        .delete()
+        .match({ user_id: user.id, release_id: releaseId });
+    else
+      await supabase
+        .from("likes")
+        .insert({ user_id: user.id, release_id: releaseId });
   };
 
   const toggleLikeAll = () => {
@@ -626,7 +869,11 @@ const TopPlaylist = () => {
       setLikedSongs(new Set());
       setIsAllLiked(false);
     } else {
-      setLikedSongs(new Set(profilePlaylist.playlist_songs.map((s) => s.id)));
+      setLikedSongs(
+        new Set(
+          profilePlaylist.playlist_songs.map((s) => s.release_id || s.id),
+        ),
+      );
       setIsAllLiked(true);
     }
   };
@@ -670,7 +917,9 @@ const TopPlaylist = () => {
       setProfileOpen(true);
       setIsAllLiked(
         playlist.playlist_songs.length > 0 &&
-          playlist.playlist_songs.every((s) => likedSongs.has(s.id)),
+          playlist.playlist_songs.every((s) =>
+            likedSongs.has(s.release_id || s.id),
+          ),
       );
     },
     [profileOpen, profilePlaylist, likedSongs],
@@ -689,7 +938,9 @@ const TopPlaylist = () => {
         setProfileSongs(foundPlaylist.playlist_songs);
         setProfileOpen(true);
         setIsAllLiked(
-          foundPlaylist.playlist_songs.every((s) => likedSongs.has(s.id)),
+          foundPlaylist.playlist_songs.every((s) =>
+            likedSongs.has(s.release_id || s.id),
+          ),
         );
       }
     }
@@ -711,158 +962,12 @@ const TopPlaylist = () => {
       ]
     : [];
 
-  // ✅ FIXED SongRow — skipAnimation prevents blink, showLike adds like column
-  const SongRow = ({
-    song,
-    index,
-    list,
-    skipAnimation = false,
-    showLike = false,
-    onLike,
-    isLiked,
-  }) => {
-    const isActive = currentSong?.id === song.id;
-    const uniqueSongArtists = [
-      ...new Set([song.artist, ...parseArtists(song.featuring_artists)]),
-    ];
-    const actualDuration = durations[song.id];
-
-    const rowContent = (
-      <>
-        <td className="px-4 md:px-6 py-3 whitespace-nowrap">
-          <div className="w-8 h-8 flex items-center justify-center">
-            {isActive && playing ? (
-              <div className="flex items-end gap-0.5 h-4">
-                <motion.div
-                  animate={{ height: ["40%", "100%", "40%"] }}
-                  transition={{ repeat: Infinity, duration: 0.6 }}
-                  className="w-1 bg-blue-600 rounded-full"
-                />
-                <motion.div
-                  animate={{ height: ["100%", "40%", "100%"] }}
-                  transition={{ repeat: Infinity, duration: 0.6, delay: 0.15 }}
-                  className="w-1 bg-blue-600 rounded-full"
-                />
-                <motion.div
-                  animate={{ height: ["60%", "100%", "60%"] }}
-                  transition={{ repeat: Infinity, duration: 0.6, delay: 0.3 }}
-                  className="w-1 bg-blue-600 rounded-full"
-                />
-              </div>
-            ) : (
-              <>
-                <span
-                  className={`text-sm font-medium group-hover:hidden ${isActive ? "text-blue-600" : "text-slate-500"}`}
-                >
-                  {index + 1}
-                </span>
-                <Play
-                  size={16}
-                  className="text-blue-600 hidden group-hover:block fill-blue-600"
-                />
-              </>
-            )}
-          </div>
-        </td>
-        <td className="px-4 md:px-6 py-3">
-          <div className="flex items-center gap-3">
-            <img
-              src={song.img}
-              alt={song.title}
-              className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
-              onError={(e) => {
-                e.target.src = "https://via.placeholder.com/40";
-              }}
-            />
-            <div className="min-w-0">
-              <div
-                className={`text-sm font-semibold truncate ${isActive ? "text-blue-600" : "text-slate-900"}`}
-              >
-                {song.title}
-              </div>
-              <div className="md:hidden text-xs text-slate-500 truncate mt-0.5 flex items-center gap-1 flex-wrap">
-                {uniqueSongArtists.map((a, i) => (
-                  <span key={i} className="flex items-center gap-0.5">
-                    <Link
-                      to={`/artist/${encodeURIComponent(a)}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="hover:text-blue-600 hover:underline"
-                    >
-                      {a}
-                    </Link>
-                    {i < uniqueSongArtists.length - 1 && (
-                      <span className="text-slate-300">,</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </td>
-        <td className="px-4 md:px-6 py-3 hidden md:table-cell">
-          <div className="flex items-center gap-1 flex-wrap text-sm text-slate-600">
-            {uniqueSongArtists.map((a, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <Link
-                  to={`/artist/${encodeURIComponent(a)}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="hover:text-blue-600 hover:underline transition-colors"
-                >
-                  {a}
-                </Link>
-                {i < uniqueSongArtists.length - 1 && (
-                  <span className="text-slate-300">,</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </td>
-        <td className="px-4 md:px-6 py-3 text-right text-sm text-slate-500 font-mono">
-          {formatDuration(actualDuration)}
-        </td>
-        {showLike && (
-          <td className="px-4 md:px-6 py-3 text-center">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onLike) onLike(song.id);
-              }}
-              className={`transition-all hover:scale-110 ${isLiked ? "text-red-500" : "text-slate-300 hover:text-red-400"}`}
-            >
-              <Heart size={16} fill={isLiked ? "currentColor" : "none"} />
-            </button>
-          </td>
-        )}
-      </>
-    );
-
-    if (skipAnimation) {
-      return (
-        <tr
-          onClick={() => handleSongClick(index, song, list)}
-          className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
-        >
-          {rowContent}
-        </tr>
-      );
-    }
-
-    return (
-      <motion.tr
-        onClick={() => handleSongClick(index, song, list)}
-        className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-blue-50" : ""}`}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: index * 0.02 }}
-      >
-        {rowContent}
-      </motion.tr>
-    );
-  };
-
   return (
     <div className="w-full min-h-screen text-slate-900 pb-28 relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-50">
       <div className="absolute top-0 left-0 right-0 h-80 bg-gradient-to-b from-blue-100/50 to-transparent pointer-events-none" />
+
+      {/* ✅ AUTH MODAL */}
+      {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
 
       {/* ── PROFILE PANEL ── */}
       <AnimatePresence>
@@ -1034,7 +1139,11 @@ const TopPlaylist = () => {
                           skipAnimation
                           showLike
                           onLike={toggleLikeSong}
-                          isLiked={likedSongs.has(song.id)}
+                          isLiked={likedSongs.has(song.release_id || song.id)}
+                          currentSong={currentSong}
+                          playing={playing}
+                          durations={durations}
+                          onSongClick={handleSongClick}
                         />
                       ))}
                     </tbody>
@@ -1173,6 +1282,10 @@ const TopPlaylist = () => {
                                 song={song}
                                 index={index}
                                 list={uniqueFilteredSongs}
+                                currentSong={currentSong}
+                                playing={playing}
+                                durations={durations}
+                                onSongClick={handleSongClick}
                               />
                             ))}
                           </tbody>
@@ -1191,7 +1304,9 @@ const TopPlaylist = () => {
                 key={playlist.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                onClick={() => handlePlaylistPlay(playlist)}
+                onClick={() => {
+                  handleOpenPlaylistProfile(playlist);
+                }}
                 className="group relative h-48 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-200"
               >
                 <img

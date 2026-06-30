@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 export const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -43,6 +44,12 @@ export const useAudioPlayer = () => {
   const isShuffleRef = useRef(false);
   const isPlayingRef = useRef(false);
 
+  // ✅ AUTH / USER TRACKING (needed for history saving)
+  const userRef = useRef(null);
+  // Keep track of release_id we already pushed to history this "play action"
+  // to avoid duplicate inserts for the exact same trigger.
+  const lastHistorySavedIdRef = useRef(null);
+
   useEffect(() => {
     currentSongRef.current = currentSong;
   }, [currentSong]);
@@ -59,48 +66,115 @@ export const useAudioPlayer = () => {
     isPlayingRef.current = playing;
   }, [playing]);
 
-  // Core: load and play a song at index
-  const _playSongAtIndex = useCallback((index, list) => {
-    const song = list[index];
-    if (!song || !song.audioUrl) return;
-
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    // Pause current before loading new
-    audio.pause();
-
-    setCurrentSong(song);
-    currentSongRef.current = song;
-    setCurrentIndex(index);
-    currentIndexRef.current = index;
-    setCurrentList(list);
-    currentListRef.current = list;
-    setDuration(0);
-    setCurrentTime(0);
-
-    audio.src = song.audioUrl;
-    audio.load();
-
-    const tryPlay = () => {
-      const p = audio.play();
-      if (p !== undefined) {
-        p.then(() => setPlaying(true)).catch((err) => {
-          if (err.name !== "AbortError") console.error("Play error:", err);
-        });
-      }
+  // ✅ Keep a live reference to the logged-in user (session) so that
+  // saveToHistory always has the latest auth state, even inside callbacks
+  // created before the session resolved.
+  useEffect(() => {
+    const getSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      userRef.current = session?.user ?? null;
     };
+    getSession();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      userRef.current = session?.user ?? null;
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
-    if (audio.readyState >= 2) {
-      tryPlay();
-    } else {
-      const onCanPlay = () => {
-        audio.removeEventListener("canplay", onCanPlay);
-        tryPlay();
-      };
-      audio.addEventListener("canplay", onCanPlay, { once: true });
+  // ✅ SAVE TO HISTORY DB (check then update/insert to prevent duplicates & silent fails)
+  const saveToHistory = useCallback(async (releaseId) => {
+    const currentUser = userRef.current;
+    if (!currentUser || !releaseId) return;
+    try {
+      // 1. Check if this song already exists in history
+      const { data: existing, error: selectError } = await supabase
+        .from("history")
+        .select("id")
+        .eq("user_id", currentUser.id)
+        .eq("release_id", releaseId)
+        .limit(1)
+        .maybeSingle();
+
+      if (selectError) {
+        console.error("History select error:", selectError);
+      }
+
+      if (existing) {
+        // 2. If exists, just update the timestamp to move it to top
+        const { error: updateError } = await supabase
+          .from("history")
+          .update({ played_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        if (updateError) console.error("History update error:", updateError);
+      } else {
+        // 3. If new, insert it
+        const { error: insertError } = await supabase
+          .from("history")
+          .insert({ user_id: currentUser.id, release_id: releaseId });
+        if (insertError) console.error("History insert error:", insertError);
+      }
+    } catch (error) {
+      console.error("History save error:", error);
     }
   }, []);
+
+  // Core: load and play a song at index
+  const _playSongAtIndex = useCallback(
+    (index, list) => {
+      const song = list[index];
+      if (!song || !song.audioUrl) return;
+
+      const audio = audioRef.current;
+      if (!audio) return;
+
+      // Pause current before loading new
+      audio.pause();
+
+      setCurrentSong(song);
+      currentSongRef.current = song;
+      setCurrentIndex(index);
+      currentIndexRef.current = index;
+      setCurrentList(list);
+      currentListRef.current = list;
+      setDuration(0);
+      setCurrentTime(0);
+
+      audio.src = song.audioUrl;
+      audio.load();
+
+      // ✅ SAVE TO HISTORY — every time a (new) song actually starts loading.
+      // song.id works for both regular tracks/playlist items and podcast
+      // episodes/radio station songs since they all carry the underlying
+      // release id as `id` by the time they reach this hook.
+      if (song.id) {
+        saveToHistory(song.id);
+      }
+
+      const tryPlay = () => {
+        const p = audio.play();
+        if (p !== undefined) {
+          p.then(() => setPlaying(true)).catch((err) => {
+            if (err.name !== "AbortError") console.error("Play error:", err);
+          });
+        }
+      };
+
+      if (audio.readyState >= 2) {
+        tryPlay();
+      } else {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          tryPlay();
+        };
+        audio.addEventListener("canplay", onCanPlay, { once: true });
+      }
+    },
+    [saveToHistory],
+  );
 
   // Init audio element once
   useEffect(() => {

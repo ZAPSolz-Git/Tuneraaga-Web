@@ -20,6 +20,10 @@ import {
   TrendingUp,
   Users,
   Menu,
+  Clock,
+  Heart,
+  Disc3,
+  Plus,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import Footer from "./Footer";
@@ -39,15 +43,17 @@ const NavItem = ({ icon: Icon, label, to, sidebarOpen }) => {
   return (
     <Link to={to} className="block">
       <button
-        className={`flex items-center gap-4 px-3 py-2.5 w-full rounded-lg transition-all duration-200 group relative ${
+        className={`flex items-center gap-3 px-3 py-2 w-full rounded-lg transition-all duration-200 group relative ${
           isActive
             ? "text-white shadow-md"
             : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
         }`}
         style={isActive ? { background: BLUE_GRADIENT } : {}}
       >
-        <Icon className="w-5 h-5 flex-shrink-0" />
-        {sidebarOpen && <span className="font-medium text-sm">{label}</span>}
+        <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+        {sidebarOpen && (
+          <span className="font-medium text-[13px]">{label}</span>
+        )}
       </button>
     </Link>
   );
@@ -95,15 +101,15 @@ const SearchDropdown = ({ results, visible, onNavigate, onClose }) => {
               className="w-11 h-11 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
             />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+              <p className="text-[13px] font-semibold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
                 {song.title}
               </p>
-              <p className="text-xs text-slate-500 truncate mt-0.5">
+              <p className="text-[11px] text-slate-500 truncate mt-0.5">
                 {song.primary_artist}
                 {song.featuring_artists ? ` ft. ${song.featuring_artists}` : ""}
               </p>
               {song.album_name && (
-                <p className="text-[11px] text-blue-500 truncate mt-0.5">
+                <p className="text-[10px] text-blue-500 truncate mt-0.5">
                   {song.album_name}
                 </p>
               )}
@@ -213,12 +219,20 @@ const Layout = () => {
 
   const browseItems = [
     { path: "/music", label: "Music", icon: Music },
-    { path: "/new-release", label: "New Release", icon: Star },
-    { path: "/top-chart", label: "TopChart", icon: TrendingUp },
-    { path: "/top-playlist", label: "TopPlayList", icon: ListMusic },
-    { path: "/podcast", label: "Podcast", icon: Podcast },
+    { path: "/new-release", label: "New Releases", icon: Star },
+    { path: "/top-chart", label: "Top Charts", icon: TrendingUp },
+    { path: "/top-playlist", label: "Top Playlists", icon: ListMusic },
+    { path: "/podcast", label: "Podcasts", icon: Podcast },
+    { path: "/topartist", label: "Top Artists", icon: Users },
     { path: "/radio", label: "Radio", icon: Mic2 },
-    { path: "/topartist", label: "TopArtist", icon: Mic2 },
+  ];
+
+  const myLibraryItems = [
+    { path: "/history", label: "History", icon: Clock },
+    { path: "/liked", label: "Liked Songs", icon: Heart },
+    { path: "/my-albums", label: "Albums", icon: Disc3 },
+    { path: "/podcast", label: "Podcasts", icon: Podcast },
+    { path: "/my-artists", label: "Artists", icon: Users },
   ];
 
   const tuneraagaItems = [
@@ -266,7 +280,7 @@ const Layout = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search songs, artists, movies, lyrics..."
-                className="w-full pl-9 pr-9 py-2 rounded-full bg-slate-100 border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                className="w-full pl-9 pr-9 py-2 rounded-full bg-slate-100 border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
               />
               {searchQuery && (
                 <button
@@ -303,7 +317,7 @@ const Layout = () => {
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-colors ${
                       location.pathname === item.path
                         ? "text-blue-600 bg-blue-50"
                         : "text-slate-700 hover:bg-slate-50"
@@ -331,12 +345,12 @@ const Layout = () => {
     <div className="fixed inset-0 flex bg-slate-50 text-slate-900 font-sans overflow-hidden">
       <motion.aside
         initial={{ width: 240 }}
-        animate={{ width: sidebarOpen ? 240 : 80 }}
+        animate={{ width: sidebarOpen ? 240 : 76 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className="h-full bg-white border-r border-slate-200 flex flex-col justify-between py-6 px-3 relative z-20 shadow-sm"
+        className="h-full bg-white border-r border-slate-200 flex flex-col justify-between py-5 px-3 relative z-20 shadow-sm"
       >
-        <div>
-          <div className="flex items-center gap-3 px-2 mb-6">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="flex items-center gap-3 px-2 mb-5">
             {sidebarOpen ? (
               <Link
                 to="/"
@@ -346,7 +360,7 @@ const Layout = () => {
                 <img
                   src="/tuneraaga.png"
                   alt="Tune Raaga Logo"
-                  className="h-20 w-52 object-cover"
+                  className="h-16 w-44 object-cover"
                 />
               </Link>
             ) : (
@@ -360,10 +374,10 @@ const Layout = () => {
           </div>
 
           {sidebarOpen && (
-            <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-6 mx-2">
+            <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-4 mx-2">
               <button
                 onClick={() => setActiveTab("browse")}
-                className={`flex-1 text-xs font-bold py-2 rounded-md transition-all ${
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
                   activeTab === "browse"
                     ? "text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-800"
@@ -376,7 +390,7 @@ const Layout = () => {
               </button>
               <button
                 onClick={() => setActiveTab("tuneraaga")}
-                className={`flex-1 text-xs font-bold py-2 rounded-md transition-all ${
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
                   activeTab === "tuneraaga"
                     ? "text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-800"
@@ -390,9 +404,16 @@ const Layout = () => {
             </div>
           )}
 
-          <nav className="flex flex-col gap-2">
+          <nav className="flex flex-col gap-1">
             {activeTab === "browse" && (
               <>
+                {/* BROWSE HEADING */}
+                {sidebarOpen && (
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] px-3 mb-1.5 mt-1">
+                    Browse
+                  </span>
+                )}
+
                 {browseItems.map((item) => (
                   <NavItem
                     key={item.path}
@@ -402,6 +423,34 @@ const Layout = () => {
                     sidebarOpen={sidebarOpen}
                   />
                 ))}
+
+                {/* MY LIBRARY HEADING + ITEMS (exactly like screenshot) */}
+                {sidebarOpen && (
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] px-3 mb-1.5 mt-5 pt-4 border-t border-slate-100">
+                    My Library
+                  </span>
+                )}
+                {!sidebarOpen && (
+                  <div className="my-3 mx-3 border-t border-slate-100"></div>
+                )}
+
+                {myLibraryItems.map((item) => (
+                  <NavItem
+                    key={item.path}
+                    to={item.path}
+                    icon={item.icon}
+                    label={item.label}
+                    sidebarOpen={sidebarOpen}
+                  />
+                ))}
+
+                {/* + NEW PLAYLIST BUTTON */}
+                <Link
+                  to="/new-playlist"
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all text-slate-500 hover:text-blue-700 hover:bg-white/50"
+                >
+                  <Plus size={16} /> Create Playlist
+                </Link>
               </>
             )}
 
@@ -409,7 +458,7 @@ const Layout = () => {
               <>
                 <div className="border-t border-slate-200 my-2" />
                 <span
-                  className={`text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mb-1 ${!sidebarOpen && "text-center"}`}
+                  className={`text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1 ${!sidebarOpen && "text-center"}`}
                 >
                   {sidebarOpen ? "Menu" : ""}
                 </span>
@@ -448,14 +497,14 @@ const Layout = () => {
           <div className="flex items-center justify-center px-4 md:px-12 pointer-events-auto relative">
             <div className="relative w-full max-w-lg">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                <Search className="w-5 h-5" />
+                <Search className="w-4 h-4" />
               </div>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search songs, artists, movies, lyrics..."
-                className="w-full pl-12 pr-4 py-3 rounded-full bg-white border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+                className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
               />
               {searchQuery && (
                 <button
@@ -476,15 +525,15 @@ const Layout = () => {
               />
             </div>
 
-            <div className="hidden md:flex items-center gap-4 bg-white p-2 pl-6 rounded-full border border-slate-200 shadow-sm absolute right-4 md:right-12 top-1/2 -translate-y-1/2">
-              <Bell className="w-5 h-5 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
+            <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-5 rounded-full border border-slate-200 shadow-sm absolute right-4 md:right-12 top-1/2 -translate-y-1/2">
+              <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
               </Bell>
               <div
-                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
                 onClick={() => navigate("/login")}
               >
-                <User className="w-4 h-4 text-slate-600" />
+                <User className="w-3.5 h-3.5 text-slate-600" />
               </div>
             </div>
           </div>

@@ -20,6 +20,9 @@ import Podcast from "./pages/Podcast";
 import Radio from "./pages/Radio";
 
 import TopArtist from "./pages/TopArtist";
+import History from "./pages/History";
+import LikedSongs from "./pages/LikedSongs";
+import NewPlaylist from "./pages/NewPlaylist";
 import Footer from "./components/Footer";
 
 // --- NEW: Album Detail & Artist Profile ---
@@ -79,6 +82,9 @@ function App() {
 
           <Route path="podcast" element={<Podcast />} />
           <Route path="radio" element={<Radio />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/liked" element={<LikedSongs />} />
+          <Route path="/new-playlist" element={<NewPlaylist />} />
         </Route>
 
         {/* --- NEW: Album Detail Page (outside Layout — full page) --- */}
