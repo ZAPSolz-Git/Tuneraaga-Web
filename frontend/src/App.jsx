@@ -22,6 +22,9 @@ import Radio from "./pages/Radio";
 import TopArtist from "./pages/TopArtist";
 import History from "./pages/History";
 import LikedSongs from "./pages/LikedSongs";
+import MyAlbums from "./pages/MyAlbums";
+import MyArtists from "./pages/MyArtists";
+import MyPodcasts from "./pages/MyPodcasts";
 import NewPlaylist from "./pages/NewPlaylist";
 import Footer from "./components/Footer";
 
@@ -29,14 +32,9 @@ import Footer from "./components/Footer";
 import AlbumDetail from "./pages/AlbumDetail";
 import ArtistProfile from "./pages/ArtistProfile";
 
-// --- LOGIN PAGE ---
-// import LoginPage from "./pages/LoginPage";
-
 // --- ADMIN COMPONENTS ---
 import AdminDash from "./admin/AdminDash.jsx";
 import ArtistManager from "./admin/ArtistManager";
-
-// hello mc
 
 // --- ADMIN PAGE IMPORTS ---
 import TopPlaylistAdmin from "./admin/TopPlaylistAdmin";
@@ -75,16 +73,22 @@ function App() {
           <Route path="footer" element={<Footer />} />
           <Route path="new-release" element={<NewRelease />} />
           <Route path="topartist" element={<TopArtist />} />
-
           <Route path="top-chart" element={<TopChart />} />
           <Route path="top-playlist" element={<TopPlayList />} />
           <Route path="new-releases" element={<NewRelease />} />
-
           <Route path="podcast" element={<Podcast />} />
           <Route path="radio" element={<Radio />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/liked" element={<LikedSongs />} />
-          <Route path="/new-playlist" element={<NewPlaylist />} />
+          <Route path="history" element={<History />} />
+          <Route path="liked" element={<LikedSongs />} />
+          <Route path="my-albums" element={<MyAlbums />} />
+          <Route path="my-artists" element={<MyArtists />} />
+          <Route path="my-podcasts" element={<MyPodcasts />} />
+          <Route path="playlist/new" element={<NewPlaylist />} />
+          <Route path="playlist/:playlistId/edit" element={<NewPlaylist />} />
+          <Route
+            path="new-playlist"
+            element={<Navigate to="/playlist/new" replace />}
+          />
         </Route>
 
         {/* --- NEW: Album Detail Page (outside Layout — full page) --- */}

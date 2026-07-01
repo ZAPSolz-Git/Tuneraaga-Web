@@ -23,8 +23,10 @@ import {
   Clock,
   Heart,
   Disc3,
-  Plus,
   LogOut,
+  Plus,
+  Loader2,
+  ChevronRight as ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import Footer from "./Footer";
@@ -127,8 +129,6 @@ const SearchDropdown = ({ results, visible, onNavigate, onClose }) => {
   );
 };
 
-// Small avatar button + dropdown showing email and Logout,
-// or opens the Auth modal if nobody is logged in.
 const UserMenu = ({ user, onOpenAuth }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef(null);
@@ -200,6 +200,121 @@ const UserMenu = ({ user, onOpenAuth }) => {
   );
 };
 
+// ✅ INLINED PLAYLIST SIDEBAR — no separate file needed
+const PlaylistSidebar = ({ user, sidebarOpen }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [playlists, setPlaylists] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchPlaylists();
+  }, [user, location.pathname]);
+
+  const fetchPlaylists = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("user_playlists")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setPlaylists(data || []);
+    } catch (err) {
+      console.error("Error fetching playlists:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!user) return null;
+
+  if (!sidebarOpen) {
+    return (
+      <button
+        onClick={() => navigate("/playlist/new")}
+        className="flex items-center justify-center w-full px-3 py-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-all"
+        title="My Playlists"
+      >
+        <ListMusic className="w-[18px] h-[18px]" />
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => navigate("/playlist/new")}
+        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-blue-600 font-semibold text-[13px] hover:bg-blue-50 transition-all group"
+      >
+        <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors flex-shrink-0">
+          <Plus size={15} />
+        </div>
+        <span>New Playlist</span>
+      </button>
+
+      <div className="mt-4 mb-1.5 px-4">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em]">
+          My Playlists
+        </p>
+      </div>
+
+      <div className="space-y-0.5 max-h-[280px] overflow-y-auto">
+        {loading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="animate-spin text-slate-300" size={18} />
+          </div>
+        ) : playlists.length === 0 ? (
+          <div className="px-4 py-4 text-center">
+            <p className="text-[11px] text-slate-400">No playlists yet</p>
+          </div>
+        ) : (
+          playlists.map((pl) => {
+            const isActive = location.pathname === `/playlist/${pl.id}/edit`;
+            return (
+              <button
+                key={pl.id}
+                onClick={() => navigate(`/playlist/${pl.id}/edit`)}
+                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg text-left transition-all group ${
+                  isActive
+                    ? "text-white shadow-md"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+                style={isActive ? { background: BLUE_GRADIENT } : {}}
+              >
+                <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-slate-200 border border-slate-100">
+                  {pl.cover_url ? (
+                    <img
+                      src={pl.cover_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Disc3
+                        size={12}
+                        className={
+                          isActive ? "text-blue-200" : "text-slate-400"
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+                <span className="flex-1 text-[13px] font-medium truncate">
+                  {pl.title}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("browse");
@@ -219,9 +334,6 @@ const Layout = () => {
   const location = useLocation();
   const searchTimeoutRef = useRef(null);
 
-  // Auth: get current session and listen for changes.
-  // This uses the SAME shared supabase client as History.jsx / LikedSongs.jsx /
-  // Auth.jsx, so logging in/out from here instantly reflects everywhere else.
   useEffect(() => {
     const initAuth = async () => {
       const {
@@ -230,13 +342,11 @@ const Layout = () => {
       setUser(session?.user || null);
     };
     initAuth();
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user || null);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -244,11 +354,8 @@ const Layout = () => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile) {
-        setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
-      }
+      if (mobile) setSidebarOpen(false);
+      else setSidebarOpen(true);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -256,13 +363,11 @@ const Layout = () => {
 
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-
     if (!searchQuery.trim()) {
       setSearchResults([]);
       setShowSearchDropdown(false);
       return;
     }
-
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const q = searchQuery.trim();
@@ -274,7 +379,6 @@ const Layout = () => {
             `title.ilike.%${q}%,primary_artist.ilike.%${q}%,featuring_artists.ilike.%${q}%,album_name.ilike.%${q}%,lyrics.ilike.%${q}%,actor_names.ilike.%${q}%,language.ilike.%${q}%,genre.ilike.%${q}%`,
           )
           .limit(15);
-
         if (!error && data) {
           setSearchResults(data);
           setShowSearchDropdown(true);
@@ -327,7 +431,7 @@ const Layout = () => {
     { path: "/history", label: "History", icon: Clock },
     { path: "/liked", label: "Liked Songs", icon: Heart },
     { path: "/my-albums", label: "Albums", icon: Disc3 },
-    { path: "/podcast", label: "Podcasts", icon: Podcast },
+    { path: "/my-podcasts", label: "Podcasts", icon: Podcast },
     { path: "/my-artists", label: "Artists", icon: Users },
   ];
 
@@ -420,11 +524,7 @@ const Layout = () => {
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-colors ${
-                      location.pathname === item.path
-                        ? "text-blue-600 bg-blue-50"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-colors ${location.pathname === item.path ? "text-blue-600 bg-blue-50" : "text-slate-700 hover:bg-slate-50"}`}
                   >
                     <item.icon className="w-4 h-4" />
                     {item.label}
@@ -484,11 +584,7 @@ const Layout = () => {
             <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-4 mx-2">
               <button
                 onClick={() => setActiveTab("browse")}
-                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
-                  activeTab === "browse"
-                    ? "text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${activeTab === "browse" ? "text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
                 style={
                   activeTab === "browse" ? { background: BLUE_GRADIENT } : {}
                 }
@@ -497,11 +593,7 @@ const Layout = () => {
               </button>
               <button
                 onClick={() => setActiveTab("tuneraaga")}
-                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
-                  activeTab === "tuneraaga"
-                    ? "text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${activeTab === "tuneraaga" ? "text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
                 style={
                   activeTab === "tuneraaga" ? { background: BLUE_GRADIENT } : {}
                 }
@@ -514,7 +606,6 @@ const Layout = () => {
           <nav className="flex flex-col gap-1">
             {activeTab === "browse" && (
               <>
-                {/* BROWSE HEADING */}
                 {sidebarOpen && (
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] px-3 mb-1.5 mt-1">
                     Browse
@@ -531,7 +622,6 @@ const Layout = () => {
                   />
                 ))}
 
-                {/* MY LIBRARY HEADING + ITEMS (exactly like screenshot) */}
                 {sidebarOpen && (
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] px-3 mb-1.5 mt-5 pt-4 border-t border-slate-100">
                     My Library
@@ -551,13 +641,20 @@ const Layout = () => {
                   />
                 ))}
 
-                {/* + NEW PLAYLIST BUTTON */}
-                <Link
-                  to="/new-playlist"
-                  className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all text-slate-500 hover:text-blue-700 hover:bg-white/50"
-                >
-                  <Plus size={16} /> Create Playlist
-                </Link>
+                {sidebarOpen && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <PlaylistSidebar user={user} sidebarOpen={sidebarOpen} />
+                  </div>
+                )}
+                {!sidebarOpen && (
+                  <button
+                    onClick={() => navigate("/playlist/new")}
+                    className="flex items-center justify-center w-full px-3 py-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-all mt-2"
+                    title="My Playlists"
+                  >
+                    <ListMusic className="w-[18px] h-[18px]" />
+                  </button>
+                )}
               </>
             )}
 
@@ -637,7 +734,6 @@ const Layout = () => {
                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
               </Bell>
 
-              {/* Regular user auth — Log In / Sign Up (text), right beside the notification icon */}
               {user ? (
                 <UserMenu
                   user={user}
@@ -666,7 +762,6 @@ const Layout = () => {
                 </div>
               )}
 
-              {/* Artist / Admin login — completely separate flow, untouched */}
               <div
                 className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
                 onClick={() => navigate("/login")}

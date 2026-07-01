@@ -36,6 +36,8 @@ import {
   Search,
   Loader2,
   Maximize2,
+  Plus,
+  Check,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import Auth from "../components/Auth";
@@ -250,7 +252,7 @@ const StickyPlayer = ({
   );
 };
 
-// ─── EXTRACTED SONG ROW (Prevents unmount/remount bugs) ───
+// ─── EXTRACTED SONG ROW ───
 const SongRow = ({
   song,
   index,
@@ -427,14 +429,18 @@ const TopPlaylist = () => {
   const [durations, setDurations] = useState({});
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  // Profile panel state
   const [profilePlaylist, setProfilePlaylist] = useState(null);
   const [profileSongs, setProfileSongs] = useState([]);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  // ✅ AUTH & DB STATES
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // ✅ ADD TO PLAYLIST STATES
+  const [userPlaylists, setUserPlaylists] = useState([]);
+  const [showAddToPlaylistModal, setShowAddToPlaylistModal] = useState(false);
+  const [addToPlaylistLoading, setAddToPlaylistLoading] = useState(false);
+  const [addedPlaylistIds, setAddedPlaylistIds] = useState(new Set());
 
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
@@ -466,22 +472,27 @@ const TopPlaylist = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ✅ AUTH & DB LIKES FETCH
+  // ✅ AUTH & LIKES FETCH
   useEffect(() => {
     const getSession = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
-      if (session?.user) fetchLikes(session.user.id);
+      if (session?.user) {
+        fetchLikes(session.user.id);
+        fetchUserPlaylists(session.user.id);
+      }
     };
     getSession();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) fetchLikes(session.user.id);
-      else setLikedSongs(new Set());
+      if (session?.user) {
+        fetchLikes(session.user.id);
+        fetchUserPlaylists(session.user.id);
+      } else setLikedSongs(new Set());
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -494,12 +505,95 @@ const TopPlaylist = () => {
     if (data) setLikedSongs(new Set(data.map((l) => l.release_id)));
   };
 
+  // ✅ FETCH USER PLAYLISTS
+  const fetchUserPlaylists = async (uid) => {
+    try {
+      const { data, error } = await supabase
+        .from("user_playlists")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
+      if (!error && data) setUserPlaylists(data);
+    } catch (err) {
+      console.error("Fetch user playlists error:", err);
+    }
+  };
+
   // ✅ SAVE TO HISTORY DB
   const saveToHistory = async (releaseId) => {
     if (!user || !releaseId) return;
-    await supabase
-      .from("history")
-      .insert({ user_id: user.id, release_id: releaseId });
+    try {
+      const { data: existing } = await supabase
+        .from("history")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("release_id", releaseId)
+        .maybeSingle();
+      if (existing) {
+        await supabase
+          .from("history")
+          .update({ played_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      } else {
+        await supabase
+          .from("history")
+          .insert({ user_id: user.id, release_id: releaseId });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ✅ ADD ALL SONGS FROM PLAYLIST TO USER PLAYLIST
+  const handleAddToUserPlaylist = async (targetPlaylist) => {
+    if (!profilePlaylist || !profileSongs.length) return;
+    setAddToPlaylistLoading(true);
+    try {
+      // Get existing songs in the target playlist to avoid duplicates
+      const { data: existingSongs } = await supabase
+        .from("user_playlist_songs")
+        .select("release_id")
+        .eq("playlist_id", targetPlaylist.id);
+      const existingIds = new Set(
+        (existingSongs || []).map((s) => s.release_id),
+      );
+
+      const songsToAdd = profileSongs
+        .filter((s) => s.release_id && !existingIds.has(s.release_id))
+        .map((s, i) => ({
+          playlist_id: targetPlaylist.id,
+          release_id: s.release_id,
+          position: (existingSongs?.length || 0) + i,
+        }));
+
+      if (songsToAdd.length > 0) {
+        const { error: insertError } = await supabase
+          .from("user_playlist_songs")
+          .insert(songsToAdd);
+        if (insertError) throw insertError;
+      }
+
+      // Update cover image if empty
+      if (!targetPlaylist.cover_url && profilePlaylist.image_url) {
+        await supabase
+          .from("user_playlists")
+          .update({ cover_url: profilePlaylist.image_url })
+          .eq("id", targetPlaylist.id);
+        setUserPlaylists((prev) =>
+          prev.map((p) =>
+            p.id === targetPlaylist.id
+              ? { ...p, cover_url: profilePlaylist.image_url }
+              : p,
+          ),
+        );
+      }
+
+      setAddedPlaylistIds((prev) => new Set([...prev, targetPlaylist.id]));
+    } catch (err) {
+      console.error("Add to playlist error:", err);
+    } finally {
+      setAddToPlaylistLoading(false);
+    }
   };
 
   // Fetch Playlists
@@ -555,14 +649,11 @@ const TopPlaylist = () => {
     fetchPlaylists();
   }, []);
 
-  // Handle playlist query parameter from footer (FIXED: Flexible matching)
+  // Handle playlist query parameter
   useEffect(() => {
     const playlistParam = searchParams.get("playlist");
-
     if (playlistParam && playlists.length > 0) {
       const normalizedParam = playlistParam.toLowerCase().trim();
-
-      // Flexible match to handle minor typos or extra words (e.g. "Pathan" vs "Pathaan")
       const foundPlaylist = playlists.find((p) => {
         const normalizedTitle = p.title.toLowerCase().trim();
         return (
@@ -570,7 +661,6 @@ const TopPlaylist = () => {
           normalizedParam.includes(normalizedTitle)
         );
       });
-
       if (foundPlaylist) {
         setProfilePlaylist(foundPlaylist);
         setProfileSongs(foundPlaylist.playlist_songs || []);
@@ -670,7 +760,6 @@ const TopPlaylist = () => {
         audio.src = song.audioUrl;
         audio.load();
         incrementSongCounts(song);
-        // ✅ SAVE TO HISTORY
         if (song.release_id) saveToHistory(song.release_id);
       }
       let hasStarted = false;
@@ -745,9 +834,7 @@ const TopPlaylist = () => {
       ) {
         audio.pause();
         setPlaying(false);
-      } else {
-        playSong(song);
-      }
+      } else playSong(song);
     },
     [playSong],
   );
@@ -839,7 +926,6 @@ const TopPlaylist = () => {
     setIsMuted(v === 0);
   };
 
-  // ✅ DB TOGGLE LIKE
   const toggleLikeSong = async (releaseId) => {
     if (!user) {
       setShowAuthModal(true);
@@ -966,8 +1052,111 @@ const TopPlaylist = () => {
     <div className="w-full min-h-screen text-slate-900 pb-28 relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-50">
       <div className="absolute top-0 left-0 right-0 h-80 bg-gradient-to-b from-blue-100/50 to-transparent pointer-events-none" />
 
-      {/* ✅ AUTH MODAL */}
       {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* ── ADD TO PLAYLIST MODAL ── */}
+      {/* ═══════════════════════════════════════ */}
+      <AnimatePresence>
+        {showAddToPlaylistModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+            onClick={() => setShowAddToPlaylistModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowAddToPlaylistModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+              >
+                <X size={20} />
+              </button>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">
+                Add to Playlist
+              </h3>
+              <p className="text-xs text-slate-500 mb-5">
+                {profilePlaylist?.title} · {profileSongs.length} songs
+              </p>
+
+              {userPlaylists.length === 0 ? (
+                <div className="text-center py-8">
+                  <Disc3 size={32} className="mx-auto text-slate-300 mb-3" />
+                  <p className="text-sm text-slate-500 mb-4">
+                    No playlists yet. Create one first!
+                  </p>
+                  <Link
+                    to="/new-playlist"
+                    className="inline-block bg-blue-600 text-white px-5 py-2.5 rounded-full text-sm font-bold hover:bg-blue-700 transition-all"
+                  >
+                    Create Playlist
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {userPlaylists.map((pl) => {
+                    const isAdded = addedPlaylistIds.has(pl.id);
+                    return (
+                      <button
+                        key={pl.id}
+                        onClick={() => handleAddToUserPlaylist(pl)}
+                        disabled={addToPlaylistLoading || isAdded}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${isAdded ? "bg-green-50 border-green-200" : "hover:bg-slate-50 border-slate-100"}`}
+                      >
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 shadow-sm">
+                          {pl.cover_url ? (
+                            <img
+                              src={pl.cover_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Disc3
+                              size={24}
+                              className="w-full h-full p-2 text-slate-400"
+                            />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`font-semibold text-sm truncate ${isAdded ? "text-green-700" : "text-slate-900"}`}
+                          >
+                            {pl.title}
+                          </p>
+                          <p className="text-xs text-slate-500">Playlist</p>
+                        </div>
+                        {isAdded ? (
+                          <Check
+                            size={18}
+                            className="text-green-600 flex-shrink-0"
+                          />
+                        ) : addToPlaylistLoading ? (
+                          <Loader2
+                            size={18}
+                            className="animate-spin text-blue-600 flex-shrink-0"
+                          />
+                        ) : (
+                          <Plus
+                            size={18}
+                            className="text-slate-400 flex-shrink-0"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── PROFILE PANEL ── */}
       <AnimatePresence>
@@ -1083,6 +1272,43 @@ const TopPlaylist = () => {
                             className="absolute right-0 top-14 w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 z-50 overflow-hidden"
                           >
                             <button
+                              onClick={() => {
+                                handleSongClick(
+                                  0,
+                                  profilePlaylist.playlist_songs[0],
+                                  profilePlaylist.playlist_songs,
+                                );
+                                setShowMoreMenu(false);
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
+                              <Play size={16} /> Play Playlist Now
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowMoreMenu(false);
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
+                              <ListPlus size={16} /> Add to Queue
+                            </button>
+                            {/* ✅ ADD TO PLAYLIST - Opens the modal */}
+                            <button
+                              onClick={() => {
+                                setShowMoreMenu(false);
+                                if (!user) {
+                                  setShowAuthModal(true);
+                                  return;
+                                }
+                                setShowAddToPlaylistModal(true);
+                                setAddedPlaylistIds(new Set());
+                              }}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
+                              <ListPlus size={16} /> Add to Playlist
+                            </button>
+                            <div className="mx-3 my-1 border-t border-slate-100" />
+                            <button
                               onClick={handleSharePlaylist}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                             >
@@ -1093,9 +1319,6 @@ const TopPlaylist = () => {
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
                             >
                               <Link2 size={16} /> Copy Link
-                            </button>
-                            <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
-                              <ListPlus size={16} /> Add to Playlist
                             </button>
                             <div className="mx-3 my-1 border-t border-slate-100" />
                             <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
@@ -1224,7 +1447,7 @@ const TopPlaylist = () => {
                           key={playlist.id}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          onClick={() => handlePlaylistPlay(playlist)}
+                          onClick={() => handleOpenPlaylistProfile(playlist)}
                           className="group relative h-48 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-200"
                         >
                           <img
@@ -1304,9 +1527,7 @@ const TopPlaylist = () => {
                 key={playlist.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                onClick={() => {
-                  handleOpenPlaylistProfile(playlist);
-                }}
+                onClick={() => handleOpenPlaylistProfile(playlist)}
                 className="group relative h-48 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-200"
               >
                 <img
@@ -1324,12 +1545,6 @@ const TopPlaylist = () => {
                   <h3 className="text-xl font-bold leading-tight mb-1 line-clamp-2">
                     {playlist.title}
                   </h3>
-                  <div className="flex items-center gap-3 text-xs text-slate-300">
-                    <span className="flex items-center gap-1">
-                      <Music2 size={10} />{" "}
-                      {playlist.playlist_songs?.length || 0} Songs
-                    </span>
-                  </div>
                 </div>
               </motion.div>
             ))}
@@ -1338,29 +1553,25 @@ const TopPlaylist = () => {
       </div>
 
       {/* ── STICKY PLAYER ── */}
-      <AnimatePresence>
-        {currentSong && (
-          <StickyPlayer
-            song={currentSong}
-            isPlaying={playing}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            onVolumeChange={handleVolumeChange}
-            isMuted={isMuted}
-            toggleMute={toggleMute}
-            isShuffle={isShuffle}
-            onToggleShuffle={() => setIsShuffle(!isShuffle)}
-            onClose={handleClosePlayer}
-            onExpand={handlePlayerExpandToggle}
-            profileOpen={profileOpen}
-          />
-        )}
-      </AnimatePresence>
+      <StickyPlayer
+        song={currentSong}
+        isPlaying={playing}
+        onPlayPause={handlePlayPause}
+        onSeek={handleSeek}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        currentTime={currentTime}
+        duration={duration}
+        volume={volume}
+        onVolumeChange={handleVolumeChange}
+        isMuted={isMuted}
+        toggleMute={toggleMute}
+        isShuffle={isShuffle}
+        onToggleShuffle={() => setIsShuffle(!isShuffle)}
+        onClose={handleClosePlayer}
+        onExpand={handlePlayerExpandToggle}
+        profileOpen={profileOpen}
+      />
     </div>
   );
 };
