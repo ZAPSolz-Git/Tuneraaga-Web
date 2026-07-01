@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const { supabase } = require("./config/supabaseClient");
 const artistRoutes = require("./routes/artistRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -20,7 +21,8 @@ app.get("/", (req, res) => {
 // Any request coming to /api/artists will be handled by artistRoutes
 app.use("/api/artists", artistRoutes);
 
-
+// Auth routes
+app.use("/api/auth", authRoutes);
 
 // --- Start Server ---
 app.listen(port, () => {

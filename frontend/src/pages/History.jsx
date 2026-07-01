@@ -26,6 +26,7 @@ const formatDuration = (val) => {
 
 export default function History() {
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const [historySongs, setHistorySongs] = useState([]);
   const [likedSongs, setLikedSongs] = useState(new Set());
   const [loading, setLoading] = useState(true);
@@ -45,8 +46,10 @@ export default function History() {
   const audioRef = useRef(null);
   const userRef = useRef(null);
   const historySongsRef = useRef([]);
+  const currentIndexRef = useRef(null);
+  const currentListRef = useRef([]);
 
-  // ✅ Keep refs in sync
+  // Keep refs in sync
   useEffect(() => {
     userRef.current = user;
   }, [user]);
@@ -56,41 +59,79 @@ export default function History() {
   }, [historySongs]);
 
   useEffect(() => {
-    const getSession = async () => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    currentListRef.current = currentList;
+  }, [currentList]);
+
+  // Check auth and fetch data
+  useEffect(() => {
+    const initAuth = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
+
       if (session?.user) {
-        fetchHistory(session.user.id);
-        fetchLikes(session.user.id);
+        setUser(session.user);
+        userRef.current = session.user;
+        await fetchUserRole(session.user.id);
+        await fetchHistory(session.user.id);
+        await fetchLikes(session.user.id);
       } else {
         setLoading(false);
-        setShowAuthModal(true);
       }
     };
-    getSession();
+    initAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
-      if (session?.user) {
-        fetchHistory(session.user.id);
-        fetchLikes(session.user.id);
-      } else {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        setUser(session.user);
+        userRef.current = session.user;
+        await fetchUserRole(session.user.id);
+        await fetchHistory(session.user.id);
+        await fetchLikes(session.user.id);
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        userRef.current = null;
+        setUserRole(null);
         setHistorySongs([]);
         historySongsRef.current = [];
         setLikedSongs(new Set());
-        setShowAuthModal(true);
+        handleClosePlayer();
       }
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
-  // ✅ fetchHistory - ONLY called on initial load / auth change
+  // Fetch user role from users table
+  const fetchUserRole = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", userId)
+        .single();
+
+      if (!error && data) {
+        setUserRole(data.role);
+      } else if (error?.code === "PGRST116") {
+        // User not in users table, create entry
+        await supabase
+          .from("users")
+          .insert({ id: userId, email: userRef.current?.email, role: "user" });
+        setUserRole("user");
+      }
+    } catch (err) {
+      console.error("Fetch role error:", err);
+      setUserRole("user");
+    }
+  };
+
   const fetchHistory = async (userId) => {
     setLoading(true);
     const { data, error } = await supabase
@@ -120,6 +161,7 @@ export default function History() {
       setShowAuthModal(true);
       return;
     }
+
     const isLiked = likedSongs.has(releaseId);
 
     setLikedSongs((prev) => {
@@ -141,12 +183,10 @@ export default function History() {
     }
   };
 
-  // ✅ FIXED DELETE - with error handling + ref sync
   const deleteFromHistory = async (historyId) => {
     if (!user || !historyId) return;
     setDeletingId(historyId);
 
-    // If currently playing this song, stop it
     const historyEntry = historySongsRef.current.find(
       (h) => h.id === historyId,
     );
@@ -164,13 +204,12 @@ export default function History() {
       setHistorySongs(updated);
       historySongsRef.current = updated;
     } else {
-      console.error("❌ Delete failed:", error.message);
+      console.error("Delete failed:", error.message);
     }
 
     setDeletingId(null);
   };
 
-  // ✅ FIXED CLEAR ALL - with error handling + ref sync
   const clearAllHistory = async () => {
     if (!user) return;
     setClearingAll(true);
@@ -185,13 +224,12 @@ export default function History() {
       setHistorySongs([]);
       historySongsRef.current = [];
     } else {
-      console.error("❌ Clear all failed:", error.message);
+      console.error("Clear all failed:", error.message);
     }
 
     setClearingAll(false);
   };
 
-  // ✅ FIXED SAVE TO HISTORY - NO fetchHistory call, updates local state directly
   const saveToHistory = async (releaseId) => {
     const currentUser = userRef.current;
     if (!currentUser || !releaseId) return;
@@ -202,11 +240,9 @@ export default function History() {
     );
 
     if (existingIndex !== -1) {
-      // ✅ Already in history → just update played_at, move to top locally
       const existingEntry = currentHistory[existingIndex];
       const now = new Date().toISOString();
 
-      // Fire-and-forget DB update (don't await to avoid blocking playback)
       supabase
         .from("history")
         .update({ played_at: now })
@@ -215,7 +251,6 @@ export default function History() {
           if (error) console.error("Update played_at failed:", error.message);
         });
 
-      // Move to top in local state WITHOUT full fetch
       setHistorySongs((prev) => {
         const newArr = prev.filter((h) => h.id !== existingEntry.id);
         const moved = { ...existingEntry, played_at: now };
@@ -223,7 +258,6 @@ export default function History() {
         return [moved, ...newArr];
       });
     } else {
-      // ✅ New song → insert into DB and add to top of local state
       const { data, error } = await supabase
         .from("history")
         .insert({ user_id: currentUser.id, release_id: releaseId })
@@ -266,7 +300,6 @@ export default function History() {
           console.error(err);
       });
 
-    // ✅ Save to history (now updates local state without full refresh)
     saveToHistory(song.id);
   }, []);
 
@@ -306,15 +339,6 @@ export default function History() {
     };
   }, [playSong]);
 
-  const currentIndexRef = useRef(null);
-  const currentListRef = useRef([]);
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-  useEffect(() => {
-    currentListRef.current = currentList;
-  }, [currentList]);
-
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -326,12 +350,14 @@ export default function History() {
     if (!audioRef.current) return;
     playing ? audioRef.current.pause() : audioRef.current.play();
   };
+
   const handleSeek = (time) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
   };
+
   const handleClosePlayer = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -348,6 +374,7 @@ export default function History() {
     setDuration(0);
     setCurrentTime(0);
   };
+
   const toggleMute = () => setIsMuted(!isMuted);
   const handleVolumeChange = (v) => {
     setVolume(v);
@@ -356,7 +383,8 @@ export default function History() {
 
   const mappedHistory = historySongs.map((h) => h.releases);
 
-  if (!user && !loading)
+  // Show login required if not authenticated
+  if (!user && !loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
         <Music size={48} className="text-slate-300 mb-4" />
@@ -375,6 +403,7 @@ export default function History() {
         {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
       </div>
     );
+  }
 
   return (
     <div className="w-full min-h-screen text-slate-900 pb-32 bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-50 relative">
@@ -582,7 +611,7 @@ export default function History() {
         )}
       </div>
 
-      {/* ✅ Sticky Player */}
+      {/* Sticky Player */}
       {currentSong && (
         <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]">
           <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 px-4 py-3 md:py-4 md:px-8">

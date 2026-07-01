@@ -12,7 +12,6 @@ const {
 // 1. GET ALL ARTISTS (Public)
 router.get("/", getAllArtists);
 
-
 // 2. CREATE ARTIST (Public)
 router.post("/", upload.single("image"), createArtist);
 

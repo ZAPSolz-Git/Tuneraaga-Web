@@ -26,6 +26,7 @@ const formatDuration = (val) => {
 
 export default function LikedSongs() {
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const [likedSongsData, setLikedSongsData] = useState([]);
   const [likedIds, setLikedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
@@ -44,33 +45,82 @@ export default function LikedSongs() {
   const audioRef = useRef(null);
   const currentListRef = useRef([]);
   const currentIndexRef = useRef(null);
+  const userRef = useRef(null);
 
   useEffect(() => {
-    const getSession = async () => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    currentListRef.current = currentList;
+  }, [currentList]);
+
+  // Check auth and fetch data
+  useEffect(() => {
+    const initAuth = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      if (session?.user) fetchLikes(session.user.id);
-      else {
+
+      if (session?.user) {
+        setUser(session.user);
+        userRef.current = session.user;
+        await fetchUserRole(session.user.id);
+        await fetchLikes(session.user.id);
+      } else {
         setLoading(false);
-        setShowAuthModal(true);
       }
     };
-    getSession();
+    initAuth();
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchLikes(session.user.id);
-      else {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        setUser(session.user);
+        userRef.current = session.user;
+        await fetchUserRole(session.user.id);
+        await fetchLikes(session.user.id);
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        userRef.current = null;
+        setUserRole(null);
         setLikedSongsData([]);
         setLikedIds(new Set());
-        setShowAuthModal(true);
+        handleClosePlayer();
       }
     });
+
     return () => subscription.unsubscribe();
   }, []);
+
+  // Fetch user role from users table
+  const fetchUserRole = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", userId)
+        .single();
+
+      if (!error && data) {
+        setUserRole(data.role);
+      } else if (error?.code === "PGRST116") {
+        // User not in users table, create entry
+        await supabase
+          .from("users")
+          .insert({ id: userId, email: userRef.current?.email, role: "user" });
+        setUserRole("user");
+      }
+    } catch (err) {
+      console.error("Fetch role error:", err);
+      setUserRole("user");
+    }
+  };
 
   const fetchLikes = async (userId) => {
     setLoading(true);
@@ -87,17 +137,17 @@ export default function LikedSongs() {
     setLoading(false);
   };
 
-  // ✅ BULLETPROOF SAVE TO HISTORY
   const saveToHistory = async (releaseId) => {
-    if (!user || !releaseId) return;
+    const currentUser = userRef.current;
+    if (!currentUser || !releaseId) return;
     try {
       await supabase
         .from("history")
         .delete()
-        .match({ user_id: user.id, release_id: releaseId });
+        .match({ user_id: currentUser.id, release_id: releaseId });
       await supabase
         .from("history")
-        .insert({ user_id: user.id, release_id: releaseId });
+        .insert({ user_id: currentUser.id, release_id: releaseId });
     } catch (error) {
       console.error("History save error:", error);
     }
@@ -109,7 +159,6 @@ export default function LikedSongs() {
       return;
     }
 
-    // If currently playing this song, stop it
     if (currentSong?.id === releaseId) {
       handleClosePlayer();
     }
@@ -128,7 +177,6 @@ export default function LikedSongs() {
       .match({ user_id: user.id, release_id: releaseId });
   };
 
-  // ✅ CLEAR ALL LIKES
   const clearAllLikes = async () => {
     if (!user) return;
     setClearingAll(true);
@@ -170,7 +218,6 @@ export default function LikedSongs() {
             console.error(err);
         });
 
-      // ✅ SAVE TO HISTORY
       if (song.id) saveToHistory(song.id);
     },
     [user],
@@ -250,7 +297,8 @@ export default function LikedSongs() {
 
   const mappedLikes = likedSongsData.map((h) => h.releases);
 
-  if (!user && !loading)
+  // Show login required if not authenticated
+  if (!user && !loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
         <Music size={48} className="text-slate-300 mb-4" />
@@ -269,6 +317,7 @@ export default function LikedSongs() {
         {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
       </div>
     );
+  }
 
   return (
     <div className="w-full min-h-screen text-slate-900 pb-32 bg-gradient-to-br from-slate-50 via-red-50/40 to-slate-50 relative">
@@ -291,7 +340,6 @@ export default function LikedSongs() {
             </p>
           </div>
 
-          {/* ✅ CLEAR ALL BUTTON */}
           {mappedLikes.length > 0 && (
             <button
               onClick={clearAllLikes}
@@ -335,12 +383,8 @@ export default function LikedSongs() {
                     <th className="px-4 md:px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase w-20">
                       <Clock size={14} className="inline" />
                     </th>
-                    <th className="px-4 md:px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase w-12">
-                      {/* Like Header */}
-                    </th>
-                    <th className="px-4 md:px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase w-12">
-                      {/* Delete Header */}
-                    </th>
+                    <th className="px-4 md:px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase w-12"></th>
+                    <th className="px-4 md:px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase w-12"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-slate-100">
@@ -414,7 +458,6 @@ export default function LikedSongs() {
                         <td className="px-4 md:px-6 py-3 text-right text-sm text-slate-500 font-mono">
                           —
                         </td>
-                        {/* ✅ LIKE BUTTON (UNLIKE) */}
                         <td className="px-4 md:px-6 py-3 text-center">
                           <button
                             onClick={(e) => {
@@ -427,7 +470,6 @@ export default function LikedSongs() {
                             <Heart size={16} fill="currentColor" />
                           </button>
                         </td>
-                        {/* ✅ DELETE BUTTON */}
                         <td className="px-4 md:px-6 py-3 text-center">
                           <button
                             onClick={(e) => {
@@ -450,7 +492,7 @@ export default function LikedSongs() {
         )}
       </div>
 
-      {/* ✅ Sticky Player */}
+      {/* Sticky Player */}
       {currentSong && (
         <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]">
           <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 px-4 py-3 md:py-4 md:px-8">
@@ -560,7 +602,6 @@ export default function LikedSongs() {
               </div>
             </div>
 
-            {/* Mobile Right Controls */}
             <div className="flex md:hidden items-center gap-1 flex-shrink-0">
               <button
                 onClick={() => setIsMuted(!isMuted)}
@@ -580,7 +621,6 @@ export default function LikedSongs() {
               </button>
             </div>
 
-            {/* Desktop Right Controls */}
             <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
               <div className="flex items-center gap-3 w-full justify-end">
                 <button

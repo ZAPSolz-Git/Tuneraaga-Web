@@ -33,4 +33,32 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-module.exports = authenticateUser;
+// Optional auth - fail nahi karta agar token nahi hai
+const optionalAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser(token);
+
+      if (!error && user) {
+        req.user = user;
+      }
+    }
+
+    next();
+  } catch (err) {
+    // Don't fail, just continue without user
+    next();
+  }
+};
+
+module.exports = {
+  authenticateUser,
+  optionalAuth,
+};
