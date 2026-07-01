@@ -426,20 +426,38 @@ export default function History() {
             </p>
           </div>
 
-          {mappedHistory.length > 0 && (
-            <button
-              onClick={clearAllHistory}
-              disabled={clearingAll}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
-            >
-              {clearingAll ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Trash size={16} />
-              )}
-              {clearingAll ? "Clearing..." : "Clear All"}
-            </button>
-          )}
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+            {mappedHistory.length > 0 && (
+              <button
+                onClick={clearAllHistory}
+                disabled={clearingAll}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {clearingAll ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Trash size={16} />
+                )}
+                {clearingAll ? "Clearing..." : "Clear All"}
+              </button>
+            )}
+
+            {user && (
+              <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+                <span className="text-xs text-slate-500 hidden sm:inline max-w-[140px] truncate">
+                  {user.email}
+                </span>
+                <button
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-all"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {loading ? (

@@ -24,13 +24,11 @@ import {
   Heart,
   Disc3,
   Plus,
+  LogOut,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabaseClient";
 import Footer from "./Footer";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+import Auth from "./Auth";
 
 const BLUE_LIGHT = "#3b82f6";
 const BLUE_DARK = "#1d4ed8";
@@ -129,6 +127,79 @@ const SearchDropdown = ({ results, visible, onNavigate, onClose }) => {
   );
 };
 
+// Small avatar button + dropdown showing email and Logout,
+// or opens the Auth modal if nobody is logged in.
+const UserMenu = ({ user, onOpenAuth }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  if (!user) {
+    return (
+      <div
+        className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
+        onClick={onOpenAuth}
+        title="Login / Sign Up"
+      >
+        <User className="w-3.5 h-3.5 text-slate-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setMenuOpen((v) => !v)}
+        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden text-white font-bold text-[11px]"
+        style={{ background: BLUE_GRADIENT }}
+        title={user.email}
+      >
+        {user.email?.[0]?.toUpperCase() || <User className="w-3.5 h-3.5" />}
+      </button>
+
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden"
+          >
+            <div className="px-4 py-3 border-b border-slate-100">
+              <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wide">
+                Signed in as
+              </p>
+              <p className="text-[13px] font-semibold text-slate-900 truncate mt-0.5">
+                {user.email}
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                setMenuOpen(false);
+                await supabase.auth.signOut();
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <LogOut size={15} />
+              Logout
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("browse");
@@ -140,9 +211,34 @@ const Layout = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+
   const navigate = useNavigate();
   const location = useLocation();
   const searchTimeoutRef = useRef(null);
+
+  // Auth: get current session and listen for changes.
+  // This uses the SAME shared supabase client as History.jsx / LikedSongs.jsx /
+  // Auth.jsx, so logging in/out from here instantly reflects everywhere else.
+  useEffect(() => {
+    const initAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    initAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -247,6 +343,13 @@ const Layout = () => {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
+        {showAuthModal && (
+          <Auth
+            onClose={() => setShowAuthModal(false)}
+            initialMode={authMode}
+          />
+        )}
+
         <nav className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
           <div className="px-4 py-3 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-2">
@@ -343,6 +446,10 @@ const Layout = () => {
 
   return (
     <div className="fixed inset-0 flex bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      {showAuthModal && (
+        <Auth onClose={() => setShowAuthModal(false)} initialMode={authMode} />
+      )}
+
       <motion.aside
         initial={{ width: 240 }}
         animate={{ width: sidebarOpen ? 240 : 76 }}
@@ -525,10 +632,41 @@ const Layout = () => {
               />
             </div>
 
-            <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-5 rounded-full border border-slate-200 shadow-sm absolute right-4 md:right-12 top-1/2 -translate-y-1/2">
+            <div className="hidden md:flex items-center gap-4 bg-white p-1.5 pl-5 rounded-full border border-slate-200 shadow-sm absolute right-4 md:right-12 top-1/2 -translate-y-1/2">
               <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
               </Bell>
+
+              {/* Regular user auth — Log In / Sign Up (text), right beside the notification icon */}
+              {user ? (
+                <UserMenu
+                  user={user}
+                  onOpenAuth={() => setShowAuthModal(true)}
+                />
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setAuthMode("login");
+                      setShowAuthModal(true);
+                    }}
+                    className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+                  >
+                    Log In
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthMode("signup");
+                      setShowAuthModal(true);
+                    }}
+                    className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              )}
+
+              {/* Artist / Admin login — completely separate flow, untouched */}
               <div
                 className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
                 onClick={() => navigate("/login")}
