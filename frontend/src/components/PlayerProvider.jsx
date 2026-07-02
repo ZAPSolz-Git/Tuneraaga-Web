@@ -17,8 +17,9 @@ import {
   X,
   Shuffle,
   Film,
-  Disc3,
+  Megaphone,
 } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
 
 const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -55,6 +56,7 @@ const StickyPlayer = ({
   song,
   station,
   isPlaying,
+  isAdPlaying,
   onPlayPause,
   onSeek,
   onPrev,
@@ -73,8 +75,8 @@ const StickyPlayer = ({
   const isLiveActive = mode === "live" && station;
   if (!isActive && !isLiveActive) return null;
 
-  const currentData = isActive ? song : station;
   const isLive = mode === "live";
+  const disabled = isAdPlaying; // controls locked while ad plays
 
   return (
     <motion.div
@@ -87,16 +89,22 @@ const StickyPlayer = ({
         {/* Left: Info */}
         <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
           <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10 flex-shrink-0">
-            <img
-              src={
-                song?.img ||
-                station?.image_url ||
-                "https://via.placeholder.com/50"
-              }
-              alt="Art"
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-            />
-            {isLive && isPlaying && (
+            {isAdPlaying ? (
+              <div className="w-full h-full flex items-center justify-center bg-slate-800">
+                <Megaphone className="w-6 h-6 text-amber-400" />
+              </div>
+            ) : (
+              <img
+                src={
+                  song?.img ||
+                  station?.image_url ||
+                  "https://via.placeholder.com/50"
+                }
+                alt="Art"
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+              />
+            )}
+            {isLive && isPlaying && !isAdPlaying && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 <div className="flex items-end gap-0.5 h-4">
                   <motion.div
@@ -127,23 +135,36 @@ const StickyPlayer = ({
             )}
           </div>
           <div className="flex flex-col overflow-hidden">
-            <h4 className="font-bold text-white truncate text-base leading-tight">
-              {song?.title || station?.name}
-            </h4>
-            <p className="text-xs text-gray-400 truncate mt-0.5">
-              {song?.artist || (isLive ? "Live Stream" : "")}
-            </p>
-            {isActive &&
-              song?.featuringArtists &&
-              parseArtists(song.featuringArtists).length > 0 && (
-                <p className="text-xs text-gray-500 truncate">
-                  ft. {parseArtists(song.featuringArtists).join(", ")}
+            {isAdPlaying ? (
+              <>
+                <h4 className="font-bold text-amber-400 truncate text-base leading-tight">
+                  Advertisement
+                </h4>
+                <p className="text-xs text-gray-400 truncate mt-0.5">
+                  Your song will start after this ad
                 </p>
-              )}
-            {isActive && song?.movieName && (
-              <p className="text-[10px] text-purple-400 truncate flex items-center gap-1 mt-0.5">
-                <Film size={9} /> {song.movieName}
-              </p>
+              </>
+            ) : (
+              <>
+                <h4 className="font-bold text-white truncate text-base leading-tight">
+                  {song?.title || station?.name}
+                </h4>
+                <p className="text-xs text-gray-400 truncate mt-0.5">
+                  {song?.artist || (isLive ? "Live Stream" : "")}
+                </p>
+                {isActive &&
+                  song?.featuringArtists &&
+                  parseArtists(song.featuringArtists).length > 0 && (
+                    <p className="text-xs text-gray-500 truncate">
+                      ft. {parseArtists(song.featuringArtists).join(", ")}
+                    </p>
+                  )}
+                {isActive && song?.movieName && (
+                  <p className="text-[10px] text-purple-400 truncate flex items-center gap-1 mt-0.5">
+                    <Film size={9} /> {song.movieName}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -153,13 +174,23 @@ const StickyPlayer = ({
           <div className="flex items-center gap-4 md:gap-6 mb-2">
             <button
               onClick={onPrev}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
+              disabled={disabled}
+              className={`transition-colors transform duration-200 ${
+                disabled
+                  ? "text-gray-600 opacity-30 cursor-not-allowed"
+                  : "text-gray-400 hover:text-white hover:scale-110"
+              }`}
             >
               <SkipBack className="w-5 h-5" />
             </button>
             <button
               onClick={onPlayPause}
-              className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-white shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-110 hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] transition-all duration-300 bg-white text-slate-900"
+              disabled={disabled}
+              className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-white shadow-[0_0_20px_rgba(255,255,255,0.3)] transition-all duration-300 bg-white text-slate-900 ${
+                disabled
+                  ? "opacity-40 cursor-not-allowed"
+                  : "hover:scale-110 hover:shadow-[0_0_30px_rgba(255,255,255,0.5)]"
+              }`}
             >
               {isPlaying ? (
                 <Pause className="w-6 h-6 md:w-7 md:h-7 fill-slate-900" />
@@ -169,13 +200,25 @@ const StickyPlayer = ({
             </button>
             <button
               onClick={onNext}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
+              disabled={disabled}
+              className={`transition-colors transform duration-200 ${
+                disabled
+                  ? "text-gray-600 opacity-30 cursor-not-allowed"
+                  : "text-gray-400 hover:text-white hover:scale-110"
+              }`}
             >
               <SkipForward className="w-5 h-5" />
             </button>
             <button
               onClick={onToggleShuffle}
-              className={`transition-all hover:scale-110 ${isShuffle ? "text-green-500" : "text-gray-400 hover:text-white"}`}
+              disabled={disabled}
+              className={`transition-all ${
+                disabled
+                  ? "text-gray-600 opacity-30 cursor-not-allowed"
+                  : isShuffle
+                    ? "text-green-500 hover:scale-110"
+                    : "text-gray-400 hover:text-white hover:scale-110"
+              }`}
               title="Shuffle"
             >
               <Shuffle className="w-4 h-4 md:w-5 md:h-5" />
@@ -188,35 +231,52 @@ const StickyPlayer = ({
               <span className="w-10 text-right font-mono">
                 {formatDuration(currentTime)}
               </span>
-              <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer group">
+              <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full group">
                 <input
                   type="range"
                   min="0"
                   max={duration || 100}
                   value={currentTime}
-                  onChange={(e) => onSeek(parseFloat(e.target.value))}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  disabled={disabled}
+                  onChange={(e) =>
+                    !disabled && onSeek(parseFloat(e.target.value))
+                  }
+                  className={`absolute inset-0 w-full h-full opacity-0 z-10 ${
+                    disabled ? "cursor-not-allowed" : "cursor-pointer"
+                  }`}
                 />
                 <div
-                  className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-green-500 to-green-400"
+                  className={`absolute top-0 left-0 h-full rounded-full ${
+                    isAdPlaying
+                      ? "bg-amber-400"
+                      : "bg-gradient-to-r from-green-500 to-green-400"
+                  }`}
                   style={{
                     width: duration
                       ? `${(currentTime / duration) * 100}%`
                       : "0%",
                   }}
                 />
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 h-3 w-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{
-                    left: duration
-                      ? `${(currentTime / duration) * 100}%`
-                      : "0%",
-                    marginLeft: "-6px",
-                  }}
-                />
+                {!disabled && (
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-3 w-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{
+                      left: duration
+                        ? `${(currentTime / duration) * 100}%`
+                        : "0%",
+                      marginLeft: "-6px",
+                    }}
+                  />
+                )}
               </div>
               <span className="w-10 font-mono">{formatDuration(duration)}</span>
             </div>
+          )}
+
+          {isAdPlaying && (
+            <p className="text-[10px] text-amber-400 mt-1.5 font-semibold tracking-wide">
+              Ad plays automatically — can't be skipped
+            </p>
           )}
         </div>
 
@@ -225,8 +285,13 @@ const StickyPlayer = ({
           <div className="flex items-center gap-3 w-full justify-end">
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300"
-              title="Close Player"
+              disabled={disabled}
+              className={`transition-colors transform duration-300 ${
+                disabled
+                  ? "text-gray-600 opacity-30 cursor-not-allowed"
+                  : "text-gray-400 hover:text-red-500 hover:rotate-90"
+              }`}
+              title={disabled ? "Ad is playing" : "Close Player"}
             >
               <X size={20} />
             </button>
@@ -273,6 +338,7 @@ export const PlayerProvider = ({ children }) => {
   const [state, setState] = useState({
     mode: null, // 'song' | 'live' | null
     isPlaying: false,
+    isAdPlaying: false, // ✅ true while the pre-roll ad is playing
     currentSong: null,
     currentLiveStation: null,
     currentTime: 0,
@@ -282,10 +348,13 @@ export const PlayerProvider = ({ children }) => {
     isShuffle: false,
     currentList: [],
     currentIndex: null,
-    liveList: [], // Stations list for next/prev in live mode
+    liveList: [],
   });
 
   const audioRef = useRef(null);
+
+  // live-value refs (so audio event handlers never see stale data)
+  const modeRef = useRef(null);
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
   const currentIndexRef = useRef(null);
@@ -293,7 +362,22 @@ export const PlayerProvider = ({ children }) => {
   const currentLiveRef = useRef(null);
   const liveListRef = useRef([]);
 
+  // ✅ auth + ad refs
+  const userRef = useRef(null);
+  const isAdPlayingRef = useRef(false);
+  const pendingSongRef = useRef(null);
+  const pendingListRef = useRef([]);
+  const pendingIndexRef = useRef(null);
+  const adsListRef = useRef([]);
+  const adsFetchedRef = useRef(false);
+
+  // ✅ history + play-count refs (dedupe repeated increments for the same song)
+  const countedSongIds = useRef(new Set());
+
   // Sync State to Refs
+  useEffect(() => {
+    modeRef.current = state.mode;
+  }, [state.mode]);
   useEffect(() => {
     currentSongRef.current = state.currentSong;
   }, [state.currentSong]);
@@ -312,8 +396,263 @@ export const PlayerProvider = ({ children }) => {
   useEffect(() => {
     liveListRef.current = state.liveList;
   }, [state.liveList]);
+  useEffect(() => {
+    isAdPlayingRef.current = state.isAdPlaying;
+  }, [state.isAdPlaying]);
 
-  // Audio Element Setup
+  // ✅ Track logged-in user — ads only play when logged OUT
+  useEffect(() => {
+    const getSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      userRef.current = session?.user ?? null;
+    };
+    getSession();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      userRef.current = session?.user ?? null;
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ✅ Fetch + cache active ads from Supabase
+  const fetchAds = useCallback(async () => {
+    if (adsFetchedRef.current) return adsListRef.current;
+    try {
+      const { data, error } = await supabase
+        .from("ads")
+        .select("*")
+        .eq("active", true);
+      if (!error && data) {
+        adsListRef.current = data;
+      } else if (error) {
+        console.error("Ads fetch error:", error);
+      }
+    } catch (err) {
+      console.error("Ads fetch error:", err);
+    }
+    adsFetchedRef.current = true;
+    return adsListRef.current;
+  }, []);
+
+  const getRandomAd = useCallback(async () => {
+    const ads = adsFetchedRef.current ? adsListRef.current : await fetchAds();
+    if (!ads || ads.length === 0) return null;
+    return ads[Math.floor(Math.random() * ads.length)];
+  }, [fetchAds]);
+
+  // ✅ Increment the release's play_count — dedupes so the same song
+  // isn't double-counted (e.g. re-render, resume, etc.)
+  const incrementSongCounts = useCallback(async (releaseId, dedupeKey) => {
+    if (!releaseId || countedSongIds.current.has(dedupeKey)) return;
+    countedSongIds.current.add(dedupeKey);
+    try {
+      const { data: current } = await supabase
+        .from("releases")
+        .select("play_count")
+        .eq("id", releaseId)
+        .single();
+      await supabase
+        .from("releases")
+        .update({ play_count: (current?.play_count || 0) + 1 })
+        .eq("id", releaseId);
+    } catch (err) {
+      console.error("Error incrementing play count:", err);
+    }
+  }, []);
+
+  // ✅ Save (or bump) a history row for the logged-in user
+  const saveToHistory = useCallback(async (releaseId) => {
+    const currentUser = userRef.current;
+    if (!currentUser || !releaseId) return;
+    try {
+      const { data: existing, error: selectError } = await supabase
+        .from("history")
+        .select("id")
+        .eq("user_id", currentUser.id)
+        .eq("release_id", releaseId)
+        .limit(1)
+        .maybeSingle();
+
+      if (selectError) console.error("History select error:", selectError);
+
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from("history")
+          .update({ played_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        if (updateError) console.error("History update error:", updateError);
+      } else {
+        const { error: insertError } = await supabase
+          .from("history")
+          .insert({ user_id: currentUser.id, release_id: releaseId });
+        if (insertError) console.error("History insert error:", insertError);
+      }
+    } catch (error) {
+      console.error("History save error:", error);
+    }
+  }, []);
+
+  // ─── Actually plays the resolved song (called directly, or after the ad ends) ───
+  const startActualSong = useCallback((song, list, index) => {
+    const audio = audioRef.current;
+    if (!song?.audioUrl || !audio) return;
+
+    modeRef.current = "song";
+    isAdPlayingRef.current = false;
+    currentSongRef.current = song;
+    currentListRef.current = list || [];
+    currentIndexRef.current = index ?? 0;
+
+    setState((p) => ({
+      ...p,
+      mode: "song",
+      isAdPlaying: false,
+      currentSong: song,
+      currentLiveStation: null,
+      currentTime: 0,
+      duration: 0,
+      currentList: list || [],
+      currentIndex: index ?? 0,
+    }));
+
+    audio.src = song.audioUrl;
+    audio.load();
+
+    const tryPlay = () => {
+      audio
+        .play()
+        .then(() => setState((p) => ({ ...p, isPlaying: true })))
+        .catch((err) => console.error("Play error:", err));
+    };
+    if (audio.readyState >= 2) tryPlay();
+    else {
+      const onCanPlay = () => {
+        audio.removeEventListener("canplay", onCanPlay);
+        clearTimeout(fallbackTimer);
+        tryPlay();
+      };
+      audio.addEventListener("canplay", onCanPlay, { once: true });
+      const fallbackTimer = setTimeout(() => {
+        audio.removeEventListener("canplay", onCanPlay);
+        tryPlay();
+      }, 3000);
+    }
+  }, []);
+
+  // ─── Called when the ad finishes (or fails) — starts the pending song ───
+  const finishAdAndPlayPending = useCallback(() => {
+    isAdPlayingRef.current = false;
+    const song = pendingSongRef.current;
+    const list = pendingListRef.current;
+    const index = pendingIndexRef.current;
+    pendingSongRef.current = null;
+    setState((p) => ({ ...p, isAdPlaying: false }));
+    if (song) startActualSong(song, list, index);
+  }, [startActualSong]);
+
+  // ─── Plays an unskippable ad, then the song ───
+  const playAd = useCallback(
+    async (song, list, index) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+
+      const ad = await getRandomAd();
+      if (!ad || !ad.audio_url) {
+        // no ad configured — don't block the user
+        startActualSong(song, list, index);
+        return;
+      }
+
+      pendingSongRef.current = song;
+      pendingListRef.current = list || [];
+      pendingIndexRef.current = index ?? 0;
+
+      modeRef.current = "song";
+      isAdPlayingRef.current = true;
+
+      setState((p) => ({
+        ...p,
+        mode: "song",
+        isAdPlaying: true,
+        currentSong: song,
+        currentLiveStation: null,
+        currentTime: 0,
+        duration: 0,
+      }));
+
+      audio.src = ad.audio_url;
+      audio.load();
+
+      const tryPlay = () => {
+        audio.play().then(
+          () => setState((p) => ({ ...p, isPlaying: true })),
+          (err) => {
+            console.error("Ad play error:", err);
+            // don't trap the user if the ad itself fails
+            finishAdAndPlayPending();
+          },
+        );
+      };
+      if (audio.readyState >= 2) tryPlay();
+      else {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          tryPlay();
+        };
+        audio.addEventListener("canplay", onCanPlay, { once: true });
+      }
+    },
+    [getRandomAd, startActualSong, finishAdAndPlayPending],
+  );
+
+  // ─── PUBLIC: play a song — inserts a pre-roll ad for logged-out users ───
+  const playSong = useCallback(
+    (song, list, index) => {
+      if (!song?.audioUrl) return;
+      if (userRef.current) {
+        // ✅ logged-in users never see ads
+        startActualSong(song, list, index);
+      } else {
+        playAd(song, list, index);
+      }
+    },
+    [startActualSong, playAd],
+  );
+
+  // Live radio — unchanged, no ads
+  const playLive = useCallback((station, stationList) => {
+    if (!station?.stream_url) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const isNew = currentLiveRef.current?.id !== station.id;
+    if (isNew) {
+      modeRef.current = "live";
+      isAdPlayingRef.current = false;
+      setState((p) => ({
+        ...p,
+        mode: "live",
+        isAdPlaying: false,
+        currentLiveStation: station,
+        currentSong: null,
+        liveList: stationList || [],
+        currentTime: 0,
+        duration: 0,
+      }));
+      audio.src = station.stream_url;
+      audio.load();
+    }
+    audio
+      .play()
+      .then(() => setState((p) => ({ ...p, isPlaying: true })))
+      .catch(() => setState((p) => ({ ...p, isPlaying: false })));
+  }, []);
+
+  // Audio Element Setup (mounted once — everything inside relies only on refs,
+  // so it always sees fresh data even though this effect never re-runs)
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
@@ -328,8 +667,21 @@ export const PlayerProvider = ({ children }) => {
     };
     const onPlay = () => setState((p) => ({ ...p, isPlaying: true }));
     const onPause = () => setState((p) => ({ ...p, isPlaying: false }));
-    const onError = () => setState((p) => ({ ...p, isPlaying: false }));
-    const onEnded = () => handleNext();
+    const onError = () => {
+      if (isAdPlayingRef.current) {
+        // ad failed mid-way — fall through to the song instead of getting stuck
+        finishAdAndPlayPending();
+      } else {
+        setState((p) => ({ ...p, isPlaying: false }));
+      }
+    };
+    const onEnded = () => {
+      if (isAdPlayingRef.current) {
+        finishAdAndPlayPending();
+      } else {
+        handleNext();
+      }
+    };
 
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -349,6 +701,7 @@ export const PlayerProvider = ({ children }) => {
       audio.removeAttribute("src");
       audio.load();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync Volume/Mute
@@ -359,96 +712,11 @@ export const PlayerProvider = ({ children }) => {
     }
   }, [state.volume, state.isMuted]);
 
-  // ─── CORE AUDIO FUNCTIONS ───
-  const playSong = useCallback((song, list, index) => {
-    if (!song?.audioUrl) return;
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const isNew = currentSongRef.current?.id !== song.id;
-    if (isNew) {
-      setState((p) => ({
-        ...p,
-        mode: "song",
-        currentSong: song,
-        currentLiveStation: null,
-        currentTime: 0,
-        duration: 0,
-        currentList: list || [],
-        currentIndex: index ?? 0,
-      }));
-      audio.src = song.audioUrl;
-      audio.load();
-    }
-
-    let hasStarted = false;
-    const tryPlay = () => {
-      if (hasStarted) return;
-      audio
-        .play()
-        .then(() => {
-          hasStarted = true;
-          setState((p) => ({ ...p, isPlaying: true }));
-        })
-        .catch((err) => console.error("Play error:", err));
-    };
-    if (audio.readyState >= 2) tryPlay();
-    else {
-      const onCanPlay = () => {
-        audio.removeEventListener("canplay", onCanPlay);
-        clearTimeout(fallbackTimer);
-        tryPlay();
-      };
-      audio.addEventListener("canplay", onCanPlay, { once: true });
-      const fallbackTimer = setTimeout(() => {
-        audio.removeEventListener("canplay", onCanPlay);
-        tryPlay();
-      }, 3000);
-    }
-  }, []);
-
-  const playLive = useCallback((station, stationList) => {
-    if (!station?.stream_url) return;
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const isNew = currentLiveRef.current?.id !== station.id;
-    if (isNew) {
-      setState((p) => ({
-        ...p,
-        mode: "live",
-        currentLiveStation: station,
-        currentSong: null,
-        liveList: stationList || [],
-        currentTime: 0,
-        duration: 0,
-      }));
-      audio.src = station.stream_url;
-      audio.load();
-    }
-    audio
-      .play()
-      .then(() => setState((p) => ({ ...p, isPlaying: true })))
-      .catch(() => setState((p) => ({ ...p, isPlaying: false })));
-  }, []);
-
-  const handlePlayPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused)
-      audio
-        .play()
-        .then(() => setState((p) => ({ ...p, isPlaying: true })))
-        .catch(() => {});
-    else {
-      audio.pause();
-      setState((p) => ({ ...p, isPlaying: false }));
-    }
-  }, []);
-
+  // ─── handleNext / handlePrev route through playSong so the ad plays before EVERY song ───
   const handleNext = useCallback(() => {
+    if (isAdPlayingRef.current) return; // ad can't be skipped
     if (
-      state.mode === "song" &&
+      modeRef.current === "song" &&
       currentListRef.current.length > 0 &&
       currentIndexRef.current !== null
     ) {
@@ -464,13 +732,12 @@ export const PlayerProvider = ({ children }) => {
         nextIndex =
           (currentIndexRef.current + 1) % currentListRef.current.length;
       }
-      setState((p) => ({ ...p, currentIndex: nextIndex }));
       playSong(
         currentListRef.current[nextIndex],
         currentListRef.current,
         nextIndex,
       );
-    } else if (state.mode === "live" && liveListRef.current.length > 0) {
+    } else if (modeRef.current === "live" && liveListRef.current.length > 0) {
       const idx = liveListRef.current.findIndex(
         (s) => s.id === currentLiveRef.current?.id,
       );
@@ -479,24 +746,24 @@ export const PlayerProvider = ({ children }) => {
         liveListRef.current,
       );
     }
-  }, [state.mode, playSong, playLive]);
+  }, [playSong, playLive]);
 
   const handlePrev = useCallback(() => {
+    if (isAdPlayingRef.current) return; // ad can't be skipped
     if (
-      state.mode === "song" &&
+      modeRef.current === "song" &&
       currentListRef.current.length > 0 &&
       currentIndexRef.current !== null
     ) {
       const prevIndex =
         (currentIndexRef.current - 1 + currentListRef.current.length) %
         currentListRef.current.length;
-      setState((p) => ({ ...p, currentIndex: prevIndex }));
       playSong(
         currentListRef.current[prevIndex],
         currentListRef.current,
         prevIndex,
       );
-    } else if (state.mode === "live" && liveListRef.current.length > 0) {
+    } else if (modeRef.current === "live" && liveListRef.current.length > 0) {
       const idx = liveListRef.current.findIndex(
         (s) => s.id === currentLiveRef.current?.id,
       );
@@ -507,9 +774,25 @@ export const PlayerProvider = ({ children }) => {
         liveListRef.current,
       );
     }
-  }, [state.mode, playSong, playLive]);
+  }, [playSong, playLive]);
+
+  const handlePlayPause = useCallback(() => {
+    if (isAdPlayingRef.current) return; // ad can't be paused/skipped
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused)
+      audio
+        .play()
+        .then(() => setState((p) => ({ ...p, isPlaying: true })))
+        .catch(() => {});
+    else {
+      audio.pause();
+      setState((p) => ({ ...p, isPlaying: false }));
+    }
+  }, []);
 
   const handleSeek = useCallback((time) => {
+    if (isAdPlayingRef.current) return; // can't seek during the ad
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setState((p) => ({ ...p, currentTime: time }));
@@ -517,9 +800,11 @@ export const PlayerProvider = ({ children }) => {
   }, []);
 
   const handleClosePlayer = useCallback(() => {
+    if (isAdPlayingRef.current) return; // ad can't be closed/skipped
     setState({
       mode: null,
       isPlaying: false,
+      isAdPlaying: false,
       currentSong: null,
       currentLiveStation: null,
       currentTime: 0,
@@ -572,6 +857,7 @@ export const PlayerProvider = ({ children }) => {
             song={state.currentSong}
             station={state.currentLiveStation}
             isPlaying={state.isPlaying}
+            isAdPlaying={state.isAdPlaying}
             onPlayPause={handlePlayPause}
             onSeek={handleSeek}
             onPrev={handlePrev}
