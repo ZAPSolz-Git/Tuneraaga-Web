@@ -5,23 +5,11 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import {
-  useParams,
-  useNavigate,
-  Link,
-  useSearchParams,
-} from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
-  Pause,
   Heart,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  X,
-  Shuffle,
   ArrowLeft,
   Clock,
   MoreHorizontal,
@@ -35,222 +23,21 @@ import {
   ListPlus,
   Search,
   Loader2,
-  Maximize2,
+  X,
   Plus,
   Check,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import Auth from "../components/Auth";
-
-const formatDuration = (val) => {
-  if (!val || !isFinite(val) || val <= 0) return "0:00";
-  if (typeof val === "string") return val;
-  const m = Math.floor(val / 60);
-  const s = Math.floor(val % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
-};
-
-const formatCount = (num) => {
-  if (!num) return "0";
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-};
-
-const parseArtists = (artistStr) => {
-  if (!artistStr) return [];
-  return String(artistStr)
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean);
-};
-
-// ─── STICKY PLAYER ───
-const StickyPlayer = ({
-  song,
-  isPlaying,
-  onPlayPause,
-  onSeek,
-  onPrev,
-  onNext,
-  currentTime,
-  duration,
-  volume,
-  onVolumeChange,
-  isMuted,
-  toggleMute,
-  isShuffle,
-  onToggleShuffle,
-  onClose,
-  onExpand,
-  profileOpen,
-}) => {
-  if (!song) return null;
-  return (
-    <motion.div
-      initial={{ y: 100 }}
-      animate={{ y: 0 }}
-      exit={{ y: 100 }}
-      className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]"
-    >
-      <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
-        <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
-          <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10">
-            <img
-              src={
-                song.albumArt || song.img || "https://via.placeholder.com/50"
-              }
-              alt="Art"
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-            />
-          </div>
-          <div className="flex flex-col overflow-hidden">
-            <h4 className="font-bold text-white truncate text-base leading-tight">
-              {song.title}
-            </h4>
-            <p className="text-xs text-gray-400 truncate mt-1">{song.artist}</p>
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
-          <div className="flex items-center gap-4 md:gap-6 mb-2">
-            <button
-              onClick={onPrev}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
-            >
-              <SkipBack className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => onPlayPause(song)}
-              className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-white shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-110 transition-all duration-300 bg-white text-slate-900"
-            >
-              {isPlaying ? (
-                <Pause className="w-6 h-6 md:w-7 md:h-7 fill-slate-900" />
-              ) : (
-                <Play className="w-6 h-6 md:w-7 md:h-7 fill-slate-900 ml-1" />
-              )}
-            </button>
-            <button
-              onClick={onNext}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
-            >
-              <SkipForward className="w-5 h-5" />
-            </button>
-            <button
-              onClick={onToggleShuffle}
-              className={`transition-all hover:scale-110 ${isShuffle ? "text-green-500" : "text-gray-400 hover:text-white"}`}
-              title="Shuffle"
-            >
-              <Shuffle className="w-4 h-4 md:w-5 md:h-5" />
-            </button>
-          </div>
-          <div className="w-full flex items-center gap-3 text-xs text-gray-400 font-medium px-0 md:px-8">
-            <span className="w-10 text-right font-mono">
-              {formatDuration(currentTime)}
-            </span>
-            <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer group">
-              <input
-                type="range"
-                min="0"
-                max={duration || 100}
-                value={currentTime}
-                onChange={(e) => onSeek(parseFloat(e.target.value))}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div
-                className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400"
-                style={{
-                  width: duration ? `${(currentTime / duration) * 100}%` : "0%",
-                }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 h-3 w-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{
-                  left: duration ? `${(currentTime / duration) * 100}%` : "0%",
-                  marginLeft: "-6px",
-                }}
-              />
-            </div>
-            <span className="w-10 font-mono">{formatDuration(duration)}</span>
-          </div>
-        </div>
-
-        <div className="flex md:hidden items-center gap-1 flex-shrink-0">
-          {onExpand && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onExpand();
-              }}
-              className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-1.5 rounded-lg hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
-              title="View Playlist"
-            >
-              <Maximize2 size={18} />
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300 p-1.5 rounded-lg hover:bg-white/10"
-            title="Close Player"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
-          <div className="flex items-center gap-3 w-full justify-end">
-            {onExpand && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onExpand();
-                }}
-                className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-0.5 rounded hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
-                title="View Playlist"
-              >
-                <Maximize2 size={18} />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300"
-              title="Close Player"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex items-center gap-3 w-full justify-end mt-1">
-            <button
-              onClick={() => toggleMute()}
-              className="text-gray-400 hover:text-green-500 transition-colors hover:scale-110"
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX size={18} />
-              ) : (
-                <Volume2 size={18} />
-              )}
-            </button>
-            <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer w-24">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={isMuted ? 0 : volume}
-                onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                onClick={(e) => e.stopPropagation()}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div
-                className="absolute top-0 left-0 h-full rounded-full bg-green-500"
-                style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
+// This MUST point at the exact same PlayerContext.jsx file that wraps
+// your <App /> with <PlayerProvider> in e.g. main.jsx/App.jsx — otherwise
+// you end up with two separate React contexts and usePlayer() will throw
+// "must be used inside <PlayerProvider>" even though a provider exists.
+import {
+  usePlayer,
+  formatCount,
+  parseArtists,
+} from "../components/PlayerContext";
 
 // ─── EXTRACTED SONG ROW ───
 const SongRow = ({
@@ -405,25 +192,42 @@ const SongRow = ({
   );
 };
 
+// Local copy so this file has no other dependency for a one-off format —
+// PlayerProvider also exports the same helper, kept identical on purpose.
+const formatDuration = (val) => {
+  if (!val || !isFinite(val) || val <= 0) return "0:00";
+  if (typeof val === "string") return val;
+  const m = Math.floor(val / 60);
+  const s = Math.floor(val % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+};
+
 // ═══════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════
 const TopPlaylist = () => {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+
+  // ✅ Everything playback-related now comes from the SHARED player.
+  // TopPlaylist no longer owns an <audio> element, its own sticky player,
+  // or its own play/pause/next/prev/ad logic — all of that lives once in
+  // PlayerProvider so every page (and the global sticky bar) stays in
+  // sync, and so ad-before-song behavior is consistent everywhere.
+  const {
+    user,
+    playing,
+    currentSong,
+    handleSongClick,
+    playList,
+    profileOpen,
+    setProfileOpen,
+    setExpandHandler,
+  } = usePlayer();
+
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const [playing, setPlaying] = useState(false);
-  const [currentSong, setCurrentSong] = useState(null);
-  const [currentList, setCurrentList] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isShuffle, setIsShuffle] = useState(false);
   const [likedSongs, setLikedSongs] = useState(new Set());
   const [isAllLiked, setIsAllLiked] = useState(false);
   const [durations, setDurations] = useState({});
@@ -431,9 +235,7 @@ const TopPlaylist = () => {
 
   const [profilePlaylist, setProfilePlaylist] = useState(null);
   const [profileSongs, setProfileSongs] = useState([]);
-  const [profileOpen, setProfileOpen] = useState(false);
 
-  const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // ✅ ADD TO PLAYLIST STATES
@@ -442,26 +244,7 @@ const TopPlaylist = () => {
   const [addToPlaylistLoading, setAddToPlaylistLoading] = useState(false);
   const [addedPlaylistIds, setAddedPlaylistIds] = useState(new Set());
 
-  const audioRef = useRef(null);
-  const currentSongRef = useRef(null);
-  const currentListRef = useRef([]);
-  const currentIndexRef = useRef(null);
-  const isShuffleRef = useRef(false);
   const moreMenuRef = useRef(null);
-  const countedSongIds = useRef(new Set());
-
-  useEffect(() => {
-    currentSongRef.current = currentSong;
-  }, [currentSong]);
-  useEffect(() => {
-    currentListRef.current = currentList;
-  }, [currentList]);
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-  useEffect(() => {
-    isShuffleRef.current = isShuffle;
-  }, [isShuffle]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -472,31 +255,6 @@ const TopPlaylist = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ✅ AUTH & LIKES FETCH
-  useEffect(() => {
-    const getSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchLikes(session.user.id);
-        fetchUserPlaylists(session.user.id);
-      }
-    };
-    getSession();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchLikes(session.user.id);
-        fetchUserPlaylists(session.user.id);
-      } else setLikedSongs(new Set());
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
   const fetchLikes = async (userId) => {
     const { data } = await supabase
       .from("likes")
@@ -505,7 +263,6 @@ const TopPlaylist = () => {
     if (data) setLikedSongs(new Set(data.map((l) => l.release_id)));
   };
 
-  // ✅ FETCH USER PLAYLISTS
   const fetchUserPlaylists = async (uid) => {
     try {
       const { data, error } = await supabase
@@ -519,37 +276,23 @@ const TopPlaylist = () => {
     }
   };
 
-  // ✅ SAVE TO HISTORY DB
-  const saveToHistory = async (releaseId) => {
-    if (!user || !releaseId) return;
-    try {
-      const { data: existing } = await supabase
-        .from("history")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("release_id", releaseId)
-        .maybeSingle();
-      if (existing) {
-        await supabase
-          .from("history")
-          .update({ played_at: new Date().toISOString() })
-          .eq("id", existing.id);
-      } else {
-        await supabase
-          .from("history")
-          .insert({ user_id: user.id, release_id: releaseId });
-      }
-    } catch (err) {
-      console.error(err);
+  // ✅ Likes + user playlists are driven off the SHARED `user` from
+  // PlayerProvider — no separate auth listener needed on this page.
+  useEffect(() => {
+    if (user) {
+      fetchLikes(user.id);
+      fetchUserPlaylists(user.id);
+    } else {
+      setLikedSongs(new Set());
+      setUserPlaylists([]);
     }
-  };
+  }, [user]);
 
   // ✅ ADD ALL SONGS FROM PLAYLIST TO USER PLAYLIST
   const handleAddToUserPlaylist = async (targetPlaylist) => {
     if (!profilePlaylist || !profileSongs.length) return;
     setAddToPlaylistLoading(true);
     try {
-      // Get existing songs in the target playlist to avoid duplicates
       const { data: existingSongs } = await supabase
         .from("user_playlist_songs")
         .select("release_id")
@@ -573,7 +316,6 @@ const TopPlaylist = () => {
         if (insertError) throw insertError;
       }
 
-      // Update cover image if empty
       if (!targetPlaylist.cover_url && profilePlaylist.image_url) {
         await supabase
           .from("user_playlists")
@@ -673,6 +415,7 @@ const TopPlaylist = () => {
         );
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, playlists, likedSongs]);
 
   const filteredPlaylists = playlists.filter((p) => {
@@ -706,7 +449,8 @@ const TopPlaylist = () => {
     return unique;
   }, [playlists, searchQuery]);
 
-  // Fetch Durations
+  // Fetch Durations (display-only — just probes metadata, does not touch
+  // the shared player's <audio> element)
   useEffect(() => {
     const songsToFetch = profileOpen ? profileSongs : uniqueFilteredSongs;
     if (!searchQuery.trim() && !profileOpen) return;
@@ -725,206 +469,6 @@ const TopPlaylist = () => {
       }
     });
   }, [uniqueFilteredSongs, profileSongs, searchQuery, profileOpen, durations]);
-
-  const incrementSongCounts = useCallback(async (song) => {
-    if (!song || !song.release_id || countedSongIds.current.has(song.id))
-      return;
-    countedSongIds.current.add(song.id);
-    try {
-      const { data: current } = await supabase
-        .from("releases")
-        .select("play_count")
-        .eq("id", song.release_id)
-        .single();
-      await supabase
-        .from("releases")
-        .update({ play_count: (current?.play_count || 0) + 1 })
-        .eq("id", song.release_id);
-    } catch (error) {
-      console.error("Error incrementing counts:", error);
-    }
-  }, []);
-
-  const playSong = useCallback(
-    (song) => {
-      if (!song || !song.audioUrl) return;
-      const audio = audioRef.current;
-      if (!audio) return;
-      const isNewSong =
-        !currentSongRef.current || currentSongRef.current.id !== song.id;
-      if (isNewSong) {
-        setCurrentSong(song);
-        currentSongRef.current = song;
-        setDuration(0);
-        setCurrentTime(0);
-        audio.src = song.audioUrl;
-        audio.load();
-        incrementSongCounts(song);
-        if (song.release_id) saveToHistory(song.release_id);
-      }
-      let hasStarted = false;
-      const tryPlay = () => {
-        if (hasStarted) return;
-        audio
-          .play()
-          .then(() => {
-            hasStarted = true;
-            setPlaying(true);
-          })
-          .catch((err) => {
-            if (err.name !== "AbortError" && err.name !== "NotAllowedError")
-              console.error("Play error:", err);
-          });
-      };
-      if (audio.readyState >= 2) tryPlay();
-      else {
-        const onCanPlay = () => {
-          audio.removeEventListener("canplay", onCanPlay);
-          clearTimeout(fb);
-          tryPlay();
-        };
-        audio.addEventListener("canplay", onCanPlay, { once: true });
-        const fb = setTimeout(() => {
-          audio.removeEventListener("canplay", onCanPlay);
-          tryPlay();
-        }, 3000);
-      }
-    },
-    [incrementSongCounts, user],
-  );
-
-  const handleNext = useCallback(() => {
-    if (!currentListRef.current.length || currentIndexRef.current === null)
-      return;
-    let nextIndex;
-    if (isShuffleRef.current) {
-      do {
-        nextIndex = Math.floor(Math.random() * currentListRef.current.length);
-      } while (
-        currentListRef.current.length > 1 &&
-        nextIndex === currentIndexRef.current
-      );
-    } else {
-      nextIndex = (currentIndexRef.current + 1) % currentListRef.current.length;
-    }
-    setCurrentIndex(nextIndex);
-    currentIndexRef.current = nextIndex;
-    playSong(currentListRef.current[nextIndex]);
-  }, [playSong]);
-
-  const handlePrev = useCallback(() => {
-    if (!currentListRef.current.length || currentIndexRef.current === null)
-      return;
-    const prevIndex =
-      (currentIndexRef.current - 1 + currentListRef.current.length) %
-      currentListRef.current.length;
-    setCurrentIndex(prevIndex);
-    currentIndexRef.current = prevIndex;
-    playSong(currentListRef.current[prevIndex]);
-  }, [playSong]);
-
-  const handlePlayPause = useCallback(
-    (song) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      if (
-        currentSongRef.current &&
-        currentSongRef.current.id === song.id &&
-        !audio.paused
-      ) {
-        audio.pause();
-        setPlaying(false);
-      } else playSong(song);
-    },
-    [playSong],
-  );
-
-  const handleSongClick = useCallback(
-    (index, song, list) => {
-      if (currentSongRef.current?.id === song.id) handlePlayPause(song);
-      else {
-        setCurrentList(list);
-        currentListRef.current = list;
-        setCurrentIndex(index);
-        currentIndexRef.current = index;
-        playSong(song);
-      }
-    },
-    [handlePlayPause, playSong],
-  );
-
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = "auto";
-    audioRef.current = audio;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration)) {
-        setDuration(audio.duration);
-        if (currentSongRef.current?.id)
-          setDurations((prev) => ({
-            ...prev,
-            [currentSongRef.current.id]: audio.duration,
-          }));
-      }
-    };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onEnded = () => handleNext();
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnded);
-    return () => {
-      audio.pause();
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeAttribute("src");
-      audio.load();
-    };
-  }, [handleNext]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-
-  const handleSeek = (time) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
-  };
-
-  const handleClosePlayer = () => {
-    setPlaying(false);
-    setCurrentSong(null);
-    currentSongRef.current = null;
-    setCurrentIndex(null);
-    currentIndexRef.current = null;
-    setCurrentList([]);
-    currentListRef.current = [];
-    setDuration(0);
-    setCurrentTime(0);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.removeAttribute("src");
-      audioRef.current.load();
-    }
-  };
-
-  const toggleMute = () => setIsMuted(!isMuted);
-  const handleVolumeChange = (v) => {
-    setVolume(v);
-    setIsMuted(v === 0);
-  };
 
   const toggleLikeSong = async (releaseId) => {
     if (!user) {
@@ -983,15 +527,6 @@ const TopPlaylist = () => {
     setShowMoreMenu(false);
   };
 
-  const handlePlaylistPlay = useCallback(
-    (playlist) => {
-      if (!playlist.playlist_songs || playlist.playlist_songs.length === 0)
-        return;
-      handleSongClick(0, playlist.playlist_songs[0], playlist.playlist_songs);
-    },
-    [handleSongClick],
-  );
-
   const handleOpenPlaylistProfile = useCallback(
     (playlist) => {
       if (profileOpen && profilePlaylist?.id === playlist.id) {
@@ -1008,29 +543,44 @@ const TopPlaylist = () => {
           ),
       );
     },
-    [profileOpen, profilePlaylist, likedSongs],
+    [profileOpen, profilePlaylist, likedSongs, setProfileOpen],
   );
 
+  // ✅ Wire up the sticky player's "expand" (Maximize2) button: tapping it
+  // opens the profile panel for whichever playlist the current song
+  // belongs to. Registered with the shared player so it's available
+  // regardless of which page rendered the sticky bar.
   const handlePlayerExpandToggle = useCallback(() => {
-    if (!currentSongRef.current) return;
+    if (!currentSong) return;
     const foundPlaylist = playlists.find((p) =>
-      p.playlist_songs.some((s) => s.id === currentSongRef.current.id),
+      p.playlist_songs.some((s) => s.id === currentSong.id),
     );
-    if (foundPlaylist) {
-      if (profileOpen && profilePlaylist?.id === foundPlaylist.id) {
-        setProfileOpen(false);
-      } else {
-        setProfilePlaylist(foundPlaylist);
-        setProfileSongs(foundPlaylist.playlist_songs);
-        setProfileOpen(true);
-        setIsAllLiked(
-          foundPlaylist.playlist_songs.every((s) =>
-            likedSongs.has(s.release_id || s.id),
-          ),
-        );
-      }
+    if (!foundPlaylist) return;
+    if (profileOpen && profilePlaylist?.id === foundPlaylist.id) {
+      setProfileOpen(false);
+    } else {
+      setProfilePlaylist(foundPlaylist);
+      setProfileSongs(foundPlaylist.playlist_songs);
+      setProfileOpen(true);
+      setIsAllLiked(
+        foundPlaylist.playlist_songs.every((s) =>
+          likedSongs.has(s.release_id || s.id),
+        ),
+      );
     }
-  }, [playlists, profileOpen, profilePlaylist, likedSongs]);
+  }, [
+    currentSong,
+    playlists,
+    profileOpen,
+    profilePlaylist,
+    likedSongs,
+    setProfileOpen,
+  ]);
+
+  useEffect(() => {
+    setExpandHandler(() => handlePlayerExpandToggle);
+    return () => setExpandHandler(null);
+  }, [handlePlayerExpandToggle, setExpandHandler]);
 
   const totalListeners = profilePlaylist
     ? profilePlaylist.playlist_songs.reduce(
@@ -1235,13 +785,7 @@ const TopPlaylist = () => {
 
                   <div className="flex items-center gap-3 justify-center md:justify-start">
                     <button
-                      onClick={() =>
-                        handleSongClick(
-                          0,
-                          profilePlaylist.playlist_songs[0],
-                          profilePlaylist.playlist_songs,
-                        )
-                      }
+                      onClick={() => playList(profilePlaylist.playlist_songs)}
                       className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3.5 rounded-full font-bold text-base flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all hover:scale-105"
                     >
                       <Play size={20} fill="white" /> Play All
@@ -1273,11 +817,7 @@ const TopPlaylist = () => {
                           >
                             <button
                               onClick={() => {
-                                handleSongClick(
-                                  0,
-                                  profilePlaylist.playlist_songs[0],
-                                  profilePlaylist.playlist_songs,
-                                );
+                                playList(profilePlaylist.playlist_songs);
                                 setShowMoreMenu(false);
                               }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
@@ -1552,26 +1092,9 @@ const TopPlaylist = () => {
         )}
       </div>
 
-      {/* ── STICKY PLAYER ── */}
-      <StickyPlayer
-        song={currentSong}
-        isPlaying={playing}
-        onPlayPause={handlePlayPause}
-        onSeek={handleSeek}
-        onPrev={handlePrev}
-        onNext={handleNext}
-        currentTime={currentTime}
-        duration={duration}
-        volume={volume}
-        onVolumeChange={handleVolumeChange}
-        isMuted={isMuted}
-        toggleMute={toggleMute}
-        isShuffle={isShuffle}
-        onToggleShuffle={() => setIsShuffle(!isShuffle)}
-        onClose={handleClosePlayer}
-        onExpand={handlePlayerExpandToggle}
-        profileOpen={profileOpen}
-      />
+      {/* ✅ NOTE: no <StickyPlayer /> here anymore — PlayerProvider renders
+          ONE global sticky player at the app root, so it stays mounted
+          (and playback keeps going) as you navigate between pages. */}
     </div>
   );
 };

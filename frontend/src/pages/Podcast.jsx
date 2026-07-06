@@ -5,7 +5,6 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
@@ -24,29 +23,27 @@ import {
   Loader2,
   UserCircle,
   X,
-  Maximize2, // ✅ Added Maximize2
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { useAudioPlayer } from "../hooks/useAudioPlayer";
-import StickyPlayer from "../components/StickyPlayer";
-
-const formatDuration = (val) => {
-  if (!val || !isFinite(val) || val <= 0) return "0:00";
-  if (typeof val === "string") return val.includes(":") ? val : "0:00";
-  const m = Math.floor(val / 60);
-  const s = Math.floor(val % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
-};
-
-const formatCount = (num) => {
-  if (!num) return "0";
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-};
+// ✅ Same shared player + helpers as TopPlaylist/Radio — no more
+// useAudioPlayer hook, no more local <StickyPlayer />.
+import {
+  usePlayer,
+  formatCount,
+  formatDuration,
+} from "../components/PlayerContext";
 
 const Podcast = () => {
-  const navigate = useNavigate();
+  const {
+    playing,
+    currentSong,
+    handleSongClick,
+    handleClosePlayer,
+    profileOpen,
+    setProfileOpen,
+    setExpandHandler,
+  } = usePlayer();
+
   const [podcasts, setPodcasts] = useState([]);
   const [activePodcast, setActivePodcast] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,11 +53,9 @@ const Podcast = () => {
   const [isAllLiked, setIsAllLiked] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  // ✅ Duration wala logic wapas local state mein
   const [durations, setDurations] = useState({});
 
   const moreMenuRef = useRef(null);
-  const player = useAudioPlayer();
 
   useEffect(() => {
     const handler = (e) => {
@@ -146,7 +141,8 @@ const Podcast = () => {
       })
     : [];
 
-  // ✅ Local Duration Fetching Logic
+  // Duration fetching stays local — display-only, doesn't touch the
+  // shared player's <audio> element.
   useEffect(() => {
     const epsToFetch = activePodcast
       ? visibleEpisodesInActivePodcast
@@ -226,39 +222,54 @@ const Podcast = () => {
     : 0;
   const totalListens = activePodcast ? activePodcast.total_listens || 0 : 0;
 
-  // ✅ Expand toggle from StickyPlayer (Same logic as TopPlaylist & Radio)
+  // ✅ Opening/closing a podcast profile now also keeps the SHARED
+  // player's global `profileOpen` flag in sync, so the sticky player's
+  // expand icon highlights correctly regardless of which page it's on.
+  const openPodcastProfile = useCallback(
+    (p) => {
+      setActivePodcast(p);
+      setProfileOpen(true);
+      setSearchQuery("");
+    },
+    [setProfileOpen],
+  );
+
+  const closePodcastProfile = useCallback(() => {
+    setActivePodcast(null);
+    setProfileOpen(false);
+    handleClosePlayer();
+    setSearchQuery("");
+  }, [setProfileOpen, handleClosePlayer]);
+
+  // ✅ Expand toggle from the shared sticky player (same pattern as
+  // TopPlaylist & Radio).
   const handlePlayerExpandToggle = useCallback(() => {
-    if (!player.currentSong) return;
+    if (!currentSong) return;
 
-    // Find which podcast contains the currently playing episode
     const foundPodcast = podcasts.find((p) =>
-      p.podcast_episodes.some((ep) => ep.id === player.currentSong.id),
+      p.podcast_episodes.some((ep) => ep.id === currentSong.id),
     );
+    if (!foundPodcast) return;
 
-    if (foundPodcast) {
-      // If the same podcast profile is already open, close it
-      if (activePodcast?.id === foundPodcast.id) {
-        setActivePodcast(null);
-      } else {
-        // Otherwise, open that podcast's profile
-        setActivePodcast(foundPodcast);
-        setSearchQuery(""); // Clear search so all episodes show
-        setIsAllLiked(
-          (foundPodcast.podcast_episodes || []).every((ep) =>
-            likedEpisodes.has(ep.id),
-          ),
-        );
-      }
+    if (activePodcast?.id === foundPodcast.id) {
+      setActivePodcast(null);
+      setProfileOpen(false);
+    } else {
+      setActivePodcast(foundPodcast);
+      setProfileOpen(true);
+      setSearchQuery("");
+      setIsAllLiked(
+        (foundPodcast.podcast_episodes || []).every((ep) =>
+          likedEpisodes.has(ep.id),
+        ),
+      );
     }
-  }, [podcasts, activePodcast, likedEpisodes, player.currentSong]);
+  }, [podcasts, activePodcast, likedEpisodes, currentSong, setProfileOpen]);
 
-  // ✅ Check if the current playing song belongs to the active podcast profile
-  const isCurrentPodcastPlaying =
-    activePodcast &&
-    player.currentSong &&
-    activePodcast.podcast_episodes.some(
-      (ep) => ep.id === player.currentSong.id,
-    );
+  useEffect(() => {
+    setExpandHandler(() => handlePlayerExpandToggle);
+    return () => setExpandHandler(null);
+  }, [handlePlayerExpandToggle, setExpandHandler]);
 
   return (
     <div className="w-full min-h-screen text-slate-900 pb-24 relative overflow-hidden bg-gradient-to-br from-slate-50 via-purple-50/40 to-slate-50">
@@ -334,10 +345,7 @@ const Podcast = () => {
                               key={p.id}
                               initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
-                              onClick={() => {
-                                setActivePodcast(p);
-                                setSearchQuery("");
-                              }}
+                              onClick={() => openPodcastProfile(p)}
                               className="group relative h-48 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-200"
                             >
                               <img
@@ -402,15 +410,14 @@ const Podcast = () => {
                               </thead>
                               <tbody className="bg-white divide-y divide-slate-100">
                                 {uniqueFilteredEpisodes.map((ep, index) => {
-                                  const isActive =
-                                    player.currentSong?.id === ep.id;
+                                  const isActive = currentSong?.id === ep.id;
                                   const actualDuration = durations[ep.id];
                                   const isLiked = likedEpisodes.has(ep.id);
                                   return (
                                     <motion.tr
                                       key={ep.id}
                                       onClick={() =>
-                                        player.handleSongClick(
+                                        handleSongClick(
                                           index,
                                           ep,
                                           uniqueFilteredEpisodes,
@@ -426,7 +433,7 @@ const Podcast = () => {
                                     >
                                       <td className="px-4 md:px-5 py-3 whitespace-nowrap">
                                         <div className="w-8 h-8 flex items-center justify-center">
-                                          {isActive && player.playing ? (
+                                          {isActive && playing ? (
                                             <div className="flex items-end gap-0.5 h-4">
                                               <motion.div
                                                 animate={{
@@ -555,7 +562,7 @@ const Podcast = () => {
                     key={p.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    onClick={() => setActivePodcast(p)}
+                    onClick={() => openPodcastProfile(p)}
                     className="group relative h-48 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-200"
                   >
                     <img
@@ -590,11 +597,7 @@ const Podcast = () => {
           <>
             <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
               <button
-                onClick={() => {
-                  setActivePodcast(null);
-                  player.handleClosePlayer();
-                  setSearchQuery("");
-                }}
+                onClick={closePodcastProfile}
                 className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors group"
               >
                 <ArrowLeft
@@ -672,7 +675,7 @@ const Podcast = () => {
                 <div className="flex items-center gap-3 justify-center md:justify-start">
                   <button
                     onClick={() =>
-                      player.handleSongClick(
+                      handleSongClick(
                         0,
                         activePodcast.podcast_episodes[0],
                         activePodcast.podcast_episodes,
@@ -771,14 +774,14 @@ const Podcast = () => {
                       </tr>
                     ) : (
                       visibleEpisodesInActivePodcast.map((ep, index) => {
-                        const isActive = player.currentSong?.id === ep.id;
+                        const isActive = currentSong?.id === ep.id;
                         const actualDuration = durations[ep.id];
                         const isLiked = likedEpisodes.has(ep.id);
                         return (
                           <tr
                             key={ep.id}
                             onClick={() =>
-                              player.handleSongClick(
+                              handleSongClick(
                                 index,
                                 ep,
                                 visibleEpisodesInActivePodcast,
@@ -788,7 +791,7 @@ const Podcast = () => {
                           >
                             <td className="px-4 md:px-5 py-3 whitespace-nowrap">
                               <div className="w-8 h-8 flex items-center justify-center">
-                                {isActive && player.playing ? (
+                                {isActive && playing ? (
                                   <div className="flex items-end gap-0.5 h-4">
                                     <motion.div
                                       animate={{
@@ -898,33 +901,8 @@ const Podcast = () => {
         )}
       </div>
 
-      {/* ── STICKY PLAYER ── */}
-      <AnimatePresence>
-        {player.currentSong && (
-          <StickyPlayer
-            song={player.currentSong}
-            isPlaying={player.playing}
-            onPlayPause={player.handlePlayPause}
-            onSeek={player.handleSeek}
-            onPrev={player.handlePrev}
-            onNext={player.handleNext}
-            currentTime={player.currentTime}
-            duration={player.duration}
-            volume={player.volume}
-            onVolumeChange={player.handleVolumeChange}
-            isMuted={player.isMuted}
-            toggleMute={player.toggleMute}
-            isShuffle={player.isShuffle}
-            onToggleShuffle={player.onToggleShuffle}
-            onClose={player.handleClosePlayer}
-            currentRadioStation={null}
-            profileOpen={isCurrentPodcastPlaying} // ✅ Fixed
-            onToggleProfile={
-              player.currentSong ? handlePlayerExpandToggle : null
-            } // ✅ Fixed
-          />
-        )}
-      </AnimatePresence>
+      {/* ✅ No <StickyPlayer /> here — PlayerProvider renders ONE global
+          sticky player at the app root, same as TopPlaylist and Radio. */}
     </div>
   );
 };

@@ -26,6 +26,7 @@ import {
   LogOut,
   Plus,
   Loader2,
+  Crown,
   ChevronRight as ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -35,6 +36,7 @@ import Auth from "./Auth";
 const BLUE_LIGHT = "#3b82f6";
 const BLUE_DARK = "#1d4ed8";
 const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
+const GOLD_GRADIENT = "linear-gradient(135deg, #f59e0b, #b45309)";
 
 const NavItem = ({ icon: Icon, label, to, sidebarOpen }) => {
   const location = useLocation();
@@ -200,7 +202,6 @@ const UserMenu = ({ user, onOpenAuth }) => {
   );
 };
 
-// ✅ INLINED PLAYLIST SIDEBAR — no separate file needed
 const PlaylistSidebar = ({ user, sidebarOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -410,6 +411,7 @@ const Layout = () => {
 
   const mobileMenuItems = [
     { path: "/", label: "Home", icon: Home },
+    { path: "/pro", label: "Go Pro", icon: Crown },
     { path: "/about", label: "Our DNA", icon: Info },
     { path: "/knowledge", label: "Knowledge", icon: BookOpen },
     { path: "/reached", label: "Reached", icon: TrendingUp },
@@ -464,6 +466,14 @@ const Layout = () => {
               />
             </Link>
             <div className="flex items-center gap-2">
+              {/* ✅ GO PRO — mobile top bar left area */}
+              <button
+                onClick={() => navigate("/pro")}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-white text-xs font-bold"
+                style={{ background: GOLD_GRADIENT }}
+              >
+                <Crown size={13} /> Pro
+              </button>
               <button
                 onClick={() => navigate("/login")}
                 className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center"
@@ -524,7 +534,11 @@ const Layout = () => {
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-colors ${location.pathname === item.path ? "text-blue-600 bg-blue-50" : "text-slate-700 hover:bg-slate-50"}`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-colors ${
+                      location.pathname === item.path
+                        ? "text-blue-600 bg-blue-50"
+                        : "text-slate-700 hover:bg-slate-50"
+                    }`}
                   >
                     <item.icon className="w-4 h-4" />
                     {item.label}
@@ -584,7 +598,11 @@ const Layout = () => {
             <div className="flex items-center bg-slate-100 rounded-lg p-1 mb-4 mx-2">
               <button
                 onClick={() => setActiveTab("browse")}
-                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${activeTab === "browse" ? "text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
+                  activeTab === "browse"
+                    ? "text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
                 style={
                   activeTab === "browse" ? { background: BLUE_GRADIENT } : {}
                 }
@@ -593,7 +611,11 @@ const Layout = () => {
               </button>
               <button
                 onClick={() => setActiveTab("tuneraaga")}
-                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${activeTab === "tuneraaga" ? "text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                className={`flex-1 text-[11px] font-bold py-1.5 rounded-md transition-all ${
+                  activeTab === "tuneraaga"
+                    ? "text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
                 style={
                   activeTab === "tuneraaga" ? { background: BLUE_GRADIENT } : {}
                 }
@@ -662,7 +684,9 @@ const Layout = () => {
               <>
                 <div className="border-t border-slate-200 my-2" />
                 <span
-                  className={`text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1 ${!sidebarOpen && "text-center"}`}
+                  className={`text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1 ${
+                    !sidebarOpen && "text-center"
+                  }`}
                 >
                   {sidebarOpen ? "Menu" : ""}
                 </span>
@@ -697,79 +721,107 @@ const Layout = () => {
       </motion.aside>
 
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
+        {/* ✅ TOP NAVBAR — Go Pro on LEFT side, before search bar */}
         <div className="sticky top-0 z-30 pointer-events-none bg-gradient-to-b from-slate-50 via-slate-50 to-transparent pb-2 pt-4">
-          <div className="flex items-center justify-center px-4 md:px-12 pointer-events-auto relative">
-            <div className="relative w-full max-w-lg">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                <Search className="w-4 h-4" />
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search songs, artists, movies, lyrics..."
-                className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                    setShowSearchDropdown(false);
-                  }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-              <SearchDropdown
-                results={searchResults}
-                visible={showSearchDropdown}
-                onNavigate={handleSearchResultClick}
-                onClose={handleCloseSearchDropdown}
-              />
-            </div>
+<div className="grid grid-cols-3 items-center px-4 md:px-8 pointer-events-auto">
+  {/* LEFT */}
+  <div className="flex justify-start">
+    <Link to="/pro" className="hidden md:block">
+      <button
+  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full
+             bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500
+             text-white text-[12px] font-bold
+             shadow-sm hover:shadow-md
+             hover:from-cyan-500 hover:via-sky-500 hover:to-blue-600
+             transition-all duration-200 hover:scale-105"
+>
+  <Crown size={14} className="fill-white text-white" />
+  <span>Go Pro</span>
+</button>
+    </Link>
+  </div>
 
-            <div className="hidden md:flex items-center gap-4 bg-white p-1.5 pl-5 rounded-full border border-slate-200 shadow-sm absolute right-4 md:right-12 top-1/2 -translate-y-1/2">
-              <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
-                <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
-              </Bell>
+  {/* CENTER */}
+  <div className="flex justify-center">
+    <div className="relative w-full max-w-lg">
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+        <Search className="w-4 h-4" />
+      </div>
 
-              {user ? (
-                <UserMenu
-                  user={user}
-                  onOpenAuth={() => setShowAuthModal(true)}
-                />
-              ) : (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      setAuthMode("login");
-                      setShowAuthModal(true);
-                    }}
-                    className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
-                  >
-                    Log In
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAuthMode("signup");
-                      setShowAuthModal(true);
-                    }}
-                    className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
-                  >
-                    Sign Up
-                  </button>
-                </div>
-              )}
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search songs, artists, movies, lyrics..."
+        className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+      />
 
-              <div
-                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
-                onClick={() => navigate("/login")}
-              >
-                <User className="w-3.5 h-3.5 text-slate-600" />
-              </div>
-            </div>
-          </div>
+      {searchQuery && (
+        <button
+          onClick={() => {
+            setSearchQuery("");
+            setShowSearchDropdown(false);
+          }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+
+      <SearchDropdown
+        results={searchResults}
+        visible={showSearchDropdown}
+        onNavigate={handleSearchResultClick}
+        onClose={handleCloseSearchDropdown}
+      />
+    </div>
+  </div>
+
+  {/* RIGHT */}
+  <div className="flex justify-end">
+    <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-4 rounded-full border border-slate-200 shadow-sm">
+      <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
+        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
+      </Bell>
+
+      {user ? (
+        <UserMenu
+          user={user}
+          onOpenAuth={() => setShowAuthModal(true)}
+        />
+      ) : (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setAuthMode("login");
+              setShowAuthModal(true);
+            }}
+            className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+          >
+            Log In
+          </button>
+
+          <button
+            onClick={() => {
+              setAuthMode("signup");
+              setShowAuthModal(true);
+            }}
+            className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+          >
+            Sign Up
+          </button>
+        </div>
+      )}
+
+      <div
+        className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
+        onClick={() => navigate("/login")}
+      >
+        <User className="w-3.5 h-3.5 text-slate-600" />
+      </div>
+    </div>
+  </div>
+</div>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">

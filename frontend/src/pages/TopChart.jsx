@@ -2,21 +2,14 @@ import React, {
   useState,
   useEffect,
   useRef,
-  useCallback,
   useMemo,
+  useCallback,
 } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Play,
-  Pause,
   Heart,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  X,
-  Shuffle,
   ArrowLeft,
   Clock,
   MoreHorizontal,
@@ -31,243 +24,21 @@ import {
   Calendar,
   Search,
   Loader2,
-  Maximize2,
+  X,
 } from "lucide-react";
-// ✅ FIX: use the SAME shared Supabase client instance used everywhere else
-// (Auth, TopPlaylist, History). Previously this file created its OWN client
-// with createClient(...) directly — that spins up a second, separate
-// GoTrueClient/auth session that does not reliably share the logged-in
-// session with the rest of the app. That's why userRef.current ended up
-// null here and saveToHistory() was silently skipped on this page only.
 import { supabase } from "../lib/supabaseClient";
-
-const formatDuration = (val) => {
-  if (!val || !isFinite(val) || val <= 0) return "0:00";
-  if (typeof val === "string") return val;
-  const m = Math.floor(val / 60);
-  const s = Math.floor(val % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
-};
-
-const formatCount = (num) => {
-  if (!num) return "0";
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-};
-
-const parseArtists = (artistStr) => {
-  if (!artistStr) return [];
-  return String(artistStr)
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean);
-};
-
-// ─── STICKY PLAYER (with Maximize2 expand arrow) ───
-const StickyPlayer = ({
-  song,
-  isPlaying,
-  onPlayPause,
-  onSeek,
-  onPrev,
-  onNext,
-  currentTime,
-  duration,
-  volume,
-  onVolumeChange,
-  isMuted,
-  toggleMute,
-  isShuffle,
-  onToggleShuffle,
-  onClose,
-  onExpand,
-  profileOpen,
-}) => {
-  if (!song) return null;
-  return (
-    <motion.div
-      initial={{ y: 100 }}
-      animate={{ y: 0 }}
-      exit={{ y: 100 }}
-      className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]"
-    >
-      <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
-        <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
-          <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10">
-            <img
-              src={
-                song.albumArt || song.img || "https://via.placeholder.com/50"
-              }
-              alt="Art"
-              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-            />
-          </div>
-          <div className="flex flex-col overflow-hidden">
-            <h4 className="font-bold text-white truncate text-base leading-tight">
-              {song.title}
-            </h4>
-            <p className="text-xs text-gray-400 truncate mt-1">{song.artist}</p>
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
-          <div className="flex items-center gap-4 md:gap-6 mb-2">
-            <button
-              onClick={onPrev}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
-            >
-              <SkipBack className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => onPlayPause(song)}
-              className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-white shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-110 transition-all duration-300 bg-white text-slate-900"
-            >
-              {isPlaying ? (
-                <Pause className="w-6 h-6 md:w-7 md:h-7 fill-slate-900" />
-              ) : (
-                <Play className="w-6 h-6 md:w-7 md:h-7 fill-slate-900 ml-1" />
-              )}
-            </button>
-            <button
-              onClick={onNext}
-              className="text-gray-400 hover:text-white transition-colors hover:scale-110 transform duration-200"
-            >
-              <SkipForward className="w-5 h-5" />
-            </button>
-            <button
-              onClick={onToggleShuffle}
-              className={`transition-all hover:scale-110 ${isShuffle ? "text-green-500" : "text-gray-400 hover:text-white"}`}
-              title="Shuffle"
-            >
-              <Shuffle className="w-4 h-4 md:w-5 md:h-5" />
-            </button>
-          </div>
-          <div className="w-full flex items-center gap-3 text-xs text-gray-400 font-medium px-0 md:px-8">
-            <span className="w-10 text-right font-mono">
-              {formatDuration(currentTime)}
-            </span>
-            <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer group">
-              <input
-                type="range"
-                min="0"
-                max={duration || 100}
-                value={currentTime}
-                onChange={(e) => onSeek(parseFloat(e.target.value))}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div
-                className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-400"
-                style={{
-                  width: duration ? `${(currentTime / duration) * 100}%` : "0%",
-                }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 h-3 w-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{
-                  left: duration ? `${(currentTime / duration) * 100}%` : "0%",
-                  marginLeft: "-6px",
-                }}
-              />
-            </div>
-            <span className="w-10 font-mono">{formatDuration(duration)}</span>
-          </div>
-        </div>
-
-        {/* Mobile Right */}
-        <div className="flex md:hidden items-center gap-1 flex-shrink-0">
-          {onExpand && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onExpand();
-              }}
-              className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-1.5 rounded-lg hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
-              title="View Chart"
-            >
-              <Maximize2 size={18} />
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300 p-1.5 rounded-lg hover:bg-white/10"
-            title="Close Player"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Desktop Right */}
-        <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
-          <div className="flex items-center gap-3 w-full justify-end">
-            {onExpand && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onExpand();
-                }}
-                className={`text-gray-400 hover:text-green-400 transition-all hover:scale-110 p-0.5 rounded hover:bg-white/10 ${profileOpen ? "text-green-400" : ""}`}
-                title="View Chart"
-              >
-                <Maximize2 size={18} />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90 transform duration-300"
-              title="Close Player"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="flex items-center gap-3 w-full justify-end mt-1">
-            <button
-              onClick={() => toggleMute()}
-              className="text-gray-400 hover:text-green-500 transition-colors hover:scale-110"
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX size={18} />
-              ) : (
-                <Volume2 size={18} />
-              )}
-            </button>
-            <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer w-24">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={isMuted ? 0 : volume}
-                onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                onClick={(e) => e.stopPropagation()}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div
-                className="absolute top-0 left-0 h-full rounded-full bg-green-500"
-                style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
+import {
+  usePlayer,
+  formatDuration,
+  formatCount,
+  parseArtists,
+} from "../components/PlayerContext";
 
 const TopChart = () => {
   const navigate = useNavigate();
   const [charts, setCharts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-
-  const [playing, setPlaying] = useState(false);
-  const [currentSong, setCurrentSong] = useState(null);
-  const [currentList, setCurrentList] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isShuffle, setIsShuffle] = useState(false);
   const [likedSongs, setLikedSongs] = useState(new Set());
   const [isAllLiked, setIsAllLiked] = useState(false);
   const [durations, setDurations] = useState({});
@@ -276,32 +47,21 @@ const TopChart = () => {
   // Profile panel state
   const [profileChart, setProfileChart] = useState(null);
   const [profileSongs, setProfileSongs] = useState([]);
-  const [profileOpen, setProfileOpen] = useState(false);
 
-  // ✅ AUTH STATES
-  const [user, setUser] = useState(null);
-  const userRef = useRef(null);
-
-  const audioRef = useRef(null);
-  const currentSongRef = useRef(null);
-  const currentListRef = useRef([]);
-  const currentIndexRef = useRef(null);
-  const isShuffleRef = useRef(false);
   const moreMenuRef = useRef(null);
-  const countedSongIds = useRef(new Set());
 
-  useEffect(() => {
-    currentSongRef.current = currentSong;
-  }, [currentSong]);
-  useEffect(() => {
-    currentListRef.current = currentList;
-  }, [currentList]);
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-  useEffect(() => {
-    isShuffleRef.current = isShuffle;
-  }, [isShuffle]);
+  // ✅ Everything playback-related now comes from the shared player —
+  // no local <audio>, no local ad logic, no local auth listener.
+  const {
+    playing,
+    currentSong,
+    currentTime,
+    duration,
+    handleSongClick,
+    profileOpen,
+    setProfileOpen,
+    setExpandHandler,
+  } = usePlayer();
 
   useEffect(() => {
     const handler = (e) => {
@@ -310,26 +70,6 @@ const TopChart = () => {
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // ✅ AUTH & SESSION (now reads from the shared client, so it correctly
-  // sees the same logged-in session as the rest of the app)
-  useEffect(() => {
-    const getSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
-    };
-    getSession();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
-    });
-    return () => subscription.unsubscribe();
   }, []);
 
   // Fetch Charts
@@ -383,6 +123,39 @@ const TopChart = () => {
     fetchCharts();
   }, []);
 
+  // Register this page's "expand" behavior with the shared player so the
+  // sticky player's Maximize2 button opens THIS page's chart-profile panel.
+  const handlePlayerExpandToggle = useCallback(() => {
+    if (!currentSong) return;
+    const foundChart = charts.find((c) =>
+      c.chart_songs.some((s) => s.id === currentSong.id),
+    );
+    if (foundChart) {
+      if (profileOpen && profileChart?.id === foundChart.id) {
+        setProfileOpen(false);
+      } else {
+        setProfileChart(foundChart);
+        setProfileSongs(foundChart.chart_songs);
+        setProfileOpen(true);
+        setIsAllLiked(
+          foundChart.chart_songs.every((s) => likedSongs.has(s.id)),
+        );
+      }
+    }
+  }, [
+    charts,
+    currentSong,
+    profileOpen,
+    profileChart,
+    likedSongs,
+    setProfileOpen,
+  ]);
+
+  useEffect(() => {
+    setExpandHandler(() => handlePlayerExpandToggle);
+    return () => setExpandHandler(null);
+  }, [setExpandHandler, handlePlayerExpandToggle]);
+
   const filteredCharts = charts.filter((c) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -432,252 +205,6 @@ const TopChart = () => {
       }
     });
   }, [uniqueFilteredSongs, profileSongs, searchQuery, profileOpen, durations]);
-
-  // ✅ SAVE TO HISTORY DB
-  const saveToHistory = async (releaseId) => {
-    const currentUser = userRef.current;
-    if (!currentUser || !releaseId) {
-      // Helpful while debugging: if this fires often, user session isn't
-      // ready yet — but with the shared client this should now be rare.
-      return;
-    }
-    try {
-      const { data: existing, error: fetchErr } = await supabase
-        .from("history")
-        .select("id")
-        .eq("user_id", currentUser.id)
-        .eq("release_id", releaseId)
-        .limit(1)
-        .maybeSingle();
-
-      if (fetchErr) {
-        console.error("History lookup error:", fetchErr.message);
-      }
-
-      if (existing) {
-        const { error: updateErr } = await supabase
-          .from("history")
-          .update({ played_at: new Date().toISOString() })
-          .eq("id", existing.id);
-        if (updateErr)
-          console.error("History update error:", updateErr.message);
-      } else {
-        const { error: insertErr } = await supabase
-          .from("history")
-          .insert({ user_id: currentUser.id, release_id: releaseId });
-        if (insertErr)
-          console.error("History insert error:", insertErr.message);
-      }
-    } catch (error) {
-      console.error("History save error:", error);
-    }
-  };
-
-  const incrementSongCounts = useCallback(async (song) => {
-    if (!song || !song.release_id || countedSongIds.current.has(song.id))
-      return;
-    countedSongIds.current.add(song.id);
-    try {
-      const { data: current } = await supabase
-        .from("releases")
-        .select("play_count")
-        .eq("id", song.release_id)
-        .single();
-      await supabase
-        .from("releases")
-        .update({ play_count: (current?.play_count || 0) + 1 })
-        .eq("id", song.release_id);
-    } catch (error) {
-      console.error("Error incrementing counts:", error);
-    }
-  }, []);
-
-  const playSong = useCallback(
-    (song) => {
-      if (!song || !song.audioUrl) return;
-      const audio = audioRef.current;
-      if (!audio) return;
-      const isNewSong =
-        !currentSongRef.current || currentSongRef.current.id !== song.id;
-      if (isNewSong) {
-        setCurrentSong(song);
-        currentSongRef.current = song;
-        setDuration(0);
-        setCurrentTime(0);
-        audio.src = song.audioUrl;
-        audio.load();
-        incrementSongCounts(song);
-
-        // ✅ SAVE TO HISTORY (use song.release_id because song.id is chart_songs.id)
-        if (song.release_id) {
-          saveToHistory(song.release_id);
-        }
-      }
-      let hasStarted = false;
-      const tryPlay = () => {
-        if (hasStarted) return;
-        audio
-          .play()
-          .then(() => {
-            hasStarted = true;
-            setPlaying(true);
-          })
-          .catch((err) => {
-            if (err.name !== "AbortError" && err.name !== "NotAllowedError")
-              console.error("Play error:", err);
-          });
-      };
-      if (audio.readyState >= 2) tryPlay();
-      else {
-        const onCanPlay = () => {
-          audio.removeEventListener("canplay", onCanPlay);
-          clearTimeout(fb);
-          tryPlay();
-        };
-        audio.addEventListener("canplay", onCanPlay, { once: true });
-        const fb = setTimeout(() => {
-          audio.removeEventListener("canplay", onCanPlay);
-          tryPlay();
-        }, 3000);
-      }
-    },
-    [incrementSongCounts],
-  );
-
-  const handleNext = useCallback(() => {
-    if (!currentListRef.current.length || currentIndexRef.current === null)
-      return;
-    let nextIndex;
-    if (isShuffleRef.current) {
-      do {
-        nextIndex = Math.floor(Math.random() * currentListRef.current.length);
-      } while (
-        currentListRef.current.length > 1 &&
-        nextIndex === currentIndexRef.current
-      );
-    } else {
-      nextIndex = (currentIndexRef.current + 1) % currentListRef.current.length;
-    }
-    setCurrentIndex(nextIndex);
-    currentIndexRef.current = nextIndex;
-    playSong(currentListRef.current[nextIndex]);
-  }, [playSong]);
-
-  const handlePrev = useCallback(() => {
-    if (!currentListRef.current.length || currentIndexRef.current === null)
-      return;
-    const prevIndex =
-      (currentIndexRef.current - 1 + currentListRef.current.length) %
-      currentListRef.current.length;
-    setCurrentIndex(prevIndex);
-    currentIndexRef.current = prevIndex;
-    playSong(currentListRef.current[prevIndex]);
-  }, [playSong]);
-
-  const handlePlayPause = useCallback(
-    (song) => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      if (
-        currentSongRef.current &&
-        currentSongRef.current.id === song.id &&
-        !audio.paused
-      ) {
-        audio.pause();
-        setPlaying(false);
-      } else {
-        playSong(song);
-      }
-    },
-    [playSong],
-  );
-
-  const handleSongClick = useCallback(
-    (index, song, list) => {
-      if (currentSongRef.current?.id === song.id) handlePlayPause(song);
-      else {
-        setCurrentList(list);
-        currentListRef.current = list;
-        setCurrentIndex(index);
-        currentIndexRef.current = index;
-        playSong(song);
-      }
-    },
-    [handlePlayPause, playSong],
-  );
-
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = "auto";
-    audioRef.current = audio;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration)) {
-        setDuration(audio.duration);
-        if (currentSongRef.current?.id)
-          setDurations((prev) => ({
-            ...prev,
-            [currentSongRef.current.id]: audio.duration,
-          }));
-      }
-    };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onEnded = () => handleNext();
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnded);
-    return () => {
-      audio.pause();
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeAttribute("src");
-      audio.load();
-    };
-  }, [handleNext]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-
-  const handleSeek = (time) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
-  };
-
-  const handleClosePlayer = () => {
-    setPlaying(false);
-    setCurrentSong(null);
-    currentSongRef.current = null;
-    setCurrentIndex(null);
-    currentIndexRef.current = null;
-    setCurrentList([]);
-    currentListRef.current = [];
-    setDuration(0);
-    setCurrentTime(0);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.removeAttribute("src");
-      audioRef.current.load();
-    }
-  };
-
-  const toggleMute = () => setIsMuted(!isMuted);
-  const handleVolumeChange = (v) => {
-    setVolume(v);
-    setIsMuted(v === 0);
-  };
 
   const toggleLikeSong = (songId) => {
     setLikedSongs((prev) => {
@@ -742,27 +269,8 @@ const TopChart = () => {
           chart.chart_songs.every((s) => likedSongs.has(s.id)),
       );
     },
-    [profileOpen, profileChart, likedSongs],
+    [profileOpen, profileChart, likedSongs, setProfileOpen],
   );
-
-  const handlePlayerExpandToggle = useCallback(() => {
-    if (!currentSongRef.current) return;
-    const foundChart = charts.find((c) =>
-      c.chart_songs.some((s) => s.id === currentSongRef.current.id),
-    );
-    if (foundChart) {
-      if (profileOpen && profileChart?.id === foundChart.id) {
-        setProfileOpen(false);
-      } else {
-        setProfileChart(foundChart);
-        setProfileSongs(foundChart.chart_songs);
-        setProfileOpen(true);
-        setIsAllLiked(
-          foundChart.chart_songs.every((s) => likedSongs.has(s.id)),
-        );
-      }
-    }
-  }, [charts, profileOpen, profileChart, likedSongs]);
 
   const totalListeners = profileChart
     ? profileChart.chart_songs.reduce((sum, s) => sum + (s.playCount || 0), 0)
@@ -777,7 +285,6 @@ const TopChart = () => {
       ]
     : [];
 
-  // ✅ SongRow — skipAnimation prevents blink, showLike adds like column
   const SongRow = ({
     song,
     index,
@@ -1285,31 +792,8 @@ const TopChart = () => {
           </div>
         )}
       </div>
-
-      {/* ── STICKY PLAYER ── */}
-      <AnimatePresence>
-        {currentSong && (
-          <StickyPlayer
-            song={currentSong}
-            isPlaying={playing}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            onVolumeChange={handleVolumeChange}
-            isMuted={isMuted}
-            toggleMute={toggleMute}
-            isShuffle={isShuffle}
-            onToggleShuffle={() => setIsShuffle(!isShuffle)}
-            onClose={handleClosePlayer}
-            onExpand={handlePlayerExpandToggle}
-            profileOpen={profileOpen}
-          />
-        )}
-      </AnimatePresence>
+      {/* Sticky player is rendered globally by <PlayerProvider> — nothing
+          to render here anymore. */}
     </div>
   );
 };

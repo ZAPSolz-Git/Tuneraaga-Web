@@ -15,29 +15,48 @@ import {
   Maximize2,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { useAudioPlayer, parseArtists } from "../hooks/useAudioPlayer";
-import StickyPlayer from "../components/StickyPlayer";
+import {
+  usePlayer,
+  formatCount,
+  parseArtists,
+} from "../components/PlayerContext";
 
-const formatCount = (num) => {
-  if (!num) return "0";
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-};
+// ✅ No more local formatCount — it's imported from PlayerContext above.
+// (Declaring it again here as well was a duplicate-declaration bug.)
 
 const Radio = () => {
+  // ✅ Everything playback-related now comes from the SHARED player.
+  // Radio no longer owns an <audio> element, its own sticky player, or
+  // its own play/pause/next/prev/ad logic — all of that lives once in
+  // PlayerProvider, same as TopPlaylist.
+  const {
+    user,
+    playing,
+    currentSong,
+    handleSongClick,
+    playList,
+    handleClosePlayer,
+    profileOpen,
+    setProfileOpen,
+    setExpandHandler,
+  } = usePlayer();
+
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLang, setSelectedLang] = useState("All");
   const [likedStations, setLikedStations] = useState(new Set());
 
+  // profileStation = whichever station's profile panel is open (for viewing)
   const [profileStation, setProfileStation] = useState(null);
   const [stationSongs, setStationSongs] = useState([]);
   const [loadingSongs, setLoadingSongs] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
 
-  const player = useAudioPlayer();
+  // playingStation = whichever station is actually loaded into the shared
+  // player right now. Kept separate from profileStation because a user
+  // can be *viewing* one station's profile while a *different* station
+  // keeps playing in the sticky player.
+  const [playingStation, setPlayingStation] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -150,19 +169,23 @@ const Radio = () => {
     }
   }, []);
 
+  // ✅ Plays a station's songs through the SHARED player queue
+  // (handleSongClick/playList — same mechanism every page uses).
   const handleStationClick = useCallback(
     async (station) => {
       incrementListener(station);
       const songs = await fetchStationSongs(station.id);
       if (songs.length > 0) {
-        player.playRadioStation(station, songs);
+        playList(songs);
+        setPlayingStation(station);
         setProfileStation(station);
-        setStationSongs(songs);
       }
     },
-    [fetchStationSongs, incrementListener, player],
+    [fetchStationSongs, incrementListener, playList],
   );
 
+  // ✅ Open/close a station's profile panel WITHOUT necessarily playing it
+  // (tapping "View Profile"), mirrors TopPlaylist's handleOpenPlaylistProfile.
   const handleToggleProfile = useCallback(
     async (station) => {
       if (profileOpen && profileStation?.id === station.id) {
@@ -172,30 +195,36 @@ const Radio = () => {
       setProfileStation(station);
       setProfileOpen(true);
       if (profileStation?.id !== station.id) {
-        const songs = await fetchStationSongs(station.id);
-        setStationSongs(songs);
+        await fetchStationSongs(station.id);
       }
     },
-    [profileOpen, profileStation, fetchStationSongs],
+    [profileOpen, profileStation, fetchStationSongs, setProfileOpen],
   );
 
+  // ✅ Wired to the shared player's expand (Maximize2) button — opens the
+  // profile panel for whichever station is CURRENTLY PLAYING.
   const handlePlayerExpandToggle = useCallback(() => {
-    if (!player.currentRadioStation) return;
-    if (profileOpen && profileStation?.id === player.currentRadioStation.id) {
+    if (!currentSong || !playingStation) return;
+    if (profileOpen && profileStation?.id === playingStation.id) {
       setProfileOpen(false);
     } else {
-      setProfileStation(player.currentRadioStation);
+      setProfileStation(playingStation);
       setProfileOpen(true);
-      if (profileStation?.id !== player.currentRadioStation.id) {
-        fetchStationSongs(player.currentRadioStation.id);
-      }
+      fetchStationSongs(playingStation.id);
     }
   }, [
+    currentSong,
+    playingStation,
     profileOpen,
     profileStation,
-    player.currentRadioStation,
     fetchStationSongs,
+    setProfileOpen,
   ]);
+
+  useEffect(() => {
+    setExpandHandler(() => handlePlayerExpandToggle);
+    return () => setExpandHandler(null);
+  }, [handlePlayerExpandToggle, setExpandHandler]);
 
   const handleSurpriseMe = useCallback(async () => {
     if (filteredStations.length === 0) return;
@@ -343,7 +372,7 @@ const Radio = () => {
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
                         {stationSongs.map((song, index) => {
-                          const isActive = player.currentSong?.id === song.id;
+                          const isActive = currentSong?.id === song.id;
                           const featuringList = parseArtists(
                             song.featuringArtists,
                           );
@@ -351,17 +380,13 @@ const Radio = () => {
                             <tr
                               key={song.id}
                               onClick={() =>
-                                player.handleSongClick(
-                                  index,
-                                  song,
-                                  stationSongs,
-                                )
+                                handleSongClick(index, song, stationSongs)
                               }
                               className={`hover:bg-slate-50 transition-colors cursor-pointer group ${isActive ? "bg-emerald-50" : ""}`}
                             >
                               <td className="px-4 md:px-6 py-3 whitespace-nowrap">
                                 <div className="w-8 h-8 flex items-center justify-center">
-                                  {isActive && player.playing ? (
+                                  {isActive && playing ? (
                                     <div className="flex items-end gap-0.5 h-4">
                                       <motion.div
                                         animate={{
@@ -531,9 +556,8 @@ const Radio = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5 md:gap-6 pb-10">
             {filteredStations.map((station, index) => {
               const isLiked = likedStations.has(station.id);
-              const isCurrentStation =
-                player.currentRadioStation?.id === station.id;
-              const isCurrentlyPlaying = isCurrentStation && player.playing;
+              const isCurrentStation = playingStation?.id === station.id;
+              const isCurrentlyPlaying = isCurrentStation && playing;
 
               return (
                 <motion.div
@@ -650,36 +674,9 @@ const Radio = () => {
         )}
       </div>
 
-      {/* ── STICKY PLAYER ── */}
-      <AnimatePresence>
-        {player.currentSong && (
-          <StickyPlayer
-            song={player.currentSong}
-            isPlaying={player.playing}
-            onPlayPause={player.handlePlayPause}
-            onSeek={player.handleSeek}
-            onPrev={player.handlePrev}
-            onNext={player.handleNext}
-            currentTime={player.currentTime}
-            duration={player.duration}
-            volume={player.volume}
-            onVolumeChange={player.handleVolumeChange}
-            isMuted={player.isMuted}
-            toggleMute={player.toggleMute}
-            isShuffle={player.isShuffle}
-            onToggleShuffle={player.onToggleShuffle}
-            onClose={player.handleClosePlayer}
-            currentRadioStation={player.currentRadioStation}
-            profileOpen={
-              profileOpen &&
-              profileStation?.id === player.currentRadioStation?.id
-            }
-            onToggleProfile={
-              player.currentRadioStation ? handlePlayerExpandToggle : null
-            }
-          />
-        )}
-      </AnimatePresence>
+      {/* ✅ NOTE: no <StickyPlayer /> here anymore — PlayerProvider renders
+          ONE global sticky player at the app root, so it stays mounted
+          (and playback keeps going) as you navigate between pages. */}
     </div>
   );
 };
