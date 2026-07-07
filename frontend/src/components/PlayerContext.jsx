@@ -7,6 +7,7 @@ import React, {
   useCallback,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import {
   Play,
   Pause,
@@ -18,6 +19,7 @@ import {
   Shuffle,
   Maximize2,
   Megaphone,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -65,7 +67,7 @@ export function usePlayer() {
   return ctx;
 }
 
-export function PlayerProvider({ children }) {
+export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const [playing, setPlaying] = useState(false);
   const [currentSong, setCurrentSong] = useState(null);
   const [currentList, setCurrentList] = useState([]);
@@ -77,6 +79,17 @@ export function PlayerProvider({ children }) {
   const [isShuffle, setIsShuffle] = useState(false);
   const [isAdPlaying, setIsAdPlaying] = useState(false);
   const [user, setUser] = useState(null);
+  // ✅ Has the auth session actually finished loading yet? Prevents the
+  // top banner from flashing on screen for a split second on page load
+  // while we're still checking if the user is logged in.
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // ✅ TOP PROMO BANNER — "Ad-free music... Start free trial". Only ever
+  // shown to logged-out users. Dismissing it (X button) only hides it for
+  // this browser tab/session — it is NOT remembered across reloads, so a
+  // logged-out user will always see it again next visit, exactly as
+  // requested ("hamesha dikhna chahiye jab login nahi").
+  const [topBannerDismissed, setTopBannerDismissed] = useState(false);
 
   // Optional "expand" behavior (e.g. TopPlaylist opens its playlist-profile
   // panel when you tap the Maximize2 icon on the sticky player). Any page
@@ -140,7 +153,8 @@ export function PlayerProvider({ children }) {
   // ✅ AUTH & SESSION — single subscription, shared everywhere. This is
   // the ONE source of truth for "logged in or not". Because it lives here
   // (not duplicated per-page), every page that uses usePlayer() reads the
-  // exact same auth state that decides whether ads play.
+  // exact same auth state that decides whether ads play AND whether the
+  // top "start free trial" banner shows.
   useEffect(() => {
     const getSession = async () => {
       const {
@@ -148,6 +162,7 @@ export function PlayerProvider({ children }) {
       } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
       userRef.current = session?.user ?? null;
+      setAuthChecked(true);
     };
     getSession();
     const {
@@ -155,6 +170,14 @@ export function PlayerProvider({ children }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       userRef.current = session?.user ?? null;
+      setAuthChecked(true);
+      // 🔑 If the user just logged in, make sure the banner doesn't stay
+      // dismissed-and-hidden state lingering from before — reset it so
+      // that IF they log out again later in this same tab, it shows
+      // fresh rather than staying dismissed forever.
+      if (session?.user) {
+        setTopBannerDismissed(false);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -620,6 +643,16 @@ export function PlayerProvider({ children }) {
 
   const canSkipAd = isAdPlaying && currentTime >= AD_SKIP_AFTER_SECONDS;
 
+  // ✅ Single source of truth for "should the promo banner show right now".
+  // - authChecked: wait until we actually know the auth state (no flash)
+  // - !user: only for logged-out users
+  // - !topBannerDismissed: respects the X button for this session
+  const showTopBanner = authChecked && !user && !topBannerDismissed;
+
+  const dismissTopBanner = useCallback(() => {
+    setTopBannerDismissed(true);
+  }, []);
+
   const value = {
     // state
     playing,
@@ -637,6 +670,8 @@ export function PlayerProvider({ children }) {
     user,
     profileOpen,
     setProfileOpen: setProfileOpenState,
+    showTopBanner,
+    dismissTopBanner,
     // actions
     playSong,
     playList,
@@ -656,39 +691,152 @@ export function PlayerProvider({ children }) {
   return (
     <PlayerContext.Provider value={value}>
       {children}
-      {/* Sticky player is rendered ONCE here, globally — pages just call
-          usePlayer().playSong()/handleSongClick(), they never render
-          their own <StickyPlayer> or own an <audio> element. */}
-      <AnimatePresence>
-        {currentSong && (
-          <StickyPlayer
-            song={currentSong}
-            isPlaying={playing}
-            isAdPlaying={isAdPlaying}
-            canSkipAd={canSkipAd}
-            adSkipAfterSeconds={AD_SKIP_AFTER_SECONDS}
-            onSkipAd={skipAd}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            onVolumeChange={handleVolumeChange}
-            isMuted={isMuted}
-            toggleMute={toggleMute}
-            isShuffle={isShuffle}
-            onToggleShuffle={toggleShuffle}
-            onClose={handleClosePlayer}
-            onExpand={expandHandler || undefined}
-            profileOpen={profileOpen}
-          />
-        )}
-      </AnimatePresence>
+
+      {/* ✅ Bottom stack: promo banner (only for logged-out users) sits
+          directly ABOVE the sticky player — both live in the same fixed
+          bottom-anchored column, so the banner is never at the page top
+          and always hugs the top edge of the player bar. When there's no
+          song playing, the banner just sits alone at the bottom. */}
+      <div className="fixed bottom-0 left-0 right-0 z-[100] flex flex-col pointer-events-none">
+        <AnimatePresence>
+          {showTopBanner && (
+            <div className="pointer-events-auto">
+              <TopAdBanner
+                onClose={dismissTopBanner}
+                proPlansRoute={proPlansRoute}
+              />
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Sticky player is rendered ONCE here, globally — pages just call
+            usePlayer().playSong()/handleSongClick(), they never render
+            their own <StickyPlayer> or own an <audio> element. */}
+        <AnimatePresence>
+          {currentSong && (
+            <div className="pointer-events-auto">
+              <StickyPlayer
+                song={currentSong}
+                isPlaying={playing}
+                isAdPlaying={isAdPlaying}
+                canSkipAd={canSkipAd}
+                adSkipAfterSeconds={AD_SKIP_AFTER_SECONDS}
+                onSkipAd={skipAd}
+                onPlayPause={handlePlayPause}
+                onSeek={handleSeek}
+                onPrev={handlePrev}
+                onNext={handleNext}
+                currentTime={currentTime}
+                duration={duration}
+                volume={volume}
+                onVolumeChange={handleVolumeChange}
+                isMuted={isMuted}
+                toggleMute={toggleMute}
+                isShuffle={isShuffle}
+                onToggleShuffle={toggleShuffle}
+                onClose={handleClosePlayer}
+                onExpand={expandHandler || undefined}
+                profileOpen={profileOpen}
+              />
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
     </PlayerContext.Provider>
   );
 }
+
+// ─── TOP AD-FREE / FREE-TRIAL BANNER ───
+// Only ever mounted when the user is logged out (see showTopBanner above).
+// Purely presentational except for the trial-click handler below.
+const TopAdBanner = ({ onClose, proPlansRoute }) => {
+  const navigate = useNavigate();
+  const [trialLoading, setTrialLoading] = useState(false);
+
+  // ✅ SELF-CONTAINED TRIAL FLOW — does NOT depend on knowing/guessing
+  // the ProPlans list page's route. We already know for certain (from
+  // ProPlans.jsx / ProLogin.jsx / PackageSummary.jsx) that the confirmed,
+  // always-correct routes are:
+  //   • /pro/login?plan=<id>   (login, then redirects to the plan)
+  //   • /pro/plan/<id>         (package summary, logged-in only)
+  // Since this banner only ever renders for logged-OUT users, we just
+  // need the trial/popular plan's id, fetch it directly here (same
+  // tables ProPlans.jsx reads), then send the user straight to
+  // /pro/login?plan=<id> — exactly where "Start Free Trial" would land
+  // a logged-out user, without ever needing to guess the plans-listing
+  // page's own route.
+  const handleTrialClick = async () => {
+    if (trialLoading) return;
+    setTrialLoading(true);
+
+    try {
+      const { data: plansData, error: plansErr } = await supabase
+        .from("pro_plans")
+        .select("id")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+
+      if (plansErr || !plansData || plansData.length === 0) {
+        console.error("Trial banner: could not load plans", plansErr);
+        // Last-resort fallback only — goes to the (possibly-guessed)
+        // plans listing page instead of doing nothing.
+        navigate(proPlansRoute);
+        return;
+      }
+
+      const planIds = plansData.map((p) => p.id);
+      const { data: pricesData, error: pricesErr } = await supabase
+        .from("pro_plan_prices")
+        .select("plan_id, is_popular")
+        .in("plan_id", planIds);
+
+      if (pricesErr) {
+        console.error("Trial banner: could not load prices", pricesErr);
+      }
+
+      const popularPrice = (pricesData || []).find((pr) => pr.is_popular);
+      const trialPlanId = popularPrice ? popularPrice.plan_id : plansData[0].id;
+
+      navigate(`/pro/login?plan=${trialPlanId}`);
+    } catch (err) {
+      console.error("Trial banner navigation error:", err);
+      navigate(proPlansRoute);
+    } finally {
+      setTrialLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ y: 40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 40, opacity: 0 }}
+      transition={{ duration: 0.25 }}
+      className="w-full bg-slate-900 text-white border-t border-white/10"
+    >
+      <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-center gap-3 px-4 py-2 text-xs md:text-sm font-medium relative">
+        <span className="text-center text-white/90">
+          Ad-free music, unlimited JioTunes, and unlimited downloads!
+        </span>
+        <button
+          onClick={handleTrialClick}
+          disabled={trialLoading}
+          className="flex-shrink-0 bg-gradient-to-r from-sky-400 via-blue-500 to-blue-600 hover:from-sky-300 hover:via-blue-400 hover:to-blue-500 text-white font-bold px-3.5 py-1.5 rounded-full shadow-[0_2px_10px_rgba(59,130,246,0.45)] hover:shadow-[0_2px_14px_rgba(59,130,246,0.6)] transition-all duration-200 hover:scale-105 disabled:opacity-60 disabled:hover:scale-100 inline-flex items-center gap-1 text-xs md:text-sm whitespace-nowrap"
+        >
+          {trialLoading ? "Loading..." : "Start 30-day free trial"}
+          <ChevronRight className="w-3.5 h-3.5 md:w-4 md:h-4" />
+        </button>
+        <button
+          onClick={onClose}
+          className="absolute right-3 md:right-6 text-gray-400 hover:text-white transition-colors"
+          title="Dismiss"
+        >
+          <X size={16} />
+        </button>
+      </div>
+    </motion.div>
+  );
+};
 
 // ─── STICKY PLAYER UI ───
 const StickyPlayer = ({
@@ -726,7 +874,7 @@ const StickyPlayer = ({
       initial={{ y: 100 }}
       animate={{ y: 0 }}
       exit={{ y: 100 }}
-      className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]"
+      className="w-full bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
     >
       <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
         <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">

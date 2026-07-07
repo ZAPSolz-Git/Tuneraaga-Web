@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { X, Loader2, Mail, Lock } from "lucide-react";
 
-export default function Auth({ onClose, initialMode = "login" }) {
+export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
   const [mode, setMode] = useState(initialMode); // "login" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,6 +13,15 @@ export default function Auth({ onClose, initialMode = "login" }) {
   const resetMessages = () => {
     setError("");
     setInfoMessage("");
+  };
+
+  
+  const handleAuthed = () => {
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      onClose?.();
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -50,9 +59,10 @@ export default function Auth({ onClose, initialMode = "login" }) {
         }
 
         if (data?.session) {
-          // Login successful — onAuthStateChange in the parent page will
-          // pick this up automatically, so we just close the modal.
-          onClose?.();
+          // ✅ Login successful — go to onSuccess (e.g. Package Summary
+          // for the plan the user came from) instead of always just
+          // closing the modal.
+          handleAuthed();
         }
       } else {
         // signup
@@ -83,8 +93,9 @@ export default function Auth({ onClose, initialMode = "login" }) {
         }
 
         if (data?.session) {
-          // No email confirmation required — user is logged in immediately
-          onClose?.();
+          // ✅ No email confirmation required — user is logged in
+          // immediately, so route them the same way a normal login would.
+          handleAuthed();
         } else {
           // Email confirmation required
           setInfoMessage(
@@ -205,7 +216,7 @@ export default function Auth({ onClose, initialMode = "login" }) {
                   }}
                   className="text-blue-600 font-semibold hover:underline"
                 >
-                  Sign up karo
+                  Sign up
                 </button>
               </>
             ) : (
@@ -218,7 +229,7 @@ export default function Auth({ onClose, initialMode = "login" }) {
                   }}
                   className="text-blue-600 font-semibold hover:underline"
                 >
-                  Login karo
+                  Login
                 </button>
               </>
             )}

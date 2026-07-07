@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Check,
@@ -126,6 +126,7 @@ const PlanCard = ({ plan, index, onSelect }) => {
 const ProPlans = () => {
   const navigate = useNavigate();
   const { user } = usePlayer();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeCategory, setActiveCategory] = useState("All");
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +216,31 @@ const ProPlans = () => {
     navigate(`/pro/plan/${trialPlan.id}`);
   };
 
+  // ✅ AUTO-TRIGGER: the top "Start 30-day free trial" banner (rendered
+  // globally from PlayerContext, visible only to logged-out users) can't
+  // run handleStartTrial() itself — it doesn't have this page's `plans`
+  // state. So instead it links here with `?startTrial=1`, and once our
+  // plans have finished loading, we run the EXACT same handleStartTrial()
+  // logic automatically — landing the user on the login page (or plan
+  // page, if already logged in) exactly like clicking the button here
+  // would. We then strip the query param so a back-navigation or refresh
+  // doesn't re-trigger it.
+  useEffect(() => {
+    if (loading) return; // wait until plans are actually loaded
+    if (searchParams.get("startTrial") !== "1") return;
+
+    handleStartTrial();
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("startTrial");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, searchParams]);
+
   return (
     <div className="w-full min-h-screen -mx-4 md:-mx-8 -mt-4">
       <div className="bg-slate-900 rounded-2xl mx-4 md:mx-8 mt-4 p-4 md:p-8 shadow-xl">
@@ -245,7 +271,7 @@ const ProPlans = () => {
           </div>
           <div className="flex-1 text-center md:text-left">
             <h2 className="text-white text-xl md:text-2xl font-extrabold leading-snug mb-4">
-              Play without ads. Set new JioTunes every day. Download unlimited
+              Play without ads. Set new TuneRaaga every day. Download unlimited
               music.
             </h2>
             <button
