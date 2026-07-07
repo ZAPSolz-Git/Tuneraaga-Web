@@ -1,10 +1,10 @@
 const { supabaseAdmin } = require("../config/supabaseClient");
 const razorpayInstance = require("../config/razorpay");
 const crypto = require("crypto");
+const generateReceiptPDF = require("../utils/generateReceiptPDF");
 
 /**
  * POST /api/ordersummarypay
- * (UNCHANGED)
  */
 const createOrderSummaryPay = async (req, res) => {
   try {
@@ -84,12 +84,6 @@ const createOrderSummaryPay = async (req, res) => {
 
 /**
  * POST /api/orders/:orderId/create-razorpay-order
- *
- * Yeh QR Code API nahi use karta (jo aapke account pe disabled hai),
- * balki Razorpay ka basic "Orders" API use karta hai — yeh HAR account
- * mein by default enabled hota hai, koi activation nahi chahiye.
- * Frontend isi order_id se Razorpay Checkout popup kholega, jisme
- * UPI/QR/Card sab options already available hote hain.
  */
 const createRazorpayOrder = async (req, res) => {
   try {
@@ -137,7 +131,6 @@ const createRazorpayOrder = async (req, res) => {
       });
     }
 
-    // agar Razorpay order pehle se bana hua hai (retry case), wahi reuse karo
     if (order.razorpay_order_id) {
       return res.status(200).json({
         success: true,
@@ -148,17 +141,21 @@ const createRazorpayOrder = async (req, res) => {
       });
     }
 
+    const shortReceipt = `ord_${String(order.id).replace(/-/g, "").slice(0, 30)}`;
+
     console.log(
       "➡️ Creating Razorpay order for:",
       order.id,
       "amount(paise):",
       Math.round(amountNum * 100),
+      "receipt:",
+      shortReceipt,
     );
 
     const razorpayOrder = await razorpayInstance.orders.create({
       amount: Math.round(amountNum * 100),
       currency: "INR",
-      receipt: `order_${order.id}`,
+      receipt: shortReceipt,
       notes: {
         order_id: String(order.id),
         user_id: String(order.user_id),
@@ -199,8 +196,8 @@ const createRazorpayOrder = async (req, res) => {
 
 /**
  * POST /api/orders/:orderId/verify-payment
- * Checkout popup mein payment success hone ke baad frontend yeh call karega.
- * Signature verify karke order ko "paid" mark karte hain.
+ * ✅ FIXED: agar "paid_at" column exist nahi karta to automatically
+ * uske bina retry karta hai, taaki 500 error na aaye.
  */
 const verifyPayment = async (req, res) => {
   try {
@@ -245,36 +242,82 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    const { error: updateErr } = await supabaseAdmin
+    const paidAt = new Date().toISOString();
+
+    let updateErr = null;
+    const firstAttempt = await supabaseAdmin
       .from("orders")
       .update({
         status: "paid",
         razorpay_payment_id,
+        paid_at: paidAt,
       })
       .eq("id", orderId);
 
+    updateErr = firstAttempt.error;
+
     if (updateErr) {
-      console.error("Order status update error:", updateErr.message);
+      console.warn(
+        "⚠️ paid_at column shayad exist nahi karta, retry without it. Error:",
+        updateErr.message,
+      );
+
+      const fallbackAttempt = await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "paid",
+          razorpay_payment_id,
+        })
+        .eq("id", orderId);
+
+      updateErr = fallbackAttempt.error;
+    }
+
+    if (updateErr) {
+      console.error("❌ Order status update FULL ERROR:", updateErr.message);
       return res.status(500).json({
         success: false,
-        message: "Payment hui, lekin order update fail hua.",
+        message:
+          "Payment hui, lekin order update fail hua: " + updateErr.message,
       });
     }
 
-    return res
-      .status(200)
-      .json({ success: true, message: "Payment verified & order updated." });
+    const { data: planRow } = await supabaseAdmin
+      .from("pro_plans")
+      .select("name")
+      .eq("id", order.plan_id)
+      .single();
+
+    const { data: priceRow } = await supabaseAdmin
+      .from("pro_plan_prices")
+      .select("duration_label")
+      .eq("id", order.plan_price_id)
+      .maybeSingle();
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified & order updated.",
+      receipt: {
+        orderId: order.id,
+        paymentId: razorpay_payment_id,
+        email: order.email,
+        planName: planRow?.name || "Pro Plan",
+        durationLabel: priceRow?.duration_label || "1 Month",
+        amount: order.amount,
+        paidAt,
+      },
+    });
   } catch (err) {
-    console.error("verifyPayment error:", err.message);
-    return res
-      .status(500)
-      .json({ success: false, message: "Verification fail hua." });
+    console.error("❌ verifyPayment FULL ERROR:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Verification fail hua: " + err.message,
+    });
   }
 };
 
 /**
  * GET /api/orders/:orderId/status
- * (UNCHANGED)
  */
 const checkOrderStatus = async (req, res) => {
   try {
@@ -302,49 +345,72 @@ const checkOrderStatus = async (req, res) => {
 };
 
 /**
- * POST /api/webhook/razorpay
- * Webhook ab "order.paid" / "payment.captured" event sunega
- * (safety net — agar frontend verify call kisi wajah se miss ho jaaye).
+ * GET /api/orders/:orderId/receipt
+ * Sirf "paid" order ke liye PDF receipt generate karke bhejta hai.
  */
-const handleRazorpayWebhook = async (req, res) => {
+const downloadReceipt = async (req, res) => {
   try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    const signature = req.headers["x-razorpay-signature"];
+    const { orderId } = req.params;
 
-    const expectedSignature = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(req.body)
-      .digest("hex");
+    const { data: order, error: fetchErr } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
 
-    if (expectedSignature !== signature) {
-      console.warn("Invalid Razorpay webhook signature");
+    if (fetchErr || !order) {
       return res
-        .status(400)
-        .json({ success: false, message: "Invalid signature" });
+        .status(404)
+        .json({ success: false, message: "Order nahi mila." });
     }
 
-    const payload = JSON.parse(req.body.toString());
-    const event = payload.event;
-
-    if (event === "payment.captured" || event === "order.paid") {
-      const notes =
-        payload.payload?.payment?.entity?.notes ||
-        payload.payload?.order?.entity?.notes;
-
-      const orderId = notes?.order_id;
-
-      if (orderId) {
-        await supabaseAdmin
-          .from("orders")
-          .update({ status: "paid" })
-          .eq("id", orderId);
-      }
+    if (req.user && order.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Unauthorized." });
     }
 
-    return res.status(200).json({ success: true });
+    if (order.status !== "paid") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Is order ke liye receipt available nahi hai (payment pending hai).",
+      });
+    }
+
+    const { data: planRow } = await supabaseAdmin
+      .from("pro_plans")
+      .select("name")
+      .eq("id", order.plan_id)
+      .single();
+
+    const { data: priceRow } = await supabaseAdmin
+      .from("pro_plan_prices")
+      .select("duration_label")
+      .eq("id", order.plan_price_id)
+      .maybeSingle();
+
+    const pdfBuffer = await generateReceiptPDF({
+      orderId: order.id,
+      paymentId: order.razorpay_payment_id || "N/A",
+      email: order.email,
+      planName: planRow?.name || "Pro Plan",
+      durationLabel: priceRow?.duration_label || "1 Month",
+      amount: order.amount,
+      paidAt: order.paid_at || order.created_at || new Date().toISOString(),
+    });
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="TuneRaaga_Receipt_${order.id}.pdf"`,
+      "Content-Length": pdfBuffer.length,
+    });
+
+    return res.send(pdfBuffer);
   } catch (err) {
-    console.error("Webhook error:", err.message);
-    return res.status(500).json({ success: false });
+    console.error("❌ downloadReceipt FULL ERROR:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Receipt generate nahi ho paayi.",
+    });
   }
 };
 
@@ -353,5 +419,5 @@ module.exports = {
   createRazorpayOrder,
   verifyPayment,
   checkOrderStatus,
-  handleRazorpayWebhook,
+  downloadReceipt,
 };

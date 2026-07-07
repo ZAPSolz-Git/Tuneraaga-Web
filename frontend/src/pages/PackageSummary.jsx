@@ -4,9 +4,10 @@ import { motion } from "framer-motion";
 import { Check, Loader2, Gift, Info } from "lucide-react";
 import { usePlayer } from "../components/PlayerContext";
 import { supabase } from "../lib/supabaseClient";
+import { startRazorpayPayment } from "../utils/razorpayPayment";
 
 const PackageSummary = () => {
-  const { id: planId } = useParams(); // /pro/plan/:id
+  const { id: planId } = useParams();
   const navigate = useNavigate();
   const { user } = usePlayer();
 
@@ -56,7 +57,6 @@ const PackageSummary = () => {
       setPlan(planData);
       setPrices(priceData || []);
 
-      // default: is_popular price ya sabse pehla option select karo
       const defaultPrice =
         (priceData || []).find((p) => p.is_popular) || (priceData || [])[0];
       setSelectedPriceId(defaultPrice?.id || null);
@@ -79,12 +79,15 @@ const PackageSummary = () => {
         data: { session },
       } = await supabase.auth.getSession();
 
-      const API_BASE = import.meta.env.VITE_API_URL || "";
+      const accessToken = session?.access_token;
+      const API_BASE =
+        import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
+
       const res = await fetch(`${API_BASE}/api/ordersummarypay`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           email: user.email,
@@ -111,7 +114,18 @@ const PackageSummary = () => {
         return;
       }
 
-      navigate(`/pro/pay/${data.order.id}`);
+      await startRazorpayPayment(data.order.id, accessToken, {
+        email: user.email,
+        planName: plan?.name,
+        onSuccess: (receipt) => {
+          setSubmitting(false);
+          navigate("/pro/receipt", { state: { receipt } });
+        },
+        onError: (msg) => {
+          setSubmitting(false);
+          setError(msg);
+        },
+      });
     } catch (err) {
       console.error(err);
       setError("Kuch galat ho gaya. Dobara try karein.");
@@ -140,7 +154,6 @@ const PackageSummary = () => {
       </h1>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        {/* ── LEFT: PLAN CARD ── */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -172,7 +185,6 @@ const PackageSummary = () => {
             )}
           </div>
 
-          {/* ── duration options ── */}
           <div className="p-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
               {prices.map((p) => {
@@ -257,7 +269,6 @@ const PackageSummary = () => {
           </div>
         </motion.div>
 
-        {/* ── RIGHT: COUPONS ── */}
         <div className="w-full lg:w-72 bg-white rounded-2xl shadow-xl p-4">
           <h3 className="text-sm font-bold text-slate-800 mb-3">Coupons</h3>
           <div className="flex items-center gap-2 mb-6">

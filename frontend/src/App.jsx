@@ -29,8 +29,9 @@ import Footer from "./components/Footer";
 // Getway integration pages
 import ProPlans from "./pages/ProPlans";
 import PackageSummary from "./pages/PackageSummary";
-import OrderSummaryPay from "./pages/OrderSummaryPay";
+// import OrderSummaryPay from "./pages/OrderSummaryPay";
 import ProLogin from "./pages/ProLogin";
+import PaymentReceipt from "./pages/PaymentReceipt";
 
 import AlbumDetail from "./pages/AlbumDetail";
 import ArtistProfile from "./pages/ArtistProfile";
@@ -83,8 +84,10 @@ function App() {
 
             <Route path="pro" element={<ProPlans />} />
             <Route path="/pro/plan/:id" element={<PackageSummary />} />
-            <Route path="/pro/pay/:orderId" element={<OrderSummaryPay />} />
+            {/* <Route path="/pro/pay/:orderId" element={<OrderSummaryPay />} /> */}
             <Route path="/pro/login" element={<ProLogin />} />
+            <Route path="/pro/receipt" element={<PaymentReceipt />} />
+
             <Route
               path="new-playlist"
               element={<Navigate to="/playlist/new" replace />}
