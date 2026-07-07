@@ -1,5 +1,20 @@
 const PDFDocument = require("pdfkit");
 
+const LOGO_URL =
+  "https://suaguciltgydkoyjmbmx.supabase.co/storage/v1/object/public/TuneRaaga/1781762603953_tuneraaga.png";
+
+async function fetchLogoBuffer() {
+  try {
+    const res = await fetch(LOGO_URL);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (err) {
+    console.warn("⚠️ Logo fetch failed, receipt will skip logo:", err.message);
+    return null;
+  }
+}
+
 function generateReceiptPDF({
   orderId,
   paymentId,
@@ -9,8 +24,10 @@ function generateReceiptPDF({
   amount,
   paidAt,
 }) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
+      const logoBuffer = await fetchLogoBuffer();
+
       const doc = new PDFDocument({ size: "A4", margin: 0 });
       const buffers = [];
 
@@ -19,54 +36,104 @@ function generateReceiptPDF({
       doc.on("error", reject);
 
       const pageWidth = doc.page.width;
-      const emerald = "#10b981";
-      const dark = "#0f172a";
-      const grayText = "#64748b";
-      const lightGray = "#f1f5f9";
+      const dark = "#0D0B1A";
+      const cardDark = "#16132B";
+      const gold = "#F2B705";
+      const teal = "#22D3AE";
+      const grayText = "#8B879E";
+      const white = "#F5F3EC";
 
-      doc.rect(0, 0, pageWidth, 150).fill(emerald);
+      const marginX = 50;
+      const cardWidth = pageWidth - marginX * 2;
+
+      // ── TOP: event-info panel ──
+      const topHeight = 260;
+      doc.rect(marginX, 40, cardWidth, topHeight).fill(cardDark);
+
+      // logo
+      if (logoBuffer) {
+        try {
+          doc.image(logoBuffer, pageWidth / 2 - 55, 65, { width: 110 });
+        } catch (e) {
+          doc
+            .fillColor(white)
+            .fontSize(22)
+            .font("Helvetica-Bold")
+            .text("TuneRaaga", marginX, 75, {
+              width: cardWidth,
+              align: "center",
+            });
+        }
+      } else {
+        doc
+          .fillColor(white)
+          .fontSize(22)
+          .font("Helvetica-Bold")
+          .text("TuneRaaga", marginX, 75, {
+            width: cardWidth,
+            align: "center",
+          });
+      }
 
       doc
-        .fillColor("#ffffff")
-        .fontSize(26)
-        .font("Helvetica-Bold")
-        .text("TuneRaaga", 0, 50, { align: "center" });
-
-      doc
-        .fillColor("#ffffff")
+        .fillColor(teal)
         .fontSize(11)
-        .font("Helvetica")
-        .text("Payment Receipt", 0, 85, { align: "center" });
-
-      doc.roundedRect(pageWidth / 2 - 100, 118, 200, 34, 17).fill(dark);
-      doc
-        .fillColor(emerald)
-        .fontSize(12)
         .font("Helvetica-Bold")
-        .text("Payment Successful", pageWidth / 2 - 100, 128, {
-          width: 200,
+        .text("✓ PAYMENT SUCCESSFUL", marginX, 130, {
+          width: cardWidth,
           align: "center",
+          characterSpacing: 1.2,
         });
 
-      let y = 190;
       doc
         .fillColor(grayText)
         .fontSize(9)
         .font("Helvetica")
-        .text("AMOUNT PAID", 0, y, { align: "center", characterSpacing: 1 });
+        .text("AMOUNT PAID", marginX, 165, {
+          width: cardWidth,
+          align: "center",
+          characterSpacing: 1.5,
+        });
 
       doc
-        .fillColor(dark)
-        .fontSize(34)
+        .fillColor(white)
+        .fontSize(36)
         .font("Helvetica-Bold")
-        .text(`Rs. ${amount}`, 0, y + 16, { align: "center" });
+        .text(`Rs. ${amount}`, marginX, 180, {
+          width: cardWidth,
+          align: "center",
+        });
 
-      y = 270;
-      const cardX = 60;
-      const cardWidth = pageWidth - 120;
+      doc
+        .fillColor(grayText)
+        .fontSize(10)
+        .font("Helvetica")
+        .text(`${planName} - ${durationLabel}`, marginX, 232, {
+          width: cardWidth,
+          align: "center",
+        });
+
+      // ── PERFORATED DIVIDER (dashed line + punch notches) ──
+      const dividerY = 40 + topHeight;
+      doc
+        .moveTo(marginX, dividerY)
+        .lineTo(marginX + cardWidth, dividerY)
+        .lineWidth(1.2)
+        .dash(4, { space: 4 })
+        .strokeColor("#3a3555")
+        .stroke();
+      doc.undash();
+
+      // punch circles — filled white (page background) to create notch illusion
+      doc.circle(marginX, dividerY, 11).fill("#ffffff");
+      doc.circle(marginX + cardWidth, dividerY, 11).fill("#ffffff");
+
+      // ── BOTTOM: stub details panel ──
+      const bottomY = dividerY;
+      const bottomHeight = 260;
+      doc.rect(marginX, bottomY, cardWidth, bottomHeight).fill(cardDark);
 
       const rows = [
-        ["Plan", `${planName} - ${durationLabel}`],
         ["Email", email],
         [
           "Date",
@@ -79,66 +146,55 @@ function generateReceiptPDF({
         ["Order ID", orderId],
       ];
 
-      const rowHeight = 46;
-      doc
-        .roundedRect(cardX, y, cardWidth, rowHeight * rows.length, 12)
-        .fill(lightGray);
+      let rowY = bottomY + 30;
+      const rowHeight = 34;
 
-      rows.forEach(([label, value], i) => {
-        const rowY = y + i * rowHeight;
-
-        if (i !== 0) {
-          doc
-            .moveTo(cardX + 20, rowY)
-            .lineTo(cardX + cardWidth - 20, rowY)
-            .lineWidth(0.5)
-            .strokeColor("#e2e8f0")
-            .stroke();
-        }
-
+      rows.forEach(([label, value]) => {
         doc
           .fillColor(grayText)
-          .fontSize(10)
+          .fontSize(9.5)
           .font("Helvetica")
-          .text(label, cardX + 20, rowY + 16);
+          .text(label, marginX + 24, rowY);
 
         doc
-          .fillColor(dark)
-          .fontSize(10)
+          .fillColor(white)
+          .fontSize(9.5)
           .font("Helvetica-Bold")
-          .text(value, cardX + 20, rowY + 16, {
-            width: cardWidth - 40,
+          .text(value, marginX + 24, rowY, {
+            width: cardWidth - 48,
             align: "right",
           });
+
+        rowY += rowHeight;
       });
 
-      const footerY = y + rowHeight * rows.length + 40;
-      doc
-        .moveTo(cardX, footerY)
-        .lineTo(cardX + cardWidth, footerY)
-        .lineWidth(0.5)
-        .dash(3, { space: 3 })
-        .strokeColor("#cbd5e1")
-        .stroke();
-      doc.undash();
+      // barcode strip
+      const barcodeY = rowY + 20;
+      let barX = marginX + 24;
+      const barcodeHeights = [10, 22, 16, 22, 10, 22, 16, 10, 22];
+      for (let i = 0; i < 40; i++) {
+        const h = barcodeHeights[i % barcodeHeights.length];
+        doc.rect(barX, barcodeY + (22 - h), 2, h).fill("#3a3555");
+        barX += 5;
+      }
 
       doc
         .fillColor(grayText)
-        .fontSize(9)
+        .fontSize(8.5)
         .font("Helvetica")
-        .text("Thank you for going Pro with TuneRaaga", 0, footerY + 20, {
-          align: "center",
-        });
-
-      doc
-        .fillColor("#94a3b8")
-        .fontSize(8)
         .text(
-          "This is a system-generated receipt and does not require a signature.",
-          0,
-          footerY + 36,
-          { align: "center" },
+          "Thank you for going Pro with TuneRaaga",
+          marginX,
+          barcodeY + 40,
+          { width: cardWidth, align: "center" },
         );
+
+      // ── rounded card border overlay (visual polish) ──
+      doc
+        .roundedRect(marginX, 40, cardWidth, topHeight + bottomHeight, 20)
+        .lineWidth(1)
+        .strokeColor("#3a3555")
+        .stroke();
 
       doc.end();
     } catch (err) {

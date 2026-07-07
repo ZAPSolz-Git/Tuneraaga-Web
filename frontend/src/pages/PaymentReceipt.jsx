@@ -4,12 +4,12 @@ import { motion } from "framer-motion";
 import {
   CheckCircle2,
   Download,
-  Music4,
   Calendar,
   Mail,
   Hash,
   CreditCard,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -17,6 +17,9 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   "http://localhost:5000";
+
+const LOGO_URL =
+  "https://suaguciltgydkoyjmbmx.supabase.co/storage/v1/object/public/TuneRaaga/1781762603953_tuneraaga.png";
 
 const PaymentReceipt = () => {
   const location = useLocation();
@@ -27,11 +30,11 @@ const PaymentReceipt = () => {
 
   if (!receipt) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white/70 gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0D0B1A] text-white/60 gap-4">
         <p className="text-sm">Koi receipt data nahi mila.</p>
         <button
           onClick={() => navigate("/")}
-          className="text-emerald-400 text-sm font-semibold underline"
+          className="text-[#F2B705] text-sm font-semibold underline"
         >
           Home par jao
         </button>
@@ -86,105 +89,118 @@ const PaymentReceipt = () => {
   };
 
   return (
-    <div className="w-full min-h-screen -mx-4 md:-mx-8 -mt-4 bg-slate-900 flex flex-col items-center justify-center p-4 md:p-8">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
-      >
-        <div className="rounded-3xl overflow-hidden shadow-2xl bg-slate-900 border border-emerald-500/20">
-          <div className="bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 px-6 pt-8 pb-10 text-center relative overflow-hidden">
-            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_20%_20%,white,transparent_40%)]" />
-            <div className="relative flex flex-col items-center">
-              <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center mb-3 border border-white/30">
-                <Music4 size={28} className="text-white" />
-              </div>
-              <h1 className="text-white text-lg font-extrabold tracking-tight">
-                TuneRaaga
-              </h1>
-              <p className="text-white/80 text-[11px] mt-0.5">
-                Payment Receipt
-              </p>
-            </div>
-          </div>
+    <div className="w-full min-h-screen -mx-4 md:-mx-8 -mt-4 bg-[#0D0B1A] flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
+      {/* ambient glow */}
+      <div className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full bg-[#F2B705]/10 blur-[100px]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 w-[380px] h-[380px] rounded-full bg-[#22D3AE]/10 blur-[100px]" />
 
-          <div className="flex justify-center -mt-6 relative z-10">
-            <div className="bg-slate-800 border border-emerald-500/40 rounded-2xl px-5 py-3 flex items-center gap-2 shadow-lg">
-              <CheckCircle2 size={20} className="text-emerald-400" />
-              <span className="text-white text-sm font-bold">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="w-full max-w-md relative z-10"
+      >
+        {/* ── TICKET STUB CARD ── */}
+        <div className="relative rounded-[28px] shadow-[0_20px_60px_-15px_rgba(242,183,5,0.25)] overflow-visible">
+          {/* top: event info */}
+          <div className="bg-gradient-to-br from-[#1A1730] to-[#0D0B1A] rounded-t-[28px] px-6 pt-7 pb-8 text-center border border-b-0 border-white/10">
+            <img
+              src={LOGO_URL}
+              alt="TuneRaaga"
+              className="h-9 w-auto mx-auto mb-4 object-contain"
+            />
+
+            <div className="inline-flex items-center gap-1.5 text-[#22D3AE] mb-4">
+              <CheckCircle2 size={16} />
+              <span className="text-[11px] font-bold uppercase tracking-[0.15em]">
                 Payment Successful
               </span>
             </div>
+
+            <p className="text-white/40 text-[10px] uppercase tracking-[0.2em] mb-1">
+              Amount Paid
+            </p>
+            <p className="text-white text-4xl font-extrabold tracking-tight tabular-nums">
+              ₹{receipt.amount}
+            </p>
+
+            <p className="text-white/50 text-xs mt-2">
+              {receipt.planName} · {receipt.durationLabel}
+            </p>
           </div>
 
-          <div className="px-6 pt-6 pb-8">
-            <div className="text-center mb-6">
-              <p className="text-white/40 text-[10px] uppercase tracking-widest mb-1">
-                Amount Paid
-              </p>
-              <p className="text-white text-3xl font-extrabold">
-                ₹{receipt.amount}
-              </p>
-            </div>
+          {/* perforated divider with punch notches */}
+          <div className="relative h-0">
+            <div className="absolute left-0 right-0 border-t-2 border-dashed border-white/15" />
+            <div className="absolute -left-3 -top-3 w-6 h-6 rounded-full bg-[#0D0B1A]" />
+            <div className="absolute -right-3 -top-3 w-6 h-6 rounded-full bg-[#0D0B1A]" />
+          </div>
 
+          {/* bottom: stub details */}
+          <div className="bg-[#16132B] rounded-b-[28px] px-6 pt-8 pb-6 border border-t-0 border-white/10">
             <div className="space-y-3">
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <span className="flex items-center gap-2 text-white/50 text-xs">
-                  <Music4 size={13} /> Plan
-                </span>
-                <span className="text-white text-xs font-semibold">
-                  {receipt.planName} · {receipt.durationLabel}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <span className="flex items-center gap-2 text-white/50 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-white/40 text-[11px]">
                   <Mail size={13} /> Email
                 </span>
-                <span className="text-white text-xs font-semibold truncate max-w-[55%] text-right">
+                <span className="text-white/90 text-xs font-semibold truncate max-w-[60%] text-right">
                   {receipt.email}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <span className="flex items-center gap-2 text-white/50 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-white/40 text-[11px]">
                   <Calendar size={13} /> Date
                 </span>
-                <span className="text-white text-xs font-semibold">
+                <span className="text-white/90 text-xs font-semibold">
                   {formattedDate}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <span className="flex items-center gap-2 text-white/50 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-white/40 text-[11px]">
                   <CreditCard size={13} /> Payment ID
                 </span>
-                <span className="text-white text-[11px] font-mono">
+                <span className="text-white/90 text-[11px] font-mono">
                   {receipt.paymentId}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/5">
-                <span className="flex items-center gap-2 text-white/50 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-white/40 text-[11px]">
                   <Hash size={13} /> Order ID
                 </span>
-                <span className="text-white text-[11px] font-mono truncate max-w-[55%] text-right">
+                <span className="text-white/90 text-[11px] font-mono truncate max-w-[60%] text-right">
                   {receipt.orderId}
                 </span>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-dashed border-white/10 text-center">
-              <p className="text-white/30 text-[10px]">
-                Thank you for going Pro with TuneRaaga 🎶
+            {/* barcode strip — signature ticket detail */}
+            <div className="mt-6 flex items-end gap-[2px] h-8 opacity-70">
+              {Array.from({ length: 42 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white/25"
+                  style={{
+                    width: 2,
+                    height: [4, 8, 6, 8, 4, 8][i % 6] * 2.2,
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-white/25">
+              <Sparkles size={11} />
+              <p className="text-[10px]">
+                Thank you for going Pro with TuneRaaga
               </p>
             </div>
           </div>
         </div>
 
         {downloadError && (
-          <p className="text-red-400 text-xs mt-3 text-center">
+          <p className="text-red-400 text-xs mt-4 text-center">
             {downloadError}
           </p>
         )}
@@ -193,7 +209,7 @@ const PaymentReceipt = () => {
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+            className="flex-1 bg-[#F2B705] hover:bg-[#e0a800] disabled:opacity-60 text-[#0D0B1A] font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-[0_8px_24px_-6px_rgba(242,183,5,0.5)]"
           >
             {downloading ? (
               <Loader2 size={16} className="animate-spin" />
@@ -204,7 +220,7 @@ const PaymentReceipt = () => {
           </button>
           <button
             onClick={() => navigate("/")}
-            className="flex-1 bg-white/10 hover:bg-white/15 text-white font-bold py-3 rounded-xl transition-colors"
+            className="flex-1 bg-white/5 hover:bg-white/10 text-white font-semibold py-3.5 rounded-2xl transition-colors border border-white/10"
           >
             Go Home
           </button>
