@@ -112,10 +112,8 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Step 1: Sign up with Supabase Auth
-    // NOTE: Supabase Auth stores the (hashed) password securely in its own
-    // internal auth.users table. Login ALWAYS goes through
-    // supabase.auth.signInWithPassword() — never through the public.users table.
+    
+    
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -137,10 +135,8 @@ exports.signup = async (req, res) => {
 
     const userId = authData.user.id;
 
-    // Step 2: Insert profile row into public.users (Use supabaseAdmin to bypass RLS)
-    // We do NOT store the plaintext password here — it's insecure and unnecessary.
-    // "role" already tells you if someone is an admin ('user' | 'admin'),
-    // no separate column needed.
+   
+    
     const { data: newUser, error: insertError } = await supabaseAdmin
       .from("users")
       .insert({
@@ -153,10 +149,12 @@ exports.signup = async (req, res) => {
 
     if (insertError) {
       console.error("User insert error (Non-Critical):", insertError.message);
-      // Auth account is already created successfully, so we continue anyway.
+    
+      
     }
 
-    // Step 3: If email confirmation is required, there will be no session yet
+    
+    
     let session = null;
     if (authData.session) {
       session = {
@@ -245,7 +243,8 @@ exports.logout = async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
-      // FIX: admin.* methods require the service-role client, not the anon client
+      
+      
       await supabaseAdmin.auth.admin.signOut(token);
     }
 
@@ -299,7 +298,8 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// --- 6. UPDATE USER ROLE (ADMIN ONLY) ---
+
+
 exports.updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;

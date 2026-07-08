@@ -64,7 +64,7 @@ exports.createArtist = async (req, res) => {
     const finalPassword =
       password && password.trim() !== "" ? password : "DefaultPass123!";
 
-    // STEP 1: Supabase Auth mein user banao
+    // STEP 1: Supabase Auth create user
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
@@ -91,7 +91,7 @@ exports.createArtist = async (req, res) => {
       imagePath = await uploadImageToSupabase(req.file);
     }
 
-    // STEP 3: Artists table mein insert karo
+    // STEP 3: Artists inset in table
     const { data: artist, error: dbError } = await supabase
       .from("artists")
       .insert([
@@ -166,13 +166,15 @@ exports.updateArtist = async (req, res) => {
     }
 
     if (Object.keys(authUpdateData).length > 0) {
-      // Pehle check karo Auth mein user hai ya nahi
+      
+      
       try {
         const { data: existingUser, error: fetchError } =
           await supabaseAdmin.auth.admin.getUserById(id);
 
         if (fetchError || !existingUser?.user) {
-          // Auth mein nahi hai — naya banao
+         
+          
           if (email) {
             const finalPassword =
               password && password.trim() !== "" ? password : "DefaultPass123!";
@@ -192,7 +194,8 @@ exports.updateArtist = async (req, res) => {
             }
           }
         } else {
-          // Auth mein hai — update karo
+          
+          
           const { error: authError } =
             await supabaseAdmin.auth.admin.updateUserById(id, authUpdateData);
           if (authError) {
@@ -210,7 +213,8 @@ exports.updateArtist = async (req, res) => {
       imagePath = await uploadImageToSupabase(req.file);
     }
 
-    // DB update
+   
+    
     const updateData = {
       name,
       genre,
@@ -257,7 +261,8 @@ exports.updateArtist = async (req, res) => {
   }
 };
 
-// --- 4. DELETE ARTIST ---
+
+
 exports.deleteArtist = async (req, res) => {
   try {
     const { id } = req.params;

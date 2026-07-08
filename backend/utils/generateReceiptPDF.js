@@ -124,7 +124,7 @@ function generateReceiptPDF({
         .stroke();
       doc.undash();
 
-      // punch circles — filled white (page background) to create notch illusion
+     
       doc.circle(marginX, dividerY, 11).fill("#ffffff");
       doc.circle(marginX + cardWidth, dividerY, 11).fill("#ffffff");
 
@@ -189,7 +189,7 @@ function generateReceiptPDF({
           { width: cardWidth, align: "center" },
         );
 
-      // ── rounded card border overlay (visual polish) ──
+      
       doc
         .roundedRect(marginX, 40, cardWidth, topHeight + bottomHeight, 20)
         .lineWidth(1)

@@ -1,457 +1,474 @@
-import React, { useState, useEffect } from "react";
-import { supabase, apiCall } from "../lib/supabaseClient";
+// pages/LoginPage.jsx
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+import { motion } from "framer-motion";
 import {
-  Users,
-  Shield,
+  Mic,
   User,
-  Loader2,
-  Search,
-  ChevronDown,
-  AlertTriangle,
-  CheckCircle,
-  X,
-  Trash2,
-  Crown,
+  Lock,
+  ArrowLeft,
+  Music,
+  Music2,
+  Music3,
+  Music4,
+  Headphones,
+  Radio,
+  Guitar,
+  Drum,
+  Volume2,
+  AudioLines,
+  ListMusic,
+  PlayCircle,
+  Heart,
+  Star,
+  Zap,
+  Waves,
 } from "lucide-react";
-import Auth from "./Auth";
 
-export default function AdminPanel() {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [updatingRole, setUpdatingRole] = useState(null);
-  const [deletingUser, setDeletingUser] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+const MUSIC_ICONS = [
+  Music,
+  Music2,
+  Music3,
+  Music4,
+  Headphones,
+  Radio,
+  Guitar,
+  Drum,
+  Volume2,
+  Mic,
+  AudioLines,
+  ListMusic,
+  PlayCircle,
+  Heart,
+  Star,
+  Zap,
+  Waves,
+];
+
+const GRADIENT_COLORS = [
+  "#6366f1",
+  "#8b5cf6",
+  "#a855f7",
+  "#d946ef",
+  "#ec4899",
+  "#f43f5e",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#10b981",
+  "#14b8a6",
+  "#06b6d4",
+  "#3b82f6",
+  "#2563eb",
+  "#7c3aed",
+  "#c026d3",
+  "#0ea5e9",
+  "#f59e0b",
+  "#84cc16",
+];
+
+const FloatingBackground = () => {
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    const initAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (session?.user) {
-        setUser(session.user);
-        await fetchUserRole(session.user.id);
-      } else {
-        setLoading(false);
-      }
+    const handleMouseMove = (e) => {
+      const x = e.clientX / window.innerWidth - 0.5;
+      const y = e.clientY / window.innerHeight - 0.5;
+      setMousePos({ x, y });
     };
-    initAuth();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        setUser(session.user);
-        await fetchUserRole(session.user.id);
-      } else if (event === "SIGNED_OUT") {
-        setUser(null);
-        setUserRole(null);
-        setUsers([]);
-        setStats(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  useEffect(() => {
-    if (user && userRole === "admin") {
-      fetchUsers();
-      fetchStats();
-    }
-  }, [user, userRole]);
+  const icons = useMemo(() => {
+    return Array.from({ length: 120 }, (_, i) => {
+      const Icon = MUSIC_ICONS[i % MUSIC_ICONS.length];
+      const size = Math.random() * 28 + 16;
+      const left = Math.random() * 100;
+      const top = Math.random() * 100;
+      const duration = Math.random() * 5 + 4;
+      const delay = Math.random() * 8;
+      const xMove = (Math.random() - 0.5) * 80;
+      const yMove = -(Math.random() * 100 + 50);
+      const color = GRADIENT_COLORS[i % GRADIENT_COLORS.length];
+      const rotate = Math.random() * 360;
+      const baseOpacity = Math.random() * 0.55 + 0.35;
 
-  const fetchUserRole = async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", userId)
-        .single();
-
-      if (!error && data) {
-        setUserRole(data.role);
-      } else {
-        setUserRole("user");
-      }
-      setLoading(false);
-    } catch (err) {
-      console.error("Fetch role error:", err);
-      setUserRole("user");
-      setLoading(false);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const result = await apiCall("/auth/users");
-      if (result.success) {
-        setUsers(result.data);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to fetch users");
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      const result = await apiCall("/auth/users/stats");
-      if (result.success) {
-        setStats(result.data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch stats:", err);
-    }
-  };
-
-  const handleRoleChange = async (userId, newRole) => {
-    setUpdatingRole(userId);
-    setError("");
-    setSuccess("");
-
-    try {
-      const result = await apiCall(`/auth/users/${userId}/role`, {
-        method: "PATCH",
-        body: JSON.stringify({ role: newRole }),
-      });
-
-      if (result.success) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
-        );
-        setSuccess(`User role updated to ${newRole}`);
-        fetchStats();
-        setTimeout(() => setSuccess(""), 3000);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to update role");
-    } finally {
-      setUpdatingRole(null);
-    }
-  };
-
-  const handleDeleteUser = async (userId) => {
-    setDeletingUser(userId);
-    setError("");
-    setSuccess("");
-
-    try {
-      const result = await apiCall(`/auth/users/${userId}`, {
-        method: "DELETE",
-      });
-
-      if (result.success) {
-        setUsers((prev) => prev.filter((u) => u.id !== userId));
-        setSuccess("User deleted successfully");
-        fetchStats();
-        setShowDeleteConfirm(null);
-        setTimeout(() => setSuccess(""), 3000);
-      }
-    } catch (err) {
-      setError(err.message || "Failed to delete user");
-    } finally {
-      setDeletingUser(null);
-    }
-  };
-
-  const filteredUsers = users.filter((u) =>
-    u.email.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  // Not logged in - show login required
-  if (!user && !loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-        <Shield size={48} className="text-slate-300 mb-4" />
-        <h2 className="text-2xl font-bold mb-2 text-slate-900">
-          Login Required
-        </h2>
-        <p className="text-slate-500 mb-6 text-center">
-          Please login to access admin panel.
-        </p>
-        <button
-          onClick={() => setShowAuthModal(true)}
-          className="bg-purple-600 text-white px-6 py-3 rounded-full font-bold hover:bg-purple-700"
+      return (
+        <motion.div
+          key={i}
+          className="absolute pointer-events-none select-none"
+          style={{
+            left: `${left}%`,
+            top: `${top}%`,
+            color: color,
+            filter: `drop-shadow(0 0 6px ${color}99)`,
+            opacity: baseOpacity,
+          }}
+          animate={{
+            y: [0, yMove, 0],
+            x: [0, xMove, 0],
+            rotate: [rotate, rotate + 180, rotate + 360],
+            scale: [1, 1.3, 1],
+            opacity: [baseOpacity, baseOpacity + 0.3, baseOpacity],
+          }}
+          transition={{
+            duration,
+            delay,
+            repeat: Infinity,
+            ease: "linear",
+          }}
         >
-          Login / Sign Up
-        </button>
-        {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
-      </div>
-    );
-  }
-
-  // Not admin - show access denied
-  if (!loading && user && userRole !== "admin") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-        <Shield size={48} className="text-red-400 mb-4" />
-        <h2 className="text-2xl font-bold mb-2 text-slate-900">
-          Access Denied
-        </h2>
-        <p className="text-slate-500 mb-6 text-center">
-          You need admin privileges to access this page.
-        </p>
-      </div>
-    );
-  }
+          <Icon size={size} strokeWidth={1.8} />
+        </motion.div>
+      );
+    });
+  }, []);
 
   return (
-    <div className="w-full min-h-screen text-slate-900 pb-8 bg-gradient-to-br from-slate-50 via-purple-50/40 to-slate-50">
-      {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
+    <motion.div
+      className="absolute overflow-hidden"
+      style={{ width: "120%", height: "120%", top: "-10%", left: "-10%" }}
+      animate={{
+        x: mousePos.x * 80,
+        y: mousePos.y * 80,
+      }}
+      transition={{ type: "spring", stiffness: 60, damping: 20 }}
+    >
+      <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+      <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-pink-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+      {icons}
+    </motion.div>
+  );
+};
 
-      <div className="px-4 md:px-8 pt-8 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-extrabold tracking-tight mb-1">
-            <span className="text-purple-600">Admin</span> Panel
-          </h1>
-          <p className="text-slate-500 text-sm">Manage users and their roles</p>
+const LoginPage = () => {
+  const [loginType, setLoginType] = useState("admin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (isLoading) return;
+    setIsLoading(true);
+    setError("");
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("❌ Please enter both email and password.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1) Sign out any stale session first
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.log("Sign out error (can be ignored):", signOutErr);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // 2) Sign in with Supabase Auth
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password: trimmedPassword,
+        });
+
+      if (authError) {
+        console.error("Auth error:", authError);
+        throw new Error(
+          "Invalid email or password. Make sure this user exists in Supabase Authentication.",
+        );
+      }
+
+      if (!authData?.user) {
+        throw new Error("Invalid response from server.");
+      }
+
+      const userId = authData.user.id;
+      const userEmail = authData.user.email;
+
+      // 3) Fetch user profile by Email (avoids ID mismatch issues)
+      let profileData = null;
+      const { data: dbProfile } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", userEmail)
+        .maybeSingle();
+
+      if (dbProfile) {
+        profileData = dbProfile;
+      } else {
+        // 4) AUTO-CREATE PROFILE IF MISSING
+        console.log("Profile not found in DB. Attempting to auto-create...");
+        const { data: newProfile, error: insertError } = await supabase
+          .from("users")
+          .insert({
+            id: userId,
+            email: userEmail,
+            role: loginType, // Create with the role they are trying to login as
+          })
+          .select()
+          .maybeSingle();
+
+        if (insertError) {
+          console.warn(
+            "Auto-create blocked by RLS. Using fallback auth data.",
+            insertError,
+          );
+        }
+
+        if (newProfile) {
+          profileData = newProfile;
+        } else {
+          // 5) ULTIMATE FALLBACK: Bypass DB if RLS is blocking everything
+          // This ensures you can ALWAYS log in as long as Supabase Auth succeeds
+          profileData = {
+            id: userId,
+            email: userEmail,
+            role: loginType,
+          };
+        }
+      }
+
+      const userRole = (profileData.role || loginType).toLowerCase();
+
+      // 6) Role-based routing
+      if (loginType === "admin") {
+        if (userRole !== "admin") {
+          await supabase.auth.signOut();
+          throw new Error(
+            "Access denied. This account does not have admin privileges.",
+          );
+        }
+        localStorage.setItem("adminId", profileData.id);
+        localStorage.setItem("adminName", profileData.email);
+        localStorage.setItem("adminEmail", profileData.email);
+        localStorage.setItem("userRole", "admin");
+        localStorage.setItem("userId", profileData.id);
+        navigate("/admin", { replace: true });
+      } else if (loginType === "artist") {
+        if (userRole !== "artist") {
+          await supabase.auth.signOut();
+          throw new Error(
+            "Access denied. Admin accounts cannot login as artists. Please use Admin Portal.",
+          );
+        }
+        localStorage.setItem("artistId", profileData.id);
+        localStorage.setItem("artistName", profileData.email);
+        localStorage.setItem("artistEmail", profileData.email);
+        localStorage.setItem("userRole", "artist");
+        localStorage.setItem("userId", profileData.id);
+        navigate("/artist/dashboard", { replace: true });
+      }
+    } catch (err) {
+      console.error("Login Error:", err);
+
+      let errorMessage = err.message || "Login failed. Please try again.";
+
+      const msg = (err.message || "").toLowerCase();
+
+      if (
+        msg.includes("invalid login credentials") ||
+        msg.includes("invalid email or password")
+      ) {
+        errorMessage = "❌ Invalid email or password. Please try again.";
+      } else if (msg.includes("admin privileges")) {
+        errorMessage =
+          "❌ This account is not an admin. Please login as Artist.";
+      } else if (msg.includes("cannot login as artists")) {
+        errorMessage =
+          "❌ Admin accounts cannot login as Artists. Please login as Admin.";
+      } else if (msg.includes("email not confirmed")) {
+        errorMessage =
+          "❌ Your email is not confirmed. Please check your inbox.";
+      }
+
+      setError(errorMessage);
+
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.log("Sign out error on catch:", signOutErr);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-screen overflow-hidden bg-slate-50 flex items-center justify-center px-4 relative">
+      <FloatingBackground />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, type: "spring" }}
+        className="relative z-10 w-full max-w-md bg-white/90 backdrop-blur-3xl border border-white/60 p-5 md:p-7 rounded-[2rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.2)]"
+      >
+        <div className="bg-slate-100 p-1 rounded-xl mb-5 flex relative">
+          <div
+            className={`absolute top-1 bottom-1 w-1/2 rounded-lg bg-white shadow-sm transition-all duration-300 ease-out ${
+              loginType === "admin" ? "left-1" : "left-[calc(50%-4px)]"
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setLoginType("admin");
+              setError("");
+            }}
+            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${
+              loginType === "admin" ? "text-blue-600" : "text-slate-400"
+            }`}
+          >
+            Admin
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLoginType("artist");
+              setError("");
+            }}
+            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${
+              loginType === "artist" ? "text-blue-600" : "text-slate-400"
+            }`}
+          >
+            Artist
+          </button>
         </div>
 
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Users size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Total Users</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {stats.totalUsers}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Crown size={20} className="text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Admins</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {stats.adminCount}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <User size={20} className="text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Regular Users</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {stats.userCount}
-                  </p>
-                </div>
-              </div>
-            </div>
+        <div className="text-center">
+          <div className="flex justify-center">
+            <motion.img
+              whileHover={{ scale: 1.05, rotate: 5 }}
+              src="/tuneraaga.png"
+              alt="Tune Raaga Logo"
+              className="w-[180px] sm:w-[220px] h-auto object-contain drop-shadow-lg"
+            />
           </div>
-        )}
 
-        {/* Alerts */}
+          <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600">
+            {loginType === "admin" ? "Admin Portal" : "Artist Portal"}
+          </h2>
+
+          <p className="text-slate-500 font-medium text-sm mb-3">
+            {loginType === "admin"
+              ? "Secure access to dashboard"
+              : "Access your music profile"}
+          </p>
+        </div>
+
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700">
-            <AlertTriangle size={20} />
-            <span className="flex-1">{error}</span>
-            <button onClick={() => setError("")}>
-              <X size={18} />
-            </button>
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3 text-green-700">
-            <CheckCircle size={20} />
-            <span className="flex-1">{success}</span>
-            <button onClick={() => setSuccess("")}>
-              <X size={18} />
-            </button>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-3 bg-red-50/90 backdrop-blur border border-red-100 rounded-2xl text-red-600 text-sm text-center font-medium flex items-center justify-center gap-2 shadow-sm"
+          >
+            <span>⚠️</span> {error}
+          </motion.div>
         )}
 
-        {/* Search */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              type="text"
-              placeholder="Search users by email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-            />
+        <form onSubmit={handleLogin} className="space-y-3">
+          <div className="space-y-1.5 group">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
+              Email Address
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <User
+                  className={`h-5 w-5 transition-colors ${
+                    loginType === "admin" ? "text-blue-600" : "text-pink-600"
+                  }`}
+                />
+              </div>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={
+                  loginType === "admin" ? "admin@email.com" : "artist@email.com"
+                }
+                className="block w-full pl-11 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                disabled={isLoading}
+                autoComplete="email"
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Users Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="animate-spin text-purple-600" size={40} />
+          <div className="space-y-1.5 group">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
+              Password
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Lock
+                  className={`h-5 w-5 transition-colors ${
+                    loginType === "admin" ? "text-blue-600" : "text-pink-600"
+                  }`}
+                />
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="•••••••••"
+                className="block w-full pl-11 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                disabled={isLoading}
+                autoComplete="current-password"
+              />
             </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-20">
-              <Users size={48} className="mx-auto text-slate-300 mb-4" />
-              <h3 className="text-lg font-bold text-slate-700">
-                No Users Found
-              </h3>
-              <p className="text-slate-500">
-                {searchQuery
-                  ? "Try a different search term"
-                  : "No users registered yet"}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">
-                      User
-                    </th>
-                    <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">
-                      Role
-                    </th>
-                    <th className="px-4 md:px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">
-                      Joined
-                    </th>
-                    <th className="px-4 md:px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {filteredUsers.map((u) => (
-                    <tr
-                      key={u.id}
-                      className="hover:bg-slate-50 transition-colors"
-                    >
-                      <td className="px-4 md:px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                              u.role === "admin"
-                                ? "bg-purple-500"
-                                : "bg-slate-400"
-                            }`}
-                          >
-                            {u.email.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {u.email}
-                            </p>
-                            {u.id === user?.id && (
-                              <span className="text-xs text-purple-600 font-medium">
-                                (You)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 md:px-6 py-4">
-                        {u.id === user?.id ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                            <Shield size={12} />
-                            Admin
-                          </span>
-                        ) : (
-                          <div className="relative">
-                            <select
-                              value={u.role}
-                              onChange={(e) =>
-                                handleRoleChange(u.id, e.target.value)
-                              }
-                              disabled={updatingRole === u.id}
-                              className={`appearance-none px-3 py-1.5 pr-8 rounded-lg text-xs font-semibold border cursor-pointer focus:ring-2 focus:ring-purple-500 outline-none ${
-                                u.role === "admin"
-                                  ? "bg-purple-100 text-purple-700 border-purple-200"
-                                  : "bg-slate-100 text-slate-700 border-slate-200"
-                              } ${updatingRole === u.id ? "opacity-50" : ""}`}
-                            >
-                              <option value="user">User</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                            <ChevronDown
-                              size={14}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                            />
-                            {updatingRole === u.id && (
-                              <Loader2
-                                size={14}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-purple-600"
-                              />
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 md:px-6 py-4 text-sm text-slate-500">
-                        {formatDate(u.created_at)}
-                      </td>
-                      <td className="px-4 md:px-6 py-4 text-right">
-                        {u.id !== user?.id ? (
-                          showDeleteConfirm === u.id ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleDeleteUser(u.id)}
-                                disabled={deletingUser === u.id}
-                                className="px-3 py-1 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50"
-                              >
-                                {deletingUser === u.id
-                                  ? "Deleting..."
-                                  : "Confirm"}
-                              </button>
-                              <button
-                                onClick={() => setShowDeleteConfirm(null)}
-                                className="px-3 py-1 bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-300"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setShowDeleteConfirm(u.id)}
-                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                              title="Delete user"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          </div>
+
+          <motion.button
+            whileHover={{ scale: isLoading ? 1 : 1.02 }}
+            whileTap={{ scale: isLoading ? 1 : 0.98 }}
+            type="submit"
+            disabled={isLoading}
+            className="w-full text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl disabled:opacity-70 disabled:shadow-none hover:shadow-blue-500/40"
+            style={{
+              background:
+                loginType === "admin"
+                  ? "linear-gradient(to right, #2563eb, #4f46e5)"
+                  : "linear-gradient(to right, #db2777, #9333ea)",
+            }}
+          >
+            {isLoading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Verifying...
+              </>
+            ) : (
+              `Login as ${loginType === "admin" ? "Admin" : "Artist"}`
+            )}
+          </motion.button>
+        </form>
+
+        <div className="mt-5 pt-4 border-t border-slate-100 text-center">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="text-sm text-slate-500 hover:text-blue-600 transition-colors font-medium flex items-center justify-center gap-1 w-full"
+          >
+            <ArrowLeft size={14} /> Return to Home Page
+          </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
-}
+};
+
+export default LoginPage;

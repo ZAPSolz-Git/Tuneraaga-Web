@@ -23,7 +23,7 @@ import {
   Award,
   Edit3,
 } from "lucide-react";
-// --- UPDATED: Centralized Supabase Client Import ---
+
 import { supabase } from "@/lib/supabaseClient";
 
 // ─── Blue Gradient Palette ───

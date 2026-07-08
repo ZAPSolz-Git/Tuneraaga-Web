@@ -15,10 +15,10 @@ router.get("/", getAllArtists);
 // 2. CREATE ARTIST (Public)
 router.post("/", upload.single("image"), createArtist);
 
-// 3. UPDATE ARTIST - authenticateUser hataya (Admin panel use karta hai)
+// 3. UPDATE ARTIST - authenticateUser 
 router.put("/:id", upload.single("image"), updateArtist);
 
-// 4. DELETE ARTIST - authenticateUser hataya (Admin panel use karta hai)
+// 4. DELETE ARTIST - authenticateUser
 router.delete("/:id", deleteArtist);
 
 module.exports = router;

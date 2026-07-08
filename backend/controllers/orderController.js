@@ -82,9 +82,8 @@ const createOrderSummaryPay = async (req, res) => {
   }
 };
 
-/**
- * POST /api/orders/:orderId/create-razorpay-order
- */
+
+
 const createRazorpayOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -194,11 +193,8 @@ const createRazorpayOrder = async (req, res) => {
   }
 };
 
-/**
- * POST /api/orders/:orderId/verify-payment
- * ✅ FIXED: agar "paid_at" column exist nahi karta to automatically
- * uske bina retry karta hai, taaki 500 error na aaye.
- */
+
+
 const verifyPayment = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -346,7 +342,7 @@ const checkOrderStatus = async (req, res) => {
 
 /**
  * GET /api/orders/:orderId/receipt
- * Sirf "paid" order ke liye PDF receipt generate karke bhejta hai.
+ * pdf receipt generate
  */
 const downloadReceipt = async (req, res) => {
   try {

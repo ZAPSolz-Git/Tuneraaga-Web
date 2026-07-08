@@ -96,12 +96,12 @@ const AdminLayout = () => {
             {sidebarOpen ? (
               <div 
                 className="flex items-center p-2 rounded-lg backdrop-blur-sm w-full justify-between cursor-pointer hover:bg-slate-100 transition-colors" 
-                // Changed: Logo ab Home par nahi, Logout karega agar click kiya (Optional, chaho toh navigate('/') kar sakte ho)
+          
                 onClick={() => navigate('/admin')} 
                 style={{ background: "rgba(0, 0, 0, 0.03)" }}
               >
                 <span className="font-bold text-slate-900">Admin Panel</span>
-                {/* Removed LogOut icon from here to avoid confusion, added separate button below */}
+              
               </div>
             ) : (
               <div

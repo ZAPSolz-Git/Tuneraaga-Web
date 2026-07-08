@@ -1,7 +1,4 @@
-/**
- * Body check karta hai ki email, userId, plan, amount sahi format mein hain ya nahi.
- * Agar galat hai toh controller tak request jaane hi nahi deta.
- */
+
 const validateOrderPayload = (req, res, next) => {
   const { email, userId, plan, amount } = req.body;
   const errors = [];
@@ -39,7 +36,7 @@ const validateOrderPayload = (req, res, next) => {
     });
   }
 
-  // amount ko hamesha Number ke form mein aage bhejo
+ 
   req.body.amount = Number(amount);
 
   next();

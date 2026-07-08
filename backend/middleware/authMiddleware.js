@@ -26,7 +26,7 @@ const authenticateUser = async (req, res, next) => {
       });
     }
 
-    req.user = user; // user object next middleware/controller ko milega
+    req.user = user; 
     next();
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
