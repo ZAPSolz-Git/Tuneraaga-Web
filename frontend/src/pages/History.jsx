@@ -76,7 +76,8 @@ export default function History() {
       if (session?.user) {
         setUser(session.user);
         userRef.current = session.user;
-        await fetchUserRole(session.user.id);
+        // FIX: Removed fetchUserRole DB call. Read from cache instead.
+        setUserRole(localStorage.getItem("userRole") || "user");
         await fetchHistory(session.user.id);
         await fetchLikes(session.user.id);
       } else {
@@ -91,7 +92,8 @@ export default function History() {
       if (event === "SIGNED_IN" && session?.user) {
         setUser(session.user);
         userRef.current = session.user;
-        await fetchUserRole(session.user.id);
+        // FIX: Removed fetchUserRole DB call. Read from cache instead.
+        setUserRole(localStorage.getItem("userRole") || "user");
         await fetchHistory(session.user.id);
         await fetchLikes(session.user.id);
       } else if (event === "SIGNED_OUT") {
@@ -107,30 +109,6 @@ export default function History() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // Fetch user role from users table
-  const fetchUserRole = async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", userId)
-        .single();
-
-      if (!error && data) {
-        setUserRole(data.role);
-      } else if (error?.code === "PGRST116") {
-        // User not in users table, create entry
-        await supabase
-          .from("users")
-          .insert({ id: userId, email: userRef.current?.email, role: "user" });
-        setUserRole("user");
-      }
-    } catch (err) {
-      console.error("Fetch role error:", err);
-      setUserRole("user");
-    }
-  };
 
   const fetchHistory = async (userId) => {
     setLoading(true);

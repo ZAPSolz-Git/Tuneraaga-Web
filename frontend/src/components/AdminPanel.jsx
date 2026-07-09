@@ -45,7 +45,6 @@ const MUSIC_ICONS = [
   Zap,
   Waves,
 ];
-
 const GRADIENT_COLORS = [
   "#6366f1",
   "#8b5cf6",
@@ -71,70 +70,63 @@ const GRADIENT_COLORS = [
 
 const FloatingBackground = () => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
   useEffect(() => {
     const handleMouseMove = (e) => {
-      const x = e.clientX / window.innerWidth - 0.5;
-      const y = e.clientY / window.innerHeight - 0.5;
-      setMousePos({ x, y });
+      setMousePos({
+        x: e.clientX / window.innerWidth - 0.5,
+        y: e.clientY / window.innerHeight - 0.5,
+      });
     };
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  const icons = useMemo(() => {
-    return Array.from({ length: 120 }, (_, i) => {
-      const Icon = MUSIC_ICONS[i % MUSIC_ICONS.length];
-      const size = Math.random() * 28 + 16;
-      const left = Math.random() * 100;
-      const top = Math.random() * 100;
-      const duration = Math.random() * 5 + 4;
-      const delay = Math.random() * 8;
-      const xMove = (Math.random() - 0.5) * 80;
-      const yMove = -(Math.random() * 100 + 50);
-      const color = GRADIENT_COLORS[i % GRADIENT_COLORS.length];
-      const rotate = Math.random() * 360;
-      const baseOpacity = Math.random() * 0.55 + 0.35;
-
-      return (
-        <motion.div
-          key={i}
-          className="absolute pointer-events-none select-none"
-          style={{
-            left: `${left}%`,
-            top: `${top}%`,
-            color: color,
-            filter: `drop-shadow(0 0 6px ${color}99)`,
-            opacity: baseOpacity,
-          }}
-          animate={{
-            y: [0, yMove, 0],
-            x: [0, xMove, 0],
-            rotate: [rotate, rotate + 180, rotate + 360],
-            scale: [1, 1.3, 1],
-            opacity: [baseOpacity, baseOpacity + 0.3, baseOpacity],
-          }}
-          transition={{
-            duration,
-            delay,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-        >
-          <Icon size={size} strokeWidth={1.8} />
-        </motion.div>
-      );
-    });
-  }, []);
+  const icons = useMemo(
+    () =>
+      Array.from({ length: 120 }, (_, i) => {
+        const Icon = MUSIC_ICONS[i % MUSIC_ICONS.length];
+        const size = Math.random() * 28 + 16;
+        const left = Math.random() * 100;
+        const top = Math.random() * 100;
+        const duration = Math.random() * 5 + 4;
+        const delay = Math.random() * 8;
+        const xMove = (Math.random() - 0.5) * 80;
+        const yMove = -(Math.random() * 100 + 50);
+        const color = GRADIENT_COLORS[i % GRADIENT_COLORS.length];
+        const rotate = Math.random() * 360;
+        const baseOpacity = Math.random() * 0.55 + 0.35;
+        return (
+          <motion.div
+            key={i}
+            className="absolute pointer-events-none select-none"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+              color,
+              filter: `drop-shadow(0 0 6px ${color}99)`,
+              opacity: baseOpacity,
+            }}
+            animate={{
+              y: [0, yMove, 0],
+              x: [0, xMove, 0],
+              rotate: [rotate, rotate + 180, rotate + 360],
+              scale: [1, 1.3, 1],
+              opacity: [baseOpacity, baseOpacity + 0.3, baseOpacity],
+            }}
+            transition={{ duration, delay, repeat: Infinity, ease: "linear" }}
+          >
+            <Icon size={size} strokeWidth={1.8} />
+          </motion.div>
+        );
+      }),
+    [],
+  );
 
   return (
     <motion.div
       className="absolute overflow-hidden"
       style={{ width: "120%", height: "120%", top: "-10%", left: "-10%" }}
-      animate={{
-        x: mousePos.x * 80,
-        y: mousePos.y * 80,
-      }}
+      animate={{ x: mousePos.x * 80, y: mousePos.y * 80 }}
       transition={{ type: "spring", stiffness: 60, damping: 20 }}
     >
       <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
@@ -169,37 +161,29 @@ const LoginPage = () => {
     }
 
     try {
-      // 1) Sign out any stale session first
       try {
         await supabase.auth.signOut();
       } catch (signOutErr) {
         console.log("Sign out error (can be ignored):", signOutErr);
       }
-
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // 2) Sign in with Supabase Auth
       const { data: authData, error: authError } =
         await supabase.auth.signInWithPassword({
           email: trimmedEmail,
           password: trimmedPassword,
         });
-
       if (authError) {
         console.error("Auth error:", authError);
         throw new Error(
           "Invalid email or password. Make sure this user exists in Supabase Authentication.",
         );
       }
-
-      if (!authData?.user) {
-        throw new Error("Invalid response from server.");
-      }
+      if (!authData?.user) throw new Error("Invalid response from server.");
 
       const userId = authData.user.id;
       const userEmail = authData.user.email;
 
-      // 3) Fetch user profile by Email (avoids ID mismatch issues)
       let profileData = null;
       const { data: dbProfile } = await supabase
         .from("users")
@@ -210,41 +194,26 @@ const LoginPage = () => {
       if (dbProfile) {
         profileData = dbProfile;
       } else {
-        // 4) AUTO-CREATE PROFILE IF MISSING
         console.log("Profile not found in DB. Attempting to auto-create...");
         const { data: newProfile, error: insertError } = await supabase
           .from("users")
-          .insert({
-            id: userId,
-            email: userEmail,
-            role: loginType, // Create with the role they are trying to login as
-          })
+          .insert({ id: userId, email: userEmail, role: loginType })
           .select()
           .maybeSingle();
-
-        if (insertError) {
+        if (insertError)
           console.warn(
             "Auto-create blocked by RLS. Using fallback auth data.",
             insertError,
           );
-        }
-
         if (newProfile) {
           profileData = newProfile;
         } else {
-          // 5) ULTIMATE FALLBACK: Bypass DB if RLS is blocking everything
-          // This ensures you can ALWAYS log in as long as Supabase Auth succeeds
-          profileData = {
-            id: userId,
-            email: userEmail,
-            role: loginType,
-          };
+          profileData = { id: userId, email: userEmail, role: loginType };
         }
       }
 
       const userRole = (profileData.role || loginType).toLowerCase();
 
-      // 6) Role-based routing
       if (loginType === "admin") {
         if (userRole !== "admin") {
           await supabase.auth.signOut();
@@ -255,6 +224,7 @@ const LoginPage = () => {
         localStorage.setItem("adminId", profileData.id);
         localStorage.setItem("adminName", profileData.email);
         localStorage.setItem("adminEmail", profileData.email);
+        // IMPORTANT: Yeh line AuthContext aur baaki files ke liye role ka source hai
         localStorage.setItem("userRole", "admin");
         localStorage.setItem("userId", profileData.id);
         navigate("/admin", { replace: true });
@@ -268,35 +238,30 @@ const LoginPage = () => {
         localStorage.setItem("artistId", profileData.id);
         localStorage.setItem("artistName", profileData.email);
         localStorage.setItem("artistEmail", profileData.email);
+        // IMPORTANT: Yeh line AuthContext aur baaki files ke liye role ka source hai
         localStorage.setItem("userRole", "artist");
         localStorage.setItem("userId", profileData.id);
         navigate("/artist/dashboard", { replace: true });
       }
     } catch (err) {
       console.error("Login Error:", err);
-
       let errorMessage = err.message || "Login failed. Please try again.";
-
       const msg = (err.message || "").toLowerCase();
-
       if (
         msg.includes("invalid login credentials") ||
         msg.includes("invalid email or password")
-      ) {
+      )
         errorMessage = "❌ Invalid email or password. Please try again.";
-      } else if (msg.includes("admin privileges")) {
+      else if (msg.includes("admin privileges"))
         errorMessage =
           "❌ This account is not an admin. Please login as Artist.";
-      } else if (msg.includes("cannot login as artists")) {
+      else if (msg.includes("cannot login as artists"))
         errorMessage =
           "❌ Admin accounts cannot login as Artists. Please login as Admin.";
-      } else if (msg.includes("email not confirmed")) {
+      else if (msg.includes("email not confirmed"))
         errorMessage =
           "❌ Your email is not confirmed. Please check your inbox.";
-      }
-
       setError(errorMessage);
-
       try {
         await supabase.auth.signOut();
       } catch (signOutErr) {
@@ -310,7 +275,6 @@ const LoginPage = () => {
   return (
     <div className="h-screen overflow-hidden bg-slate-50 flex items-center justify-center px-4 relative">
       <FloatingBackground />
-
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -319,9 +283,7 @@ const LoginPage = () => {
       >
         <div className="bg-slate-100 p-1 rounded-xl mb-5 flex relative">
           <div
-            className={`absolute top-1 bottom-1 w-1/2 rounded-lg bg-white shadow-sm transition-all duration-300 ease-out ${
-              loginType === "admin" ? "left-1" : "left-[calc(50%-4px)]"
-            }`}
+            className={`absolute top-1 bottom-1 w-1/2 rounded-lg bg-white shadow-sm transition-all duration-300 ease-out ${loginType === "admin" ? "left-1" : "left-[calc(50%-4px)]"}`}
           />
           <button
             type="button"
@@ -329,9 +291,7 @@ const LoginPage = () => {
               setLoginType("admin");
               setError("");
             }}
-            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${
-              loginType === "admin" ? "text-blue-600" : "text-slate-400"
-            }`}
+            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${loginType === "admin" ? "text-blue-600" : "text-slate-400"}`}
           >
             Admin
           </button>
@@ -341,9 +301,7 @@ const LoginPage = () => {
               setLoginType("artist");
               setError("");
             }}
-            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${
-              loginType === "artist" ? "text-blue-600" : "text-slate-400"
-            }`}
+            className={`flex-1 relative z-10 py-2 text-sm font-bold transition-colors duration-300 ${loginType === "artist" ? "text-blue-600" : "text-slate-400"}`}
           >
             Artist
           </button>
@@ -358,11 +316,9 @@ const LoginPage = () => {
               className="w-[180px] sm:w-[220px] h-auto object-contain drop-shadow-lg"
             />
           </div>
-
           <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600">
             {loginType === "admin" ? "Admin Portal" : "Artist Portal"}
           </h2>
-
           <p className="text-slate-500 font-medium text-sm mb-3">
             {loginType === "admin"
               ? "Secure access to dashboard"
@@ -388,9 +344,7 @@ const LoginPage = () => {
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <User
-                  className={`h-5 w-5 transition-colors ${
-                    loginType === "admin" ? "text-blue-600" : "text-pink-600"
-                  }`}
+                  className={`h-5 w-5 transition-colors ${loginType === "admin" ? "text-blue-600" : "text-pink-600"}`}
                 />
               </div>
               <input
@@ -407,7 +361,6 @@ const LoginPage = () => {
               />
             </div>
           </div>
-
           <div className="space-y-1.5 group">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
               Password
@@ -415,9 +368,7 @@ const LoginPage = () => {
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Lock
-                  className={`h-5 w-5 transition-colors ${
-                    loginType === "admin" ? "text-blue-600" : "text-pink-600"
-                  }`}
+                  className={`h-5 w-5 transition-colors ${loginType === "admin" ? "text-blue-600" : "text-pink-600"}`}
                 />
               </div>
               <input
@@ -432,7 +383,6 @@ const LoginPage = () => {
               />
             </div>
           </div>
-
           <motion.button
             whileHover={{ scale: isLoading ? 1 : 1.02 }}
             whileTap={{ scale: isLoading ? 1 : 0.98 }}

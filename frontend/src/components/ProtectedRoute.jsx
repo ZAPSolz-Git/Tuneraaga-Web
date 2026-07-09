@@ -6,9 +6,9 @@ import { Loader2 } from "lucide-react";
 const ProtectedRoute = ({ children, requiredRole }) => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  // FIX: Read from cache initially instead of hitting the database
+  const [userRole, setUserRole] = useState(localStorage.getItem("userRole"));
 
-  // ─── Core auth check (reusable) ───────────────────────────────────────────
   const checkAuth = useCallback(async () => {
     setLoading(true);
     try {
@@ -19,18 +19,8 @@ const ProtectedRoute = ({ children, requiredRole }) => {
       setSession(session);
 
       if (session) {
-        const { data: profileData, error } = await supabase
-          .from("artists")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-
-        if (!error && profileData) {
-          setUserRole(profileData.role);
-          localStorage.setItem("userRole", profileData.role);
-        } else {
-          setUserRole(null);
-        }
+        // FIX: Removed supabase.from("artists") DB call. Using cache instead.
+        setUserRole(localStorage.getItem("userRole"));
       } else {
         // No session — clean up everything
         setUserRole(null);
@@ -52,10 +42,8 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   }, []);
 
   useEffect(() => {
-    // Initial check
     checkAuth();
 
-    
     const handlePageShow = (e) => {
       if (e.persisted) {
         checkAuth();
@@ -63,7 +51,6 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     };
     window.addEventListener("pageshow", handlePageShow);
 
-    // ─── Real-time Supabase auth state listener ────────────────────────────
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -77,6 +64,9 @@ const ProtectedRoute = ({ children, requiredRole }) => {
         localStorage.removeItem("artistId");
         localStorage.removeItem("artistName");
         localStorage.removeItem("artistEmail");
+      } else {
+        // FIX: Read from cache instead of making a new DB call
+        setUserRole(localStorage.getItem("userRole"));
       }
     });
 

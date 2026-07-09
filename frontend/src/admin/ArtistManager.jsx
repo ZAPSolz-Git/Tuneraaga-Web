@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Music,
   Plus,
@@ -23,19 +24,24 @@ import {
   Users,
   Calendar,
   Lock,
+  LogOut,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 
-// --- SUPABASE CONFIGURATION ---
-const supabaseUrl = "https://suaguciltgydkoyjmbmx.supabase.co";
-const supabaseKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWd1Y2lsdGd5ZGtveWptYm14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjM3MTQsImV4cCI6MjA4ODc5OTcxNH0.ypgJm4BnNxalLsACpEtBF9T8uP5OwNSw4nwjiN-3rE8";
-const supabase = createClient(supabaseUrl, supabaseKey);
-const BUCKET_NAME = "TuneRaaga";
+const API_BASE = "http://localhost:5000/api/artists";
 
-// --- LOCAL SVG PLACEHOLDER ---
-const DEFAULT_AVATAR =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E";
+// --- Helper: get the current admin's Supabase access token
+const getAuthHeaders = async () => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("Aap login nahi hain. Please pehle login karo.");
+  }
+
+  return { Authorization: `Bearer ${session.access_token}` };
+};
 
 // --- 1. Artist Card Component ---
 const ArtistCard = ({
@@ -128,6 +134,8 @@ const ArtistCard = ({
 
 // --- 2. Artist Modal Component ---
 const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
+  const isEditing = Boolean(initialData);
+
   const [formData, setFormData] = useState({
     name: "",
     genre: "Pop",
@@ -135,19 +143,21 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
     email: "",
     phone: "",
     followers: "",
-    password: "", // PASSWORD ADDED HERE
+    password: "",
+    confirmPassword: "",
     spotifyUrl: "",
     instagramUrl: "",
     profileUrl: "",
     idDocumentUrl: "",
     status: "Pending",
     verified: false,
-    // BIO FIELDS
     born_date: "",
     early_life: "",
     career: "",
     recognition_awards: "",
   });
+
+  const [passwordError, setPasswordError] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -156,7 +166,8 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
           ...prev,
           ...initialData,
           followers: initialData.followers || "",
-          password: initialData.password || "", // PASSWORD SYNC
+          password: "",
+          confirmPassword: "",
           born_date: initialData.born_date || "",
           early_life: initialData.early_life || "",
           career: initialData.career || "",
@@ -170,7 +181,8 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
           email: "",
           phone: "",
           followers: "",
-          password: "", // PASSWORD RESET
+          password: "",
+          confirmPassword: "",
           spotifyUrl: "",
           instagramUrl: "",
           profileUrl: "",
@@ -183,6 +195,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
           recognition_awards: "",
         });
       }
+      setPasswordError("");
     }
   }, [isOpen, initialData]);
 
@@ -191,6 +204,33 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
   const handleImageUpload = (e) => {
     if (e.target.files && e.target.files[0])
       setFormData({ ...formData, image: e.target.files[0] });
+  };
+
+  const validatePassword = () => {
+    if (isEditing && !formData.password) {
+      return true;
+    }
+
+    if (formData.password.length > 0 && formData.password.length < 8) {
+      setPasswordError("Password must be at least 8 characters long");
+      return false;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return false;
+    }
+
+    setPasswordError("");
+    return true;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validatePassword()) {
+      return;
+    }
+    onSubmit(formData);
   };
 
   return (
@@ -203,7 +243,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-5 flex justify-between items-center text-white shrink-0">
           <div>
             <h2 className="text-xl font-bold">
-              {initialData ? "Update Artist" : "Add New Artist"}
+              {isEditing ? "Update Artist" : "Add New Artist"}
             </h2>
             <p className="text-blue-100 text-xs mt-1">
               Manage artist identity, login credentials, and detailed biography.
@@ -218,13 +258,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
         </div>
 
         <div className="overflow-y-auto p-6 space-y-6">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onSubmit(formData);
-            }}
-            className="space-y-6"
-          >
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* SECTION 1: BASIC PROFILE */}
             <div>
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1 flex items-center gap-2">
@@ -268,7 +302,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Artist Name
+                    Artist Name *
                   </label>
                   <input
                     type="text"
@@ -282,9 +316,10 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Genre
+                    Genre *
                   </label>
                   <select
+                    required
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                     value={formData.genre}
                     onChange={(e) =>
@@ -298,6 +333,47 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     <option value="Hip Hop">Hip Hop</option>
                     <option value="Classical">Classical</option>
                   </select>
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Email *
+                  </label>
+                  <div className="relative">
+                    <Mail
+                      className="absolute left-3 top-2.5 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      type="email"
+                      required
+                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="artist@email.com"
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Phone
+                  </label>
+                  <div className="relative">
+                    <Phone
+                      className="absolute left-3 top-2.5 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      type="tel"
+                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="+91 98765 43210"
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData({ ...formData, phone: e.target.value })
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -342,7 +418,87 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
               </div>
             </div>
 
-            {/* SECTION 2: DETAILED BIOGRAPHY */}
+            {/* SECTION 2: PASSWORD */}
+            <div>
+              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1 flex items-center gap-2">
+                <Lock size={14} /> Password Security
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    {isEditing ? "New Password (optional)" : "Password *"}
+                  </label>
+                  <div className="relative">
+                    <Lock
+                      className="absolute left-3 top-2.5 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      type="password"
+                      required={!isEditing}
+                      autoComplete="new-password"
+                      className={`w-full border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none ${
+                        passwordError && formData.password
+                          ? "border-red-500"
+                          : "border-gray-300"
+                      }`}
+                      placeholder={
+                        isEditing
+                          ? "Enter new password"
+                          : "Enter password (min 8 chars)"
+                      }
+                      value={formData.password}
+                      onChange={(e) => {
+                        setFormData({ ...formData, password: e.target.value });
+                        setPasswordError("");
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    {isEditing ? "Confirm New Password" : "Confirm Password *"}
+                  </label>
+                  <div className="relative">
+                    <Lock
+                      className="absolute left-3 top-2.5 text-gray-400"
+                      size={18}
+                    />
+                    <input
+                      type="password"
+                      required={!isEditing}
+                      autoComplete="new-password"
+                      className={`w-full border rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none ${
+                        passwordError && formData.confirmPassword
+                          ? "border-red-500"
+                          : "border-gray-300"
+                      }`}
+                      placeholder="Confirm password"
+                      value={formData.confirmPassword}
+                      onChange={(e) => {
+                        setFormData({
+                          ...formData,
+                          confirmPassword: e.target.value,
+                        });
+                        setPasswordError("");
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {passwordError && (
+                <p className="text-red-500 text-sm mt-2 flex items-center gap-1">
+                  <AlertTriangle size={16} /> {passwordError}
+                </p>
+              )}
+              <p className="text-xs text-gray-400 mt-2">
+                {isEditing
+                  ? "Leave empty to keep current password. Password must be at least 8 characters if changed."
+                  : "Password must be at least 8 characters long."}
+              </p>
+            </div>
+
+            {/* SECTION 3: DETAILED BIOGRAPHY */}
             <div>
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1 flex items-center gap-2">
                 <FileText size={14} /> Detailed Biography
@@ -373,7 +529,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     Early Life
                   </label>
                   <textarea
-                    rows="3"
+                    rows="2"
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                     placeholder="Details about childhood..."
                     value={formData.early_life}
@@ -387,7 +543,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     Career
                   </label>
                   <textarea
-                    rows="3"
+                    rows="2"
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                     placeholder="Musical journey..."
                     value={formData.career}
@@ -401,7 +557,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     Recognition And Awards
                   </label>
                   <textarea
-                    rows="3"
+                    rows="2"
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                     placeholder="Grammys, awards..."
                     value={formData.recognition_awards}
@@ -416,74 +572,12 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
               </div>
             </div>
 
-            {/* SECTION 3: CONTACT & SECURITY (PASSWORD ADDED) */}
+            {/* SECTION 4: SOCIAL MEDIA */}
             <div>
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1">
-                Contact & Security
+                Social Media Links
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                    <input
-                      type="email"
-                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                      value={formData.email}
-                      onChange={(e) =>
-                        setFormData({ ...formData, email: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Phone
-                  </label>
-                  <div className="relative">
-                    <Phone
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                    <input
-                      type="tel"
-                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                      value={formData.phone}
-                      onChange={(e) =>
-                        setFormData({ ...formData, phone: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                {/* PASSWORD FIELD */}
-                <div className="col-span-2 md:col-span-1">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock
-                      className="absolute left-3 top-2.5 text-gray-400"
-                      size={18}
-                    />
-                    <input
-                      type="password"
-                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                      placeholder="Set Login Password"
-                      value={formData.password}
-                      onChange={(e) =>
-                        setFormData({ ...formData, password: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1">
                     Spotify URL
@@ -496,6 +590,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     <input
                       type="url"
                       className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-green-500 outline-none"
+                      placeholder="https://spotify.com/..."
                       value={formData.spotifyUrl}
                       onChange={(e) =>
                         setFormData({ ...formData, spotifyUrl: e.target.value })
@@ -515,6 +610,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                     <input
                       type="url"
                       className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-pink-500 outline-none"
+                      placeholder="https://instagram.com/..."
                       value={formData.instagramUrl}
                       onChange={(e) =>
                         setFormData({
@@ -528,17 +624,23 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
               </div>
             </div>
 
-            {/* SECTION 4: ADMIN */}
+            {/* SECTION 5: ADMIN */}
             <div>
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 border-b pb-1">
-                Admin
+                Admin Settings
               </h3>
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Status
                 </label>
                 <select
-                  className={`w-full border rounded-lg px-4 py-2 outline-none font-medium ${formData.status === "Verified" ? "bg-green-50 text-green-700" : formData.status === "Rejected" ? "bg-red-50 text-red-700" : "bg-yellow-50 text-yellow-700"}`}
+                  className={`w-full border rounded-lg px-4 py-2 outline-none font-medium ${
+                    formData.status === "Verified"
+                      ? "bg-green-50 text-green-700 border-green-300"
+                      : formData.status === "Rejected"
+                        ? "bg-red-50 text-red-700 border-red-300"
+                        : "bg-yellow-50 text-yellow-700 border-yellow-300"
+                  }`}
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({ ...formData, status: e.target.value })
@@ -556,6 +658,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                 <input
                   type="url"
                   className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="https://example.com/id-proof.pdf"
                   value={formData.idDocumentUrl}
                   onChange={(e) =>
                     setFormData({ ...formData, idDocumentUrl: e.target.value })
@@ -573,10 +676,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
             Cancel
           </button>
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              onSubmit(formData);
-            }}
+            onClick={handleSubmit}
             disabled={isLoading}
             className="px-6 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-800 text-white font-bold shadow-lg hover:shadow-xl transition flex items-center gap-2 disabled:opacity-50"
           >
@@ -585,7 +685,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
             ) : (
               <CheckCircle2 size={18} />
             )}
-            {initialData ? "Save Changes" : "Create Artist"}
+            {isEditing ? "Save Changes" : "Create Artist"}
           </button>
         </div>
       </div>
@@ -632,6 +732,8 @@ const DeleteModal = ({ isOpen, onClose, onConfirm, artistName }) => {
 
 // --- 4. Main Manager Component ---
 const ArtistManager = () => {
+  const navigate = useNavigate();
+
   const [artists, setArtists] = useState([]);
   const [viewMode, setViewMode] = useState("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -641,11 +743,67 @@ const ArtistManager = () => {
   const [loading, setLoading] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [artistToDelete, setArtistToDelete] = useState(null);
+  const [authStatus, setAuthStatus] = useState("checking");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const verifyAdmin = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        if (isMounted) setAuthStatus("redirecting");
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("artists")
+        .select("role")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (error || !profile || profile.role !== "admin") {
+        await supabase.auth.signOut();
+        if (isMounted) setAuthStatus("redirecting");
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (isMounted) setAuthStatus("ok");
+    };
+
+    verifyAdmin();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        if (!newSession) {
+          navigate("/login", { replace: true });
+        }
+      },
+    );
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [navigate]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("adminId");
+    localStorage.removeItem("adminName");
+    localStorage.removeItem("adminEmail");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userId");
+    navigate("/login", { replace: true });
+  };
 
   const fetchArtists = async () => {
     setLoading(true);
     try {
-      // Admin sees ALL artists (Pending, Verified, Rejected)
       const { data, error } = await supabase
         .from("artists")
         .select("*")
@@ -661,35 +819,39 @@ const ArtistManager = () => {
   };
 
   useEffect(() => {
-    fetchArtists();
-  }, []);
+    if (authStatus === "ok") {
+      fetchArtists();
+    }
+  }, [authStatus]);
 
   const filteredArtists = artists.filter((artist) =>
     artist.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
   const openAddModal = () => {
     setEditingArtist(null);
     setIsModalOpen(true);
   };
+
   const openEditModal = (artist) => {
     setEditingArtist(artist);
     setIsModalOpen(true);
   };
+
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingArtist(null);
   };
 
-  // handleFormSubmit function ko replace karo is se:
   const handleFormSubmit = async (formData) => {
     setLoading(true);
     try {
       const data = new FormData();
 
+      // Basic profile fields
       data.append("name", formData.name || "");
       data.append("genre", formData.genre || "");
       data.append("email", formData.email || "");
-      data.append("password", formData.password || "");
       data.append("phone", formData.phone || "");
       data.append("followers", formData.followers || "");
       data.append("profileUrl", formData.profileUrl || "");
@@ -703,21 +865,26 @@ const ArtistManager = () => {
       data.append("career", formData.career || "");
       data.append("recognition_awards", formData.recognition_awards || "");
 
+      // Password handling - only send if provided
+      if (formData.password && formData.password.trim() !== "") {
+        data.append("password", formData.password.trim());
+      }
+
+      // Image upload
       if (formData.image instanceof File) {
         data.append("image", formData.image);
       }
 
-      const API_BASE = "http://localhost:5000/api/artists";
       let response;
 
       if (editingArtist) {
-        // UPDATE - Admin panel, token ki zarurat nahi
+        const authHeaders = await getAuthHeaders();
         response = await fetch(`${API_BASE}/${editingArtist.id}`, {
           method: "PUT",
+          headers: authHeaders,
           body: data,
         });
       } else {
-        // CREATE - Public route
         response = await fetch(API_BASE, {
           method: "POST",
           body: data,
@@ -744,21 +911,25 @@ const ArtistManager = () => {
       setIsDeleteModalOpen(true);
     }
   };
+
   const confirmDelete = async () => {
     if (!artistToDelete) return;
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from("artists")
-        .delete()
-        .eq("id", artistToDelete.id);
-      if (error) throw error;
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/${artistToDelete.id}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Server error");
+
       await fetchArtists();
       setIsDeleteModalOpen(false);
       setArtistToDelete(null);
     } catch (error) {
       console.error("Error deleting:", error);
-      alert("Error deleting");
+      alert("Error deleting: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -770,7 +941,6 @@ const ArtistManager = () => {
     const newVerified = !artist.verified;
     const updatedStatus = newVerified ? "Verified" : "Pending";
 
-    // Optimistic update
     setArtists(
       artists.map((a) =>
         a.id === id
@@ -780,14 +950,21 @@ const ArtistManager = () => {
     );
 
     try {
-      const { error } = await supabase
-        .from("artists")
-        .update({ verified: newVerified, status: updatedStatus })
-        .eq("id", id);
-      if (error) throw error;
+      const authHeaders = await getAuthHeaders();
+      const data = new FormData();
+      data.append("status", updatedStatus);
+      data.append("verified", newVerified);
+
+      const response = await fetch(`${API_BASE}/${id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: data,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Server error");
     } catch (error) {
       console.error("Error updating:", error);
-      alert("Error updating");
+      alert("Error updating: " + error.message);
       fetchArtists();
     }
   };
@@ -796,7 +973,9 @@ const ArtistManager = () => {
     setDraggedId(id);
     e.dataTransfer.effectAllowed = "move";
   };
+
   const onDragOver = (e) => e.preventDefault();
+
   const onDrop = (e, targetId) => {
     e.preventDefault();
     if (draggedId === null || draggedId === targetId) return;
@@ -809,6 +988,14 @@ const ArtistManager = () => {
     setArtists(items);
     setDraggedId(null);
   };
+
+  if (authStatus !== "ok") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-100 flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-600" size={48} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-100 flex flex-col font-sans text-slate-900">
@@ -852,6 +1039,13 @@ const ArtistManager = () => {
               className="bg-white text-blue-700 hover:bg-blue-50 font-bold py-2 px-5 rounded-full shadow-lg hover:scale-105 transition flex items-center gap-2"
             >
               <Plus size={20} /> Add Artist
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              className="bg-white/10 hover:bg-white/20 text-white p-2.5 rounded-full border border-white/20 transition"
+            >
+              <LogOut size={18} />
             </button>
           </div>
         </div>
@@ -947,7 +1141,7 @@ const ArtistManager = () => {
                                   {artist.name}
                                 </div>
                                 <div className="text-sm text-gray-500 truncate max-w-xs">
-                                  Bio updated
+                                  {artist.email || "No email"}
                                 </div>
                               </div>
                             </div>
@@ -962,9 +1156,15 @@ const ArtistManager = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${artist.verified ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                                artist.verified
+                                  ? "bg-green-100 text-green-700"
+                                  : artist.status === "Rejected"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-yellow-100 text-yellow-700"
+                              }`}
                             >
-                              {artist.status}
+                              {artist.status || "Pending"}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

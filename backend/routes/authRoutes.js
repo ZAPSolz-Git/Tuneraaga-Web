@@ -1,29 +1,26 @@
 const express = require("express");
 const router = express.Router();
-const { authenticateUser } = require("../middleware/authMiddleware");
-const {
-  login,
-  signup,
-  getProfile,
-  logout,
-  getAllUsers,
-  updateUserRole,
-  deleteUser,
-  getUserStats,
-} = require("../controllers/authController");
+const { supabaseAdmin } = require("../config/supabaseClient");
 
-// Public routes
-router.post("/login", login);
-router.post("/signup", signup);
+// Get user profile (bypasses RLS)
+router.get("/profile/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-// Protected routes (login required)
-router.get("/profile", authenticateUser, getProfile);
-router.post("/logout", authenticateUser, logout);
+    const { data, error } = await supabaseAdmin
+      .from("artists")
+      .select("*")
+      .eq("id", userId)
+      .single();
 
-// Admin routes
-router.get("/users", authenticateUser, getAllUsers);
-router.get("/users/stats", authenticateUser, getUserStats);
-router.patch("/users/:id/role", authenticateUser, updateUserRole);
-router.delete("/users/:id", authenticateUser, deleteUser);
+    if (error) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;

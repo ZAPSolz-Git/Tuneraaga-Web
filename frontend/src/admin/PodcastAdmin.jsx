@@ -29,6 +29,8 @@ const PODCAST_TYPES = [
   "News",
 ];
 
+const API_BASE = "http://localhost:5000/api/content"; // SECURE BACKEND API
+
 const PodcastAdmin = () => {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -103,6 +105,39 @@ const PodcastAdmin = () => {
       Swal.fire("Upload Failed", err.message, "error");
     } finally {
       setUploadingAudio(false);
+    }
+  };
+
+  // ✅ SECURE DELETE FUNCTION VIA BACKEND
+  const handleDeletePodcast = async (id, title) => {
+    const result = await Swal.fire({
+      title: "Delete Podcast?",
+      text: `Are you sure you want to delete "${title}"? This cannot be undone.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const response = await fetch(`${API_BASE}/podcasts/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const res = await response.json();
+      if (!response.ok) throw new Error(res.error || "Failed to delete");
+
+      Swal.fire("Deleted!", `"${title}" has been deleted.`, "success");
+      fetchPodcasts();
+    } catch (err) {
+      Swal.fire("Error", err.message, "error");
     }
   };
 
@@ -571,8 +606,17 @@ const PodcastAdmin = () => {
               {podcasts.map((pod) => (
                 <div
                   key={pod.id}
-                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all"
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all relative"
                 >
+                  {/* SECURE DELETE BUTTON */}
+                  <button
+                    onClick={() => handleDeletePodcast(pod.id, pod.title)}
+                    className="absolute top-3 right-3 text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-all z-10"
+                    title="Delete Podcast"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+
                   <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100">
                     <img
                       src={pod.image_url || "https://via.placeholder.com/100"}
@@ -580,7 +624,7 @@ const PodcastAdmin = () => {
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <div className="flex flex-col justify-center flex-grow min-w-0">
+                  <div className="flex flex-col justify-center flex-grow min-w-0 pr-8">
                     <h3 className="font-bold text-slate-900 line-clamp-1">
                       {pod.title}
                     </h3>

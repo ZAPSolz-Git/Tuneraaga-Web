@@ -1,19 +1,9 @@
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
 
-const LOGO_URL =
-  "https://suaguciltgydkoyjmbmx.supabase.co/storage/v1/object/public/TuneRaaga/1781762603953_tuneraaga.png";
-
-async function fetchLogoBuffer() {
-  try {
-    const res = await fetch(LOGO_URL);
-    if (!res.ok) return null;
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } catch (err) {
-    console.warn("⚠️ Logo fetch failed, receipt will skip logo:", err.message);
-    return null;
-  }
-}
+// ─── Local logo path — no network call ────────────────────
+const LOGO_PATH = path.join(__dirname, "../assets/logo.png");
 
 function generateReceiptPDF({
   orderId,
@@ -24,10 +14,9 @@ function generateReceiptPDF({
   amount,
   paidAt,
 }) {
-  return new Promise(async (resolve, reject) => {
+  // Standard Promise — async anti-pattern fixed
+  return new Promise((resolve, reject) => {
     try {
-      const logoBuffer = await fetchLogoBuffer();
-
       const doc = new PDFDocument({ size: "A4", margin: 0 });
       const buffers = [];
 
@@ -50,11 +39,11 @@ function generateReceiptPDF({
       const topHeight = 260;
       doc.rect(marginX, 40, cardWidth, topHeight).fill(cardDark);
 
-      // logo
-      if (logoBuffer) {
+      // ── Logo from LOCAL file ──
+      if (fs.existsSync(LOGO_PATH)) {
         try {
-          doc.image(logoBuffer, pageWidth / 2 - 55, 65, { width: 110 });
-        } catch (e) {
+          doc.image(LOGO_PATH, pageWidth / 2 - 55, 65, { width: 110 });
+        } catch {
           doc
             .fillColor(white)
             .fontSize(22)
@@ -113,7 +102,7 @@ function generateReceiptPDF({
           align: "center",
         });
 
-      // ── PERFORATED DIVIDER (dashed line + punch notches) ──
+      // ── PERFORATED DIVIDER ──
       const dividerY = 40 + topHeight;
       doc
         .moveTo(marginX, dividerY)
@@ -124,7 +113,6 @@ function generateReceiptPDF({
         .stroke();
       doc.undash();
 
-     
       doc.circle(marginX, dividerY, 11).fill("#ffffff");
       doc.circle(marginX + cardWidth, dividerY, 11).fill("#ffffff");
 
@@ -168,7 +156,7 @@ function generateReceiptPDF({
         rowY += rowHeight;
       });
 
-      // barcode strip
+      // ── Barcode strip ──
       const barcodeY = rowY + 20;
       let barX = marginX + 24;
       const barcodeHeights = [10, 22, 16, 22, 10, 22, 16, 10, 22];
@@ -189,7 +177,7 @@ function generateReceiptPDF({
           { width: cardWidth, align: "center" },
         );
 
-      
+      // ── Outer border ──
       doc
         .roundedRect(marginX, 40, cardWidth, topHeight + bottomHeight, 20)
         .lineWidth(1)

@@ -1,1059 +1,1248 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  X,
-  Search,
-  Loader2,
-  Headphones,
-  Shuffle,
-  Heart,
-  SkipForward,
-  SkipBack,
-  Globe,
+  Plus,
   Radio as RadioIcon,
-  ChevronUp,
-  ChevronDown,
-  ListMusic,
+  X,
+  Upload,
+  Trash2,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle2,
+  Loader2,
+  Search,
+  Globe,
+  Headphones,
   Music2,
+  AlertCircle,
+  Check,
+  Filter,
+  Link2,
+  Pencil,
+  Minus,
+  ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import Swal from "sweetalert2";
 
-const formatCount = (num) => {
-  if (!num) return "0";
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-};
+const BUCKET_NAME = "TuneRaaga";
+const API_BASE = "http://localhost:5000/api/content";
 
-const formatTime = (val) => {
-  if (!val || !isFinite(val) || val <= 0) return "0:00";
-  const m = Math.floor(val / 60);
-  const s = Math.floor(val % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
-};
+const DEFAULT_STREAM_URL = "https://stream.zeno.fm/0r0xa792kwzuv";
 
-// ─── Expanded Full-Screen Player ──────────────────────────────────────────────
-const ExpandedPlayer = ({
-  station,
-  stationSongs,
-  currentSong,
-  songIndex,
-  isPlaying,
-  onPlayPause,
-  onSeek,
-  currentTime,
-  duration,
-  volume,
-  onVolumeChange,
-  isMuted,
-  toggleMute,
-  onNext,
-  onPrev,
-  onClose,
-  onCollapse,
-  isLiked,
-  onToggleLike,
-  onSongSelect,
-}) => {
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+const LANGUAGES = [
+  "Hindi",
+  "Tamil",
+  "Telugu",
+  "English",
+  "Punjabi",
+  "Marathi",
+  "Gujarati",
+  "Bengali",
+  "Kannada",
+  "Bhojpuri",
+  "Malayalam",
+  "Sanskrit",
+  "Haryanvi",
+  "Rajasthani",
+  "Odia",
+  "Assamese",
+  "Urdu",
+  "Arabic",
+  "Spanish",
+];
 
-  return (
-    <motion.div
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ type: "spring", damping: 28, stiffness: 300 }}
-      className="fixed inset-0 z-[200] flex flex-col md:flex-row overflow-hidden"
-      style={{
-        background:
-          "linear-gradient(135deg, #0f172a 0%, #1a2744 40%, #064e3b 100%)",
-      }}
-    >
-      {/* ── LEFT: Now Playing ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 py-6 relative overflow-y-auto">
-        {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-4">
-          <button
-            onClick={onCollapse}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all text-sm font-semibold"
-          >
-            <ChevronDown size={18} />
-            <span>Minimise</span>
-          </button>
-          <p className="text-white/50 text-xs font-bold uppercase tracking-widest truncate max-w-[160px]">
-            {station?.name}
-          </p>
-          <button
-            onClick={onClose}
-            className="p-2.5 rounded-full bg-white/10 hover:bg-red-500/70 text-white transition-all"
-          >
-            <X size={18} />
-          </button>
-        </div>
+const GENRES = [
+  "Bollywood",
+  "Lo-Fi",
+  "Classical",
+  "Devotional",
+  "Pop",
+  "Rock",
+  "Hip-Hop",
+  "Jazz",
+  "Electronic",
+  "Ghazal",
+  "Sufi",
+  "Folk",
+  "Retro",
+  "Romantic",
+  "Party",
+];
 
-        {/* Album Art */}
-        <div className="relative w-52 h-52 md:w-64 md:h-64 rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(16,185,129,0.3)] border border-white/10 mb-6 mt-16">
-          <img
-            src={
-              currentSong?.cover_url ||
-              station?.image_url ||
-              "https://via.placeholder.com/300"
-            }
-            alt={currentSong?.title || station?.name}
-            className="w-full h-full object-cover"
-          />
-          {isPlaying && (
-            <div className="absolute inset-0 bg-black/20 flex items-end justify-center pb-4">
-              <div className="flex items-end gap-1 h-6">
-                {[
-                  { from: "30%", to: "100%", delay: 0 },
-                  { from: "100%", to: "40%", delay: 0.1 },
-                  { from: "50%", to: "100%", delay: 0.2 },
-                  { from: "80%", to: "30%", delay: 0.15 },
-                ].map((bar, i) => (
-                  <motion.div
-                    key={i}
-                    animate={{ height: [bar.from, bar.to, bar.from] }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 0.55,
-                      delay: bar.delay,
-                    }}
-                    className="w-1 bg-emerald-400 rounded-full"
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+const PAGE_SIZE = 30;
 
-        {/* Title & Artist */}
-        <div className="text-center mb-4 px-4 w-full max-w-xs">
-          <h2 className="text-xl md:text-2xl font-extrabold text-white truncate">
-            {currentSong?.title || station?.name}
-          </h2>
-          {currentSong?.primary_artist && (
-            <p className="text-emerald-400 font-medium mt-1 text-sm truncate">
-              {currentSong.primary_artist}
-            </p>
-          )}
-          <p className="text-white/30 text-[11px] mt-1">
-            {songIndex + 1} / {stationSongs.length}
-          </p>
-        </div>
-
-        {/* Progress */}
-        <div className="w-full max-w-sm mb-2">
-          <div className="relative h-1.5 bg-white/15 rounded-full cursor-pointer group">
-            <div
-              className="absolute top-0 left-0 h-full bg-emerald-500 rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ left: `${progress}%`, marginLeft: "-7px" }}
-            />
-            <input
-              type="range"
-              min="0"
-              max={duration || 100}
-              step="0.1"
-              value={currentTime}
-              onChange={(e) => onSeek(parseFloat(e.target.value))}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-          </div>
-          <div className="flex justify-between mt-1.5 text-[11px] font-mono text-white/40">
-            <span>{formatTime(currentTime)}</span>
-            <span>{duration > 0 ? formatTime(duration) : "--:--"}</span>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex items-center gap-7 mb-6">
-          <button
-            onClick={onPrev}
-            className="text-white/50 hover:text-white transition-colors hover:scale-110"
-          >
-            <SkipBack className="w-7 h-7" />
-          </button>
-          <button
-            onClick={onPlayPause}
-            className="w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.5)] bg-emerald-500 hover:bg-emerald-400 text-white hover:scale-105 transition-all"
-          >
-            {isPlaying ? (
-              <Pause className="w-7 h-7 fill-white" />
-            ) : (
-              <Play className="w-7 h-7 fill-white ml-0.5" />
-            )}
-          </button>
-          <button
-            onClick={onNext}
-            className="text-white/50 hover:text-white transition-colors hover:scale-110"
-          >
-            <SkipForward className="w-7 h-7" />
-          </button>
-        </div>
-
-        {/* Volume + Like */}
-        <div className="flex items-center gap-5">
-          <button
-            onClick={onToggleLike}
-            className={`transition-all hover:scale-110 ${isLiked ? "text-red-400" : "text-white/40 hover:text-red-400"}`}
-          >
-            <Heart size={20} fill={isLiked ? "currentColor" : "none"} />
-          </button>
-          <button
-            onClick={toggleMute}
-            className="text-white/40 hover:text-emerald-400 transition-colors"
-          >
-            {isMuted || volume === 0 ? (
-              <VolumeX size={20} />
-            ) : (
-              <Volume2 size={20} />
-            )}
-          </button>
-          <div className="relative h-1.5 bg-white/15 rounded-full cursor-pointer w-28">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={isMuted ? 0 : volume}
-              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-            <div
-              className="absolute top-0 left-0 h-full rounded-full bg-emerald-500"
-              style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ── RIGHT: Song Queue ── */}
-      <div className="w-full md:w-[360px] flex flex-col border-t md:border-t-0 md:border-l border-white/10 bg-black/25 backdrop-blur-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/10 flex items-center gap-2 flex-shrink-0">
-          <ListMusic size={16} className="text-emerald-400" />
-          <h3 className="font-bold text-white text-sm uppercase tracking-wider">
-            Up Next
-          </h3>
-          <span className="ml-auto text-xs text-white/40 bg-white/10 px-2 py-0.5 rounded-full">
-            {stationSongs.length} songs
-          </span>
-        </div>
-        <div
-          className="flex-1 overflow-y-auto py-2"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {stationSongs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-white/30">
-              <Music2 size={32} className="mb-2" />
-              <p className="text-sm">No songs in queue</p>
-            </div>
-          ) : (
-            stationSongs.map((song, idx) => {
-              const isActive = idx === songIndex;
-              return (
-                <button
-                  key={song.id}
-                  onClick={() => onSongSelect(idx)}
-                  className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all group ${
-                    isActive
-                      ? "bg-emerald-500/15 border-l-[3px] border-emerald-500"
-                      : "hover:bg-white/5 border-l-[3px] border-transparent"
-                  }`}
-                >
-                  <div className="w-6 flex-shrink-0 flex items-center justify-center">
-                    {isActive && isPlaying ? (
-                      <div className="flex items-end gap-[2px] h-4">
-                        {[0, 0.1, 0.2].map((delay, i) => (
-                          <motion.div
-                            key={i}
-                            animate={{ height: ["30%", "100%", "30%"] }}
-                            transition={{
-                              repeat: Infinity,
-                              duration: 0.5,
-                              delay,
-                            }}
-                            className="w-[3px] bg-emerald-400 rounded-full"
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <span
-                        className={`text-xs font-bold ${isActive ? "text-emerald-400" : "text-white/30 group-hover:text-white/60"}`}
-                      >
-                        {idx + 1}
-                      </span>
-                    )}
-                  </div>
-                  <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-white/10">
-                    <img
-                      src={song.cover_url || "https://via.placeholder.com/40"}
-                      alt={song.title}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.src = "https://via.placeholder.com/40";
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={`text-sm font-semibold truncate ${isActive ? "text-emerald-400" : "text-white/80 group-hover:text-white"}`}
-                    >
-                      {song.title}
-                    </p>
-                    <p className="text-xs text-white/40 truncate">
-                      {song.primary_artist || "Unknown Artist"}
-                    </p>
-                  </div>
-                  {!isActive && (
-                    <Play
-                      size={12}
-                      className="text-white/0 group-hover:text-white/60 flex-shrink-0 transition-colors fill-current"
-                    />
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// ─── Bottom Mini Player ────────────────────────────────────────────────────────
-const RadioPlayer = ({
-  station,
-  currentSong,
-  isPlaying,
-  onPlayPause,
-  onSeek,
-  currentTime,
-  duration,
-  volume,
-  onVolumeChange,
-  isMuted,
-  toggleMute,
-  onNext,
-  onPrev,
-  onClose,
-  isLiked,
-  onToggleLike,
-  songIndex,
-  totalSongs,
-  onExpand,
-}) => {
-  if (!station) return null;
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  return (
-    <motion.div
-      initial={{ y: 100 }}
-      animate={{ y: 0 }}
-      exit={{ y: 100 }}
-      transition={{ type: "spring", damping: 20 }}
-      className="fixed bottom-0 left-0 right-0 z-[100]"
-      style={{
-        background: "#0f172a",
-        borderTop: "1px solid rgba(255,255,255,0.08)",
-      }}
-    >
-      {/* Progress bar */}
-      <div
-        className="w-full h-[3px] relative cursor-pointer"
-        style={{ background: "rgba(255,255,255,0.08)" }}
-      >
-        <div
-          className="absolute top-0 left-0 h-full bg-emerald-500 transition-all"
-          style={{ width: `${progress}%` }}
-        />
-        <input
-          type="range"
-          min="0"
-          max={duration || 100}
-          step="0.1"
-          value={currentTime}
-          onChange={(e) => onSeek(parseFloat(e.target.value))}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          style={{ margin: 0 }}
-        />
-      </div>
-
-      {/* Player row */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center",
-          padding: "10px 20px",
-          gap: "12px",
-        }}
-      >
-        {/* ── LEFT: Album + Info + EXPAND BUTTON ── */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            minWidth: 0,
-          }}
-        >
-          {/* Album art */}
-          <div
-            onClick={onExpand}
-            style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "8px",
-              overflow: "hidden",
-              flexShrink: 0,
-              cursor: "pointer",
-              border: "1px solid rgba(255,255,255,0.12)",
-              position: "relative",
-            }}
-          >
-            <img
-              src={
-                currentSong?.cover_url ||
-                station.image_url ||
-                "https://via.placeholder.com/50"
-              }
-              alt={station.name}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-            {isPlaying && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  background: "rgba(0,0,0,0.45)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-end",
-                    gap: "2px",
-                    height: "14px",
-                  }}
-                >
-                  {[0, 0.12, 0.25].map((delay, i) => (
-                    <motion.div
-                      key={i}
-                      animate={{ height: ["40%", "100%", "40%"] }}
-                      transition={{ repeat: Infinity, duration: 0.5, delay }}
-                      style={{
-                        width: "3px",
-                        background: "#34d399",
-                        borderRadius: "2px",
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Song info */}
-          <div
-            onClick={onExpand}
-            style={{ minWidth: 0, flex: 1, cursor: "pointer" }}
-          >
-            <div
-              style={{
-                fontWeight: 700,
-                color: "#fff",
-                fontSize: "14px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {currentSong?.title || station.name}
-            </div>
-            {currentSong?.primary_artist && (
-              <div
-                style={{
-                  fontSize: "11px",
-                  color: "#34d399",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {currentSong.primary_artist}
-              </div>
-            )}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                marginTop: "2px",
-              }}
-            >
-              <span
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  background: isPlaying ? "#34d399" : "#475569",
-                  ...(isPlaying ? { animation: "pulse 1.5s infinite" } : {}),
-                }}
-              />
-              <span
-                style={{
-                  fontSize: "10px",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: "#64748b",
-                }}
-              >
-                {isPlaying ? "Playing" : "Paused"}
-              </span>
-              {totalSongs > 0 && (
-                <span style={{ fontSize: "10px", color: "#475569" }}>
-                  {songIndex + 1}/{totalSongs}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* ═══ EXPAND BUTTON — always visible, always styled ═══ */}
-          <button
-            onClick={onExpand}
-            title="Open full player"
-            style={{
-              flexShrink: 0,
-              width: "36px",
-              height: "36px",
-              borderRadius: "50%",
-              border: "2px solid #10b981",
-              background: "rgba(16,185,129,0.15)",
-              color: "#10b981",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(16,185,129,0.35)";
-              e.currentTarget.style.transform = "scale(1.1)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(16,185,129,0.15)";
-              e.currentTarget.style.transform = "scale(1)";
-            }}
-          >
-            <ChevronUp size={20} strokeWidth={2.5} />
-          </button>
-        </div>
-
-        {/* ── CENTER: Controls + time ── */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <button
-              onClick={onPrev}
-              style={{
-                color: "#94a3b8",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                display: "flex",
-              }}
-            >
-              <SkipBack size={20} />
-            </button>
-            <button
-              onClick={onPlayPause}
-              style={{
-                width: "44px",
-                height: "44px",
-                borderRadius: "50%",
-                background: "#10b981",
-                border: "none",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                boxShadow: "0 0 20px rgba(16,185,129,0.4)",
-              }}
-            >
-              {isPlaying ? (
-                <Pause size={20} fill="white" />
-              ) : (
-                <Play size={20} fill="white" style={{ marginLeft: "2px" }} />
-              )}
-            </button>
-            <button
-              onClick={onNext}
-              style={{
-                color: "#94a3b8",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                display: "flex",
-              }}
-            >
-              <SkipForward size={20} />
-            </button>
-          </div>
-          <div
-            style={{
-              fontSize: "11px",
-              fontFamily: "monospace",
-              color: "#475569",
-            }}
-          >
-            {formatTime(currentTime)}
-            <span style={{ margin: "0 4px", color: "#1e293b" }}>·</span>
-            {duration > 0 ? formatTime(duration) : "--:--"}
-          </div>
-        </div>
-
-        {/* ── RIGHT: Volume + Like + Close ── */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            gap: "10px",
-          }}
-        >
-          <button
-            onClick={onToggleLike}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: isLiked ? "#ef4444" : "#64748b",
-            }}
-          >
-            <Heart size={17} fill={isLiked ? "currentColor" : "none"} />
-          </button>
-          <button
-            onClick={toggleMute}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#64748b",
-              display: "flex",
-            }}
-          >
-            {isMuted || volume === 0 ? (
-              <VolumeX size={16} />
-            ) : (
-              <Volume2 size={16} />
-            )}
-          </button>
-          <div
-            style={{
-              position: "relative",
-              height: "6px",
-              background: "#1e293b",
-              borderRadius: "3px",
-              cursor: "pointer",
-              width: "80px",
-            }}
-          >
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={isMuted ? 0 : volume}
-              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                opacity: 0,
-                cursor: "pointer",
-                zIndex: 10,
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                height: "100%",
-                borderRadius: "3px",
-                background: "#10b981",
-                width: `${(isMuted ? 0 : volume) * 100}%`,
-              }}
-            />
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "#64748b",
-              display: "flex",
-            }}
-          >
-            <X size={17} />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// ─── Main Radio Component ─────────────────────────────────────────────────────
-const Radio = () => {
-  const [stations, setStations] = useState([]);
-  const [loading, setLoading] = useState(true);
+const RadioAdmin = () => {
+  const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedLang, setSelectedLang] = useState("All");
+  const [filterLang, setFilterLang] = useState("All");
 
-  const [currentStation, setCurrentStation] = useState(null);
-  const [stationSongs, setStationSongs] = useState([]);
-  const [songIndex, setSongIndex] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [likedStations, setLikedStations] = useState(new Set());
+  // Edit state
+  const [editingStation, setEditingStation] = useState(null);
+  const [existingSongIds, setExistingSongIds] = useState(new Set());
+
+  // Station form
+  const [formData, setFormData] = useState({
+    name: "",
+    language: "Hindi",
+    genre: "Bollywood",
+    description: "",
+    stream_url: DEFAULT_STREAM_URL,
+    image: null,
+    imagePreview: null,
+  });
+
+  // Song selection
+  const [allReleases, setAllReleases] = useState([]);
+  const [selectedSongIds, setSelectedSongIds] = useState(new Set());
+  const [songSearch, setSongSearch] = useState("");
+  const [songLangFilter, setSongLangFilter] = useState("All");
+  const [songGenreFilter, setSongGenreFilter] = useState("All");
+  const [songFormatFilter, setSongFormatFilter] = useState("All");
   const [loadingSongs, setLoadingSongs] = useState(false);
-  const [noSongsError, setNoSongsError] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [songPage, setSongPage] = useState(0);
+  const [hasMoreSongs, setHasMoreSongs] = useState(false);
 
-  const audioRef = useRef(null);
-  const currentStationRef = useRef(null);
-  const stationSongsRef = useRef([]);
-  const songIndexRef = useRef(0);
+  const [stations, setStations] = useState([]);
 
-  useEffect(() => {
-    currentStationRef.current = currentStation;
-  }, [currentStation]);
-  useEffect(() => {
-    stationSongsRef.current = stationSongs;
-  }, [stationSongs]);
-  useEffect(() => {
-    songIndexRef.current = songIndex;
-  }, [songIndex]);
+  const isEditMode = !!editingStation;
 
-  useEffect(() => {
-    const fetchStations = async () => {
-      setLoading(true);
+  // ═══════════════════════════════════════════════════════════
+  // FETCH PUBLISHED RELEASES
+  // ═══════════════════════════════════════════════════════════
+  const fetchPublishedReleases = useCallback(
+    async (reset = true) => {
+      setLoadingSongs(true);
       try {
-        const { data, error } = await supabase
-          .from("radio_stations")
-          .select("*")
-          .eq("is_live", true)
-          .order("total_listeners", { ascending: false });
+        const page = reset ? 0 : songPage;
+        const from = page * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+        const { data, error, count } = await supabase
+          .from("releases")
+          .select(
+            "id, title, primary_artist, genre, language, format, cover_url, audio_url, album_name",
+            { count: "exact" },
+          )
+          .eq("status", "Published")
+          .not("audio_url", "is", null)
+          .neq("audio_url", "")
+          .order("created_at", { ascending: false })
+          .range(from, to);
         if (error) throw error;
-        setStations(data || []);
+        if (reset) {
+          setAllReleases(data || []);
+        } else {
+          setAllReleases((prev) => [...prev, ...(data || [])]);
+        }
+        setHasMoreSongs((count || 0) > to + 1);
+        if (reset) setSongPage(0);
       } catch (err) {
-        console.error("Error fetching stations:", err);
+        console.error("Error fetching releases:", err);
       } finally {
-        setLoading(false);
+        setLoadingSongs(false);
       }
-    };
+    },
+    [songPage],
+  );
+
+  useEffect(() => {
+    if (step === 2) fetchPublishedReleases(true);
+  }, [step, fetchPublishedReleases]);
+
+  const loadMoreSongs = () => setSongPage((p) => p + 1);
+  useEffect(() => {
+    if (songPage > 0 && step === 2) fetchPublishedReleases(false);
+  }, [songPage, fetchPublishedReleases, step]);
+
+  // ═══════════════════════════════════════════════════════════
+  // FETCH STATIONS
+  // ═══════════════════════════════════════════════════════════
+  const fetchStations = async () => {
+    setFetching(true);
+    try {
+      const { data, error } = await supabase
+        .from("radio_stations")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setStations(data || []);
+    } catch (err) {
+      Swal.fire("Error", "Failed to load radio stations", "error");
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  useEffect(() => {
     fetchStations();
   }, []);
 
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = "auto";
-    audioRef.current = audio;
-
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onError = () => setPlaying(false);
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMeta = () => {
-      if (audio.duration && isFinite(audio.duration))
-        setDuration(audio.duration);
-    };
-    const onEnded = () => {
-      const songs = stationSongsRef.current;
-      if (!songs.length) return;
-      const nextIdx = (songIndexRef.current + 1) % songs.length;
-      setSongIndex(nextIdx);
-      songIndexRef.current = nextIdx;
-      setCurrentTime(0);
-      setDuration(0);
-      const next = songs[nextIdx];
-      if (next?.audio_url) {
-        audio.src = next.audio_url;
-        audio.load();
-        audio.play().catch(() => {});
-      }
-    };
-
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("error", onError);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMeta);
-    audio.addEventListener("ended", onEnded);
-
-    return () => {
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("error", onError);
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onLoadedMeta);
-      audio.removeEventListener("ended", onEnded);
-      audio.pause();
-      audio.removeAttribute("src");
-      audio.load();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = isMuted;
+  // ═══════════════════════════════════════════════════════════
+  // IMAGE UPLOAD
+  // ═══════════════════════════════════════════════════════════
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFormData((prev) => ({
+        ...prev,
+        image: file,
+        imagePreview: URL.createObjectURL(file),
+      }));
     }
-  }, [volume, isMuted]);
+  };
 
-  const loadAndPlayStation = useCallback(async (station) => {
-    if (!station) return;
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (currentStationRef.current?.id === station.id) {
-      audio.paused ? audio.play().catch(() => {}) : audio.pause();
-      return;
-    }
-
-    audio.pause();
-    setPlaying(false);
-    setNoSongsError(false);
-    setLoadingSongs(true);
-    setCurrentTime(0);
-    setDuration(0);
+  // ═══════════════════════════════════════════════════════════
+  // ✅ SECURE DELETE — Backend API (CASCADE handles radio_songs)
+  // ═══════════════════════════════════════════════════════════
+  const handleDeleteStation = async (id, name) => {
+    const result = await Swal.fire({
+      title: "Delete Radio Station?",
+      html: `Delete <strong>"${name}"</strong>?<br><span class="text-xs text-slate-400">All song mappings will be removed automatically.</span>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
+    });
+    if (!result.isConfirmed) return;
 
     try {
-      const { data: rsData, error: rsErr } = await supabase
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const response = await fetch(`${API_BASE}/radio/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const res = await response.json();
+      if (!response.ok) throw new Error(res.error || "Failed to delete");
+      Swal.fire("Deleted!", `"${name}" has been deleted.`, "success");
+      fetchStations();
+    } catch (err) {
+      Swal.fire("Error", err.message, "error");
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  // START EDIT
+  // ═══════════════════════════════════════════════════════════
+  const startEdit = async (station) => {
+    setEditingStation(station);
+    setFormData({
+      name: station.name,
+      language: station.language || "Hindi",
+      genre: station.genre || "Bollywood",
+      description: station.description || "",
+      stream_url: station.stream_url || DEFAULT_STREAM_URL,
+      image: null,
+      imagePreview: station.image_url || null,
+    });
+    try {
+      const { data: mappings } = await supabase
         .from("radio_songs")
         .select("song_id")
         .eq("radio_id", station.id);
-      if (rsErr) throw rsErr;
-
-      const songIds = (rsData || []).map((r) => r.song_id).filter(Boolean);
-
-      if (!songIds.length) {
-        setCurrentStation(station);
-        currentStationRef.current = station;
-        setStationSongs([]);
-        stationSongsRef.current = [];
-        setSongIndex(0);
-        songIndexRef.current = 0;
-        setNoSongsError(true);
-        return;
-      }
-
-      const { data: relData, error: relErr } = await supabase
-        .from("releases")
-        .select("id, title, primary_artist, audio_url, cover_url")
-        .in("id", songIds);
-      if (relErr) throw relErr;
-
-      const songs = (relData || []).filter(
-        (s) => s && s.audio_url && s.audio_url.trim() !== "",
+      const ids = new Set(
+        (mappings || []).map((m) => m.song_id).filter(Boolean),
       );
-
-      setCurrentStation(station);
-      currentStationRef.current = station;
-      setStationSongs(songs);
-      stationSongsRef.current = songs;
-      setSongIndex(0);
-      songIndexRef.current = 0;
-
-      if (!songs.length) {
-        setNoSongsError(true);
-        return;
-      }
-
-      supabase
-        .from("radio_stations")
-        .update({ total_listeners: (station.total_listeners || 0) + 1 })
-        .eq("id", station.id)
-        .then(() => {
-          setStations((prev) =>
-            prev.map((s) =>
-              s.id === station.id
-                ? { ...s, total_listeners: (s.total_listeners || 0) + 1 }
-                : s,
-            ),
-          );
-        });
-
-      audio.src = songs[0].audio_url;
-      audio.load();
-
-      const tryPlay = () =>
-        audio.play().catch((e) => {
-          console.error("Play error:", e);
-          setPlaying(false);
-        });
-
-      if (audio.readyState >= 2) {
-        tryPlay();
-      } else {
-        audio.addEventListener("canplay", tryPlay, { once: true });
-      }
+      setExistingSongIds(ids);
+      setSelectedSongIds(ids);
     } catch (err) {
-      console.error("Error loading station:", err);
-      setNoSongsError(true);
-    } finally {
-      setLoadingSongs(false);
+      setExistingSongIds(new Set());
+      setSelectedSongIds(new Set());
     }
-  }, []);
+    setStep(1);
+  };
 
-  const skipToIndex = useCallback((idx) => {
-    const songs = stationSongsRef.current;
-    if (!songs.length) return;
-    const audio = audioRef.current;
-    if (!audio) return;
-    const i = (idx + songs.length) % songs.length;
-    setSongIndex(i);
-    songIndexRef.current = i;
-    setCurrentTime(0);
-    setDuration(0);
-    audio.src = songs[i].audio_url;
-    audio.load();
-    audio.play().catch(() => {});
-  }, []);
-
-  const handleNext = useCallback(
-    () => skipToIndex(songIndexRef.current + 1),
-    [skipToIndex],
-  );
-  const handlePrev = useCallback(
-    () => skipToIndex(songIndexRef.current - 1),
-    [skipToIndex],
-  );
-
-  const handlePlayPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.paused ? audio.play().catch(() => {}) : audio.pause();
-  }, []);
-
-  const handleSeek = useCallback((time) => {
-    const audio = audioRef.current;
-    if (!audio || !isFinite(time)) return;
-    audio.currentTime = time;
-    setCurrentTime(time);
-  }, []);
-
-  const handleClosePlayer = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute("src");
-      audio.load();
-    }
-    setPlaying(false);
-    setCurrentStation(null);
-    currentStationRef.current = null;
-    setStationSongs([]);
-    stationSongsRef.current = [];
-    setSongIndex(0);
-    songIndexRef.current = 0;
-    setCurrentTime(0);
-    setDuration(0);
-    setNoSongsError(false);
-    setIsExpanded(false);
-  }, []);
-
-  const toggleMute = useCallback(() => setIsMuted((m) => !m), []);
-  const handleVolumeChange = useCallback((v) => {
-    setVolume(v);
-    setIsMuted(v === 0);
-  }, []);
-  const toggleLikeStation = useCallback((id) => {
-    setLikedStations((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
+  // ═══════════════════════════════════════════════════════════
+  // SONG SELECTION
+  // ═══════════════════════════════════════════════════════════
+  const toggleSong = (id) => {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 200) {
+          Swal.fire("Limit", "Maximum 200 songs per station.", "warning");
+          return prev;
+        }
+        next.add(id);
+      }
+      return next;
     });
-  }, []);
+  };
 
-  const availableLanguages = useMemo(() => {
-    const langs = new Set(stations.map((s) => s.language).filter(Boolean));
-    return ["All", ...Array.from(langs)];
-  }, [stations]);
+  const selectAllVisible = (ids) => {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => {
+        if (next.size < 200) next.add(id);
+      });
+      return next;
+    });
+  };
 
-  const filteredStations = useMemo(() => {
-    let result = stations;
-    if (selectedLang !== "All")
-      result = result.filter((s) => s.language === selectedLang);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          (s.genre || "").toLowerCase().includes(q),
-      );
+  const deselectAllVisible = (ids) => {
+    setSelectedSongIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  // FILTERED SONGS
+  // ═══════════════════════════════════════════════════════════
+  const filteredSongs = allReleases.filter((song) => {
+    const q = songSearch.toLowerCase().trim();
+    const matchSearch =
+      !q ||
+      song.title.toLowerCase().includes(q) ||
+      (song.primary_artist || "").toLowerCase().includes(q) ||
+      (song.album_name || "").toLowerCase().includes(q);
+    const matchLang =
+      songLangFilter === "All" || song.language === songLangFilter;
+    const matchGenre =
+      songGenreFilter === "All" || song.genre === songGenreFilter;
+    const matchFormat =
+      songFormatFilter === "All" || song.format === songFormatFilter;
+    return matchSearch && matchLang && matchGenre && matchFormat;
+  });
+
+  const filteredSongIds = filteredSongs.map((s) => s.id);
+  const songLanguages = [
+    "All",
+    ...Array.from(
+      new Set(allReleases.map((s) => s.language).filter(Boolean)),
+    ).sort(),
+  ];
+  const songGenres = [
+    "All",
+    ...Array.from(
+      new Set(allReleases.map((s) => s.genre).filter(Boolean)),
+    ).sort(),
+  ];
+  const songFormats = [
+    "All",
+    ...Array.from(
+      new Set(allReleases.map((s) => s.format).filter(Boolean)),
+    ).sort(),
+  ];
+
+  // ═══════════════════════════════════════════════════════════
+  // ✅ SUBMIT — CREATE (direct) or UPDATE (backend API)
+  // ═══════════════════════════════════════════════════════════
+  const handleSubmit = async () => {
+    if (!formData.name) {
+      return Swal.fire("Error", "Station name is required.", "error");
     }
-    return result;
-  }, [stations, selectedLang, searchQuery]);
+    if (!isEditMode && !formData.image) {
+      return Swal.fire("Error", "Cover image is required.", "error");
+    }
+    if (selectedSongIds.size === 0) {
+      return Swal.fire("Error", "Please select at least 1 song.", "error");
+    }
 
-  const currentSong = stationSongs[songIndex] || null;
+    setLoading(true);
+    try {
+      let imgUrl = editingStation?.image_url || null;
 
+      // Upload new image if selected
+      if (formData.image) {
+        const imgFileName = `radiocover/${Date.now()}-${formData.image.name}`;
+        const { data: imgData, error: imgError } = await supabase.storage
+          .from(BUCKET_NAME)
+          .upload(imgFileName, formData.image);
+        if (imgError) throw imgError;
+        const { data: urlData } = supabase.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(imgData.path);
+        imgUrl = urlData.publicUrl;
+      }
+
+      if (isEditMode) {
+        // ══════════════════════════════════════════
+        // ✅ EDIT MODE — SINGLE BACKEND API CALL
+        // No direct supabase.delete() anywhere!
+        // ══════════════════════════════════════════
+        const toRemove = [...existingSongIds].filter(
+          (id) => !selectedSongIds.has(id),
+        );
+        const toAdd = [...selectedSongIds].filter(
+          (id) => !existingSongIds.has(id),
+        );
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const response = await fetch(`${API_BASE}/radio/${editingStation.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            description: formData.description || null,
+            language: formData.language,
+            genre: formData.genre,
+            image_url: imgUrl,
+            stream_url: formData.stream_url || DEFAULT_STREAM_URL,
+            removeSongs: toRemove,
+            addSongs: toAdd,
+          }),
+        });
+
+        const res = await response.json();
+        if (!response.ok) throw new Error(res.error || "Failed to update");
+
+        const changes = [];
+        if (toAdd.length > 0) changes.push(`+${toAdd.length} songs`);
+        if (toRemove.length > 0) changes.push(`-${toRemove.length} songs`);
+        if (formData.image) changes.push("Image updated");
+        if (formData.name !== editingStation.name) changes.push("Name updated");
+
+        Swal.fire(
+          "Updated!",
+          `"${formData.name}" updated.${changes.length > 0 ? `<br><span class="text-xs text-slate-400">${changes.join(" · ")}</span>` : ""}`,
+          "success",
+        );
+      } else {
+        // ══════════════════════════════════════════
+        // CREATE MODE
+        // ══════════════════════════════════════════
+        const { data: newStation, error: stationError } = await supabase
+          .from("radio_stations")
+          .insert({
+            name: formData.name,
+            description: formData.description || null,
+            language: formData.language,
+            genre: formData.genre,
+            image_url: imgUrl,
+            stream_url: formData.stream_url || DEFAULT_STREAM_URL,
+            is_live: true,
+            total_listeners: 0,
+          })
+          .select()
+          .single();
+        if (stationError) throw stationError;
+
+        const { error: mappingError } = await supabase
+          .from("radio_songs")
+          .insert(
+            Array.from(selectedSongIds).map((songId) => ({
+              radio_id: newStation.id,
+              song_id: songId,
+            })),
+          );
+        if (mappingError) throw mappingError;
+
+        Swal.fire(
+          "Success!",
+          `"${formData.name}" created with ${selectedSongIds.size} songs!`,
+          "success",
+        );
+      }
+
+      resetForm();
+      fetchStations();
+    } catch (err) {
+      Swal.fire("Error", err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setStep(0);
+    setEditingStation(null);
+    setExistingSongIds(new Set());
+    setFormData({
+      name: "",
+      language: "Hindi",
+      genre: "Bollywood",
+      description: "",
+      stream_url: DEFAULT_STREAM_URL,
+      image: null,
+      imagePreview: null,
+    });
+    setSelectedSongIds(new Set());
+    setAllReleases([]);
+    setSongSearch("");
+    setSongLangFilter("All");
+    setSongGenreFilter("All");
+    setSongFormatFilter("All");
+    setSongPage(0);
+    setHasMoreSongs(false);
+  };
+
+  // Filter stations list
+  const filteredStations = stations.filter((s) => {
+    const matchSearch =
+      !searchQuery.trim() ||
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.genre || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const matchLang = filterLang === "All" || s.language === filterLang;
+    return matchSearch && matchLang;
+  });
+
+  const availableLanguages = [
+    "All",
+    ...Array.from(new Set(stations.map((s) => s.language).filter(Boolean))),
+  ];
+  const formatCount = (num) => {
+    if (!num) return "0";
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+    if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+    return num.toString();
+  };
+
+  const songsToAdd = [...selectedSongIds].filter(
+    (id) => !existingSongIds.has(id),
+  );
+  const songsToRemove = [...existingSongIds].filter(
+    (id) => !selectedSongIds.has(id),
+  );
+
+  // ═══════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════
   return (
-    <div className="w-full min-h-screen text-slate-900 pb-28 relative overflow-hidden bg-gradient-to-br from-slate-50 via-emerald-50/30 to-slate-50">
-      <div className="absolute top-0 left-0 right-0 h-72 bg-gradient-to-b from-emerald-100/60 to-transparent pointer-events-none" />
+    <div className="p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">
+            Manage <span className="text-emerald-600">Radio Stations</span>
+          </h2>
+          <p className="text-slate-500 text-sm">
+            Create, edit, and manage radio stations.
+          </p>
+        </div>
+        {step === 0 && (
+          <button
+            onClick={() => setStep(1)}
+            className="px-6 py-2 rounded-lg bg-emerald-600 text-white font-bold shadow hover:bg-emerald-700 transition flex items-center gap-2"
+          >
+            <Plus size={18} /> Create New Station
+          </button>
+        )}
+      </div>
 
-      <div className="relative px-4 md:px-8 pt-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
-              <span className="text-emerald-600">Radio</span> Stations
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Tune into live radio from across India.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative w-full md:w-64 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 group-focus-within:text-emerald-500" />
+      {/* ═══ CREATE / EDIT FORM ═══ */}
+      <AnimatePresence mode="wait">
+        {step > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden mb-8"
+          >
+            {/* Mode Badge */}
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+              <div>
+                {isEditMode ? (
+                  <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5">
+                    <Pencil size={12} /> Editing Station
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center gap-1.5">
+                    <Plus size={12} /> New Station
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={resetForm}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-200 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Stepper */}
+            <div className="bg-slate-50 border-b border-slate-200 px-8 py-4 flex items-center justify-center gap-6 md:gap-10">
+              {[
+                { id: 1, label: "Station Details" },
+                { id: 2, label: "Select Songs" },
+                { id: 3, label: isEditMode ? "Update" : "Publish" },
+              ].map((s) => (
+                <div key={s.id} className="flex items-center gap-2">
+                  <div
+                    className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-all text-sm font-bold ${
+                      step >= s.id
+                        ? isEditMode
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : "border-emerald-600 bg-emerald-600 text-white"
+                        : "border-gray-300 text-gray-400 bg-white"
+                    }`}
+                  >
+                    {step > s.id ? <CheckCircle2 size={15} /> : s.id}
+                  </div>
+                  <span
+                    className={`text-xs font-bold uppercase hidden sm:inline ${
+                      step >= s.id
+                        ? isEditMode
+                          ? "text-blue-700"
+                          : "text-emerald-700"
+                        : "text-gray-400"
+                    }`}
+                  >
+                    {s.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-5 md:p-8 bg-white min-h-[500px]">
+              {/* ─── STEP 1 ─── */}
+              {step === 1 && (
+                <div className="max-w-3xl mx-auto grid md:grid-cols-2 gap-8 items-start">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">
+                      Station Cover
+                      {isEditMode && (
+                        <span className="text-xs font-normal text-slate-400 ml-2">
+                          (keep current if empty)
+                        </span>
+                      )}
+                    </h3>
+                    <div
+                      onClick={() =>
+                        document.getElementById("radioCoverInput").click()
+                      }
+                      className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer ${
+                        formData.image
+                          ? "border-green-400 bg-green-50"
+                          : formData.imagePreview
+                            ? "border-blue-300 bg-blue-50"
+                            : "border-gray-300 hover:border-emerald-400 bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        id="radioCoverInput"
+                        hidden
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                      />
+                      {formData.imagePreview ? (
+                        <div className="relative">
+                          <img
+                            src={formData.imagePreview}
+                            alt="Preview"
+                            className="w-48 h-48 object-cover rounded-2xl shadow-md mx-auto"
+                          />
+                          {isEditMode && !formData.image && (
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                              Current — Click to Change
+                            </div>
+                          )}
+                          {formData.image && (
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-green-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                              New Image
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                          <p className="text-gray-900 font-medium text-sm">
+                            Click to upload cover
+                          </p>
+                          <p className="text-gray-500 text-xs mt-1">
+                            Square image recommended
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">
+                      Station Info
+                    </h3>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">
+                        Station Name <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={formData.name}
+                        onChange={(e) =>
+                          setFormData({ ...formData, name: e.target.value })
+                        }
+                        placeholder="e.g. Radio Mirchi Hindi"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">
+                          Language
+                        </label>
+                        <select
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 bg-white outline-none"
+                          value={formData.language}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              language: e.target.value,
+                            })
+                          }
+                        >
+                          {LANGUAGES.map((l) => (
+                            <option key={l} value={l}>
+                              {l}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">
+                          Genre
+                        </label>
+                        <select
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 bg-white outline-none"
+                          value={formData.genre}
+                          onChange={(e) =>
+                            setFormData({ ...formData, genre: e.target.value })
+                          }
+                        >
+                          {GENRES.map((g) => (
+                            <option key={g} value={g}>
+                              {g}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">
+                        <span className="flex items-center gap-1.5">
+                          <Link2 size={13} className="text-slate-400" /> Stream
+                          URL{" "}
+                          <span className="font-normal text-slate-400 text-xs ml-1">
+                            (optional)
+                          </span>
+                        </span>
+                      </label>
+                      <input
+                        type="url"
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none text-sm"
+                        value={formData.stream_url}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            stream_url: e.target.value,
+                          })
+                        }
+                        placeholder="https://stream.zeno.fm/..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">
+                        Description
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 outline-none resize-none text-sm"
+                        value={formData.description}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            description: e.target.value,
+                          })
+                        }
+                        placeholder="Brief description..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── STEP 2 ─── */}
+              {step === 2 && (
+                <div className="max-w-6xl mx-auto">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">
+                        {isEditMode ? "Manage Songs for" : "Select Songs for"} "
+                        {formData.name}"
+                      </h3>
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        {isEditMode
+                          ? `${existingSongIds.size} currently mapped. Add or remove as needed.`
+                          : "Pick songs from your published releases"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`px-4 py-2 rounded-full text-sm font-bold ${selectedSongIds.size > 0 ? (isEditMode ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700") : "bg-slate-100 text-slate-500"}`}
+                      >
+                        {selectedSongIds.size} Selected
+                      </span>
+                      {selectedSongIds.size > 0 && (
+                        <button
+                          onClick={() => setSelectedSongIds(new Set())}
+                          className="text-xs text-red-500 hover:text-red-700 font-bold underline"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isEditMode && (
+                    <div className="flex items-center gap-4 mb-4">
+                      {songsToAdd.length > 0 && (
+                        <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">
+                          <Plus size={12} /> {songsToAdd.length} New
+                        </div>
+                      )}
+                      {songsToRemove.length > 0 && (
+                        <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-600 text-xs font-bold px-3 py-1.5 rounded-full">
+                          <Minus size={12} /> {songsToRemove.length} Removed
+                        </div>
+                      )}
+                      {songsToAdd.length === 0 &&
+                        songsToRemove.length === 0 && (
+                          <div className="text-xs text-slate-400">
+                            No changes
+                          </div>
+                        )}
+                    </div>
+                  )}
+
+                  {/* Search + Filters */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-5 space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        value={songSearch}
+                        onChange={(e) => setSongSearch(e.target.value)}
+                        placeholder="Search by song title, artist, or album..."
+                        className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      {songSearch && (
+                        <button
+                          onClick={() => setSongSearch("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Filter size={14} className="text-slate-400" />
+                      <select
+                        value={songLangFilter}
+                        onChange={(e) => setSongLangFilter(e.target.value)}
+                        className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white outline-none"
+                      >
+                        {songLanguages.map((l) => (
+                          <option key={l} value={l}>
+                            {l === "All" ? "All Languages" : l}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={songGenreFilter}
+                        onChange={(e) => setSongGenreFilter(e.target.value)}
+                        className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white outline-none"
+                      >
+                        {songGenres.map((g) => (
+                          <option key={g} value={g}>
+                            {g === "All" ? "All Genres" : g}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={songFormatFilter}
+                        onChange={(e) => setSongFormatFilter(e.target.value)}
+                        className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white outline-none"
+                      >
+                        {songFormats.map((f) => (
+                          <option key={f} value={f}>
+                            {f === "All" ? "All Formats" : f}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          onClick={() => selectAllVisible(filteredSongIds)}
+                          className="text-[11px] font-bold text-emerald-600 hover:text-emerald-800 underline"
+                        >
+                          Select All
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          onClick={() => deselectAllVisible(filteredSongIds)}
+                          className="text-[11px] font-bold text-red-500 hover:text-red-700 underline"
+                        >
+                          Deselect All
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Song List */}
+                  {loadingSongs && allReleases.length === 0 ? (
+                    <div className="py-20 flex flex-col items-center justify-center">
+                      <Loader2
+                        className="animate-spin text-emerald-600 mb-3"
+                        size={36}
+                      />
+                      <p className="text-sm text-slate-500">
+                        Loading releases...
+                      </p>
+                    </div>
+                  ) : filteredSongs.length === 0 ? (
+                    <div className="py-16 text-center">
+                      <Music2 className="w-14 h-14 text-slate-300 mx-auto mb-3" />
+                      <p className="text-slate-500 text-sm font-medium">
+                        No songs found
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hidden md:grid grid-cols-[40px_1fr_140px_100px_80px_50px] gap-2 px-4 py-2.5 bg-slate-100 rounded-t-xl border border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        <div></div>
+                        <div>Song / Album</div>
+                        <div>Artist</div>
+                        <div>Language</div>
+                        <div>Format</div>
+                        <div></div>
+                      </div>
+                      <div
+                        className="border border-t-0 border-slate-200 rounded-b-xl overflow-hidden max-h-[420px] overflow-y-auto"
+                        style={{ scrollbarWidth: "thin" }}
+                      >
+                        {filteredSongs.map((song) => {
+                          const isSelected = selectedSongIds.has(song.id);
+                          const wasExisting = existingSongIds.has(song.id);
+                          const isNew = isSelected && !wasExisting;
+                          const wasRemoved = !isSelected && wasExisting;
+                          return (
+                            <div
+                              key={song.id}
+                              onClick={() => toggleSong(song.id)}
+                              className={`grid grid-cols-[40px_1fr_140px_100px_80px_50px] gap-2 items-center px-4 py-2.5 border-b border-slate-100 cursor-pointer transition-all text-sm ${
+                                isNew
+                                  ? "bg-green-50 border-l-[3px] border-l-green-500"
+                                  : wasRemoved
+                                    ? "bg-red-50 border-l-[3px] border-l-red-400 opacity-60"
+                                    : isSelected
+                                      ? "bg-emerald-50 border-l-[3px] border-l-emerald-500"
+                                      : "hover:bg-slate-50 border-l-[3px] border-l-transparent"
+                              }`}
+                            >
+                              <div
+                                className={`w-5 h-5 rounded flex items-center justify-center border-2 transition-all flex-shrink-0 ${
+                                  isSelected
+                                    ? isNew
+                                      ? "bg-green-500 border-green-500"
+                                      : "bg-emerald-500 border-emerald-500"
+                                    : "border-slate-300"
+                                } text-white`}
+                              >
+                                {isSelected && (
+                                  <Check size={13} strokeWidth={3} />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img
+                                  src={
+                                    song.cover_url ||
+                                    "https://via.placeholder.com/40"
+                                  }
+                                  alt=""
+                                  className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200"
+                                  onError={(e) => {
+                                    e.target.src =
+                                      "https://via.placeholder.com/40";
+                                  }}
+                                />
+                                <div className="min-w-0">
+                                  <p
+                                    className={`font-semibold truncate text-sm ${isSelected ? (isNew ? "text-green-700" : "text-emerald-700") : "text-slate-900"}`}
+                                  >
+                                    {song.title}
+                                    {isNew && (
+                                      <span className="ml-1.5 text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                                        NEW
+                                      </span>
+                                    )}
+                                    {wasRemoved && (
+                                      <span className="ml-1.5 text-[10px] bg-red-200 text-red-700 px-1.5 py-0.5 rounded font-bold line-through">
+                                        REMOVE
+                                      </span>
+                                    )}
+                                  </p>
+                                  {song.album_name && (
+                                    <p className="text-[11px] text-slate-400 truncate">
+                                      {song.album_name}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 truncate">
+                                {song.primary_artist || "—"}
+                              </p>
+                              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold w-fit">
+                                {song.language || "—"}
+                              </span>
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold w-fit ${song.format === "Album" ? "bg-blue-50 text-blue-600" : song.format === "Single" ? "bg-teal-50 text-teal-600" : "bg-slate-100 text-slate-500"}`}
+                              >
+                                {song.format || "—"}
+                              </span>
+                              <div className="flex justify-center">
+                                <div
+                                  className="w-2.5 h-2.5 rounded-full"
+                                  style={{
+                                    background: isSelected
+                                      ? "#10b981"
+                                      : "#cbd5e1",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {hasMoreSongs && (
+                        <div className="text-center mt-4">
+                          <button
+                            onClick={loadMoreSongs}
+                            disabled={loadingSongs}
+                            className="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2 mx-auto disabled:opacity-50"
+                          >
+                            {loadingSongs ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Plus size={16} />
+                            )}{" "}
+                            Load More
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {selectedSongIds.size === 0 &&
+                    !loadingSongs &&
+                    allReleases.length > 0 && (
+                      <div className="flex items-center gap-2 mt-4 text-amber-600 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+                        <AlertCircle size={16} className="flex-shrink-0" />{" "}
+                        Select at least 1 song.
+                      </div>
+                    )}
+                </div>
+              )}
+
+              {/* ─── STEP 3 ─── */}
+              {step === 3 && (
+                <div className="max-w-2xl mx-auto text-center py-8">
+                  <div
+                    className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${isEditMode ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-600"}`}
+                  >
+                    <CheckCircle2 size={40} />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">
+                    {isEditMode ? "Ready to Update" : "Ready to Publish"}
+                  </h3>
+
+                  <div className="bg-slate-50 rounded-xl p-5 mb-4 inline-flex items-center gap-4 border border-slate-200">
+                    {formData.imagePreview && (
+                      <img
+                        src={formData.imagePreview}
+                        alt=""
+                        className="w-16 h-16 rounded-xl object-cover border border-slate-200"
+                      />
+                    )}
+                    <div className="text-left">
+                      <p className="font-bold text-slate-900">
+                        {formData.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formData.language} · {formData.genre}
+                      </p>
+                    </div>
+                  </div>
+
+                  {isEditMode && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 text-left">
+                      <p className="text-xs font-bold text-blue-800 mb-2">
+                        Changes
+                      </p>
+                      <div className="space-y-1">
+                        {formData.name !== editingStation.name && (
+                          <p className="text-xs text-blue-700 flex items-center gap-1">
+                            <ArrowRight size={11} /> Name changed
+                          </p>
+                        )}
+                        {formData.image && (
+                          <p className="text-xs text-blue-700 flex items-center gap-1">
+                            <ArrowRight size={11} /> Image changed
+                          </p>
+                        )}
+                        {songsToAdd.length > 0 && (
+                          <p className="text-xs text-green-700 flex items-center gap-1">
+                            <Plus size={11} /> +{songsToAdd.length} songs added
+                          </p>
+                        )}
+                        {songsToRemove.length > 0 && (
+                          <p className="text-xs text-red-600 flex items-center gap-1">
+                            <Minus size={11} /> -{songsToRemove.length} songs
+                            removed
+                          </p>
+                        )}
+                        {formData.name === editingStation.name &&
+                          !formData.image &&
+                          songsToAdd.length === 0 &&
+                          songsToRemove.length === 0 && (
+                            <p className="text-xs text-slate-400">No changes</p>
+                          )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    className={`${isEditMode ? "bg-blue-50 border-blue-200" : "bg-emerald-50 border-emerald-200"} border rounded-xl p-4 mb-8 text-left`}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <Music2
+                        size={16}
+                        className={
+                          isEditMode ? "text-blue-600" : "text-emerald-600"
+                        }
+                      />
+                      <span
+                        className={`font-bold text-sm ${isEditMode ? "text-blue-800" : "text-emerald-800"}`}
+                      >
+                        {selectedSongIds.size} Songs
+                      </span>
+                    </div>
+                    <div
+                      className="max-h-[160px] overflow-y-auto space-y-1"
+                      style={{ scrollbarWidth: "thin" }}
+                    >
+                      {allReleases
+                        .filter((s) => selectedSongIds.has(s.id))
+                        .map((song, idx) => {
+                          const isNew =
+                            isEditMode && !existingSongIds.has(song.id);
+                          return (
+                            <div
+                              key={song.id}
+                              className={`flex items-center gap-3 rounded-lg px-3 py-1.5 border ${isNew ? "bg-green-50 border-green-200" : "bg-white border-slate-100"}`}
+                            >
+                              <span
+                                className={`text-[10px] font-bold w-5 text-center ${isNew ? "text-green-600" : "text-emerald-600"}`}
+                              >
+                                {idx + 1}
+                              </span>
+                              <img
+                                src={
+                                  song.cover_url ||
+                                  "https://via.placeholder.com/32"
+                                }
+                                alt=""
+                                className="w-7 h-7 rounded object-cover flex-shrink-0"
+                                onError={(e) => {
+                                  e.target.src =
+                                    "https://via.placeholder.com/32";
+                                }}
+                              />
+                              <p className="text-xs font-semibold text-slate-800 truncate flex-1">
+                                {song.title}
+                              </p>
+                              {isNew && (
+                                <span className="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                                  NEW
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSubmit}
+                    disabled={loading}
+                    className={`px-8 py-3 text-white rounded-xl font-bold shadow-lg flex items-center gap-2 mx-auto disabled:opacity-50 ${isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
+                  >
+                    {loading ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 />
+                    )}
+                    {isEditMode
+                      ? `Update Station (${selectedSongIds.size} songs)`
+                      : `Publish with ${selectedSongIds.size} Songs`}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Navigation */}
+            <div className="border-t border-slate-200 bg-slate-50 p-4 flex justify-between">
+              <button
+                onClick={resetForm}
+                className="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-white transition flex items-center gap-2"
+              >
+                <ChevronLeft size={18} /> Cancel
+              </button>
+              {step < 3 && (
+                <button
+                  onClick={() => {
+                    if (step === 1 && !formData.name)
+                      return Swal.fire(
+                        "Required",
+                        "Station name is required.",
+                        "warning",
+                      );
+                    if (step === 1 && !isEditMode && !formData.image)
+                      return Swal.fire(
+                        "Required",
+                        "Cover image is required.",
+                        "warning",
+                      );
+                    if (step === 2 && selectedSongIds.size === 0)
+                      return Swal.fire(
+                        "Required",
+                        "Select at least 1 song.",
+                        "warning",
+                      );
+                    setStep(step + 1);
+                  }}
+                  className={`px-6 py-2 rounded-lg text-white font-bold flex items-center gap-2 ${isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
+                >
+                  Next <ChevronRight size={18} />
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ STATIONS LIST ═══ */}
+      {step === 0 && (
+        <div>
+          <div className="flex flex-col md:flex-row gap-3 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search stations..."
-                className="w-full pl-10 pr-10 py-2.5 rounded-full border border-slate-200 bg-white text-sm focus:outline-none focus:border-emerald-500 shadow-sm"
+                className="w-full pl-11 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-emerald-500"
               />
               {searchQuery && (
                 <button
@@ -1064,243 +1253,112 @@ const Radio = () => {
                 </button>
               )}
             </div>
-            <button
-              onClick={() => {
-                if (!filteredStations.length) return;
-                const random =
-                  filteredStations[
-                    Math.floor(Math.random() * filteredStations.length)
-                  ];
-                loadAndPlayStation(random);
-              }}
-              className="px-5 py-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-105 transition-all flex items-center gap-2 whitespace-nowrap"
-            >
-              <Shuffle size={16} /> Surprise Me
-            </button>
-          </div>
-        </div>
-
-        {/* Language Filter */}
-        <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-          {availableLanguages.map((lang) => (
-            <button
-              key={lang}
-              onClick={() => setSelectedLang(lang)}
-              className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-200 ${
-                selectedLang === lang
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
-                  : "bg-white text-slate-600 border border-slate-200 hover:border-emerald-400 hover:text-emerald-600"
-              }`}
-            >
-              {lang === "All" ? (
-                <span className="flex items-center gap-1.5">
-                  <Globe size={14} /> All Languages
-                </span>
-              ) : (
-                lang
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Station Grid */}
-        {loading ? (
-          <div className="flex justify-center py-40">
-            <Loader2 className="animate-spin text-emerald-600" size={40} />
-          </div>
-        ) : filteredStations.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
-            <RadioIcon className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-slate-700 mb-1">
-              No Stations Found
-            </h3>
-            <p className="text-slate-500 text-sm">
-              No radio stations available yet.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5 md:gap-6 pb-10">
-            {filteredStations.map((station, index) => {
-              const isActive = currentStation?.id === station.id;
-              const isCurrentlyPlaying = isActive && playing;
-              const isThisLoading = loadingSongs && isActive;
-              const isLiked = likedStations.has(station.id);
-              return (
-                <motion.div
-                  key={station.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.03 }}
-                  onClick={() => loadAndPlayStation(station)}
-                  className="group flex flex-col items-center text-center cursor-pointer"
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {availableLanguages.map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => setFilterLang(lang)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${filterLang === lang ? "bg-emerald-600 text-white" : "bg-white text-slate-600 border border-slate-200 hover:border-emerald-400"}`}
                 >
-                  <div
-                    className={`relative w-full aspect-square rounded-full overflow-hidden shadow-lg transition-all duration-500 border-4 ${
-                      isCurrentlyPlaying
-                        ? "border-emerald-500 shadow-emerald-500/30 scale-105"
-                        : isActive
-                          ? "border-emerald-300"
-                          : "border-white shadow-slate-300/50 group-hover:shadow-xl group-hover:scale-105"
-                    }`}
-                  >
+                  {lang === "All" ? (
+                    <span className="flex items-center gap-1">
+                      <Globe size={12} /> All
+                    </span>
+                  ) : (
+                    lang
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {fetching ? (
+            <div className="py-20 flex justify-center">
+              <Loader2 className="animate-spin text-emerald-600" size={40} />
+            </div>
+          ) : filteredStations.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
+              <RadioIcon className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-700 mb-2">
+                No Radio Stations Found
+              </h3>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredStations.map((station) => (
+                <div
+                  key={station.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-all relative group"
+                >
+                  <div className="absolute top-3 right-3 flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => startEdit(station)}
+                      className="text-slate-300 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-full transition-all"
+                      title="Edit"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleDeleteStation(station.id, station.name)
+                      }
+                      className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-all"
+                      title="Delete"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="h-40 bg-slate-100 relative overflow-hidden">
                     <img
                       src={
-                        station.image_url || "https://via.placeholder.com/200"
+                        station.image_url ||
+                        "https://via.placeholder.com/400x200"
                       }
                       alt={station.name}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       onError={(e) => {
-                        e.target.src = "https://via.placeholder.com/200";
+                        e.target.src = "https://via.placeholder.com/400x200";
                       }}
                     />
-                    <div
-                      className={`absolute inset-0 flex items-center justify-center bg-black/35 transition-opacity duration-300 ${
-                        isThisLoading || isCurrentlyPlaying
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      }`}
-                    >
-                      {isThisLoading ? (
-                        <Loader2 className="w-10 h-10 text-white animate-spin" />
-                      ) : (
-                        <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-xl">
-                          {isCurrentlyPlaying ? (
-                            <div className="flex items-end gap-0.5 h-5">
-                              {[0, 0.12, 0.25].map((delay, i) => (
-                                <motion.div
-                                  key={i}
-                                  animate={{ height: ["30%", "100%", "30%"] }}
-                                  transition={{
-                                    repeat: Infinity,
-                                    duration: 0.5,
-                                    delay,
-                                  }}
-                                  className="w-1 bg-emerald-500 rounded-full"
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <Play className="w-6 h-6 text-emerald-600 fill-emerald-600 ml-0.5" />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    {isCurrentlyPlaying && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-emerald-500 px-3 py-1 rounded-full">
+                    {station.is_live && (
+                      <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-emerald-500 px-2.5 py-1 rounded-full">
                         <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                        <span className="text-[10px] font-bold text-white uppercase">
                           Live
                         </span>
                       </div>
                     )}
-                    {isActive && noSongsError && (
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-red-500 px-3 py-1 rounded-full">
-                        <span className="text-[10px] font-bold text-white whitespace-nowrap">
-                          No songs
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleLikeStation(station.id);
-                      }}
-                      className={`absolute top-3 right-3 p-1.5 rounded-full transition-all ${
-                        isLiked
-                          ? "text-red-500"
-                          : "text-white/70 hover:text-red-400 opacity-0 group-hover:opacity-100"
-                      }`}
-                    >
-                      <Heart
-                        size={16}
-                        fill={isLiked ? "currentColor" : "none"}
-                      />
-                    </button>
                   </div>
-                  <div className="mt-3 w-full px-1">
-                    <h3
-                      className={`text-sm font-bold leading-tight line-clamp-2 transition-colors ${
-                        isCurrentlyPlaying
-                          ? "text-emerald-600"
-                          : "text-slate-900 group-hover:text-emerald-600"
-                      }`}
-                    >
+                  <div className="p-4">
+                    <h3 className="font-bold text-slate-900 line-clamp-1 mb-1 pr-16">
                       {station.name}
                     </h3>
-                    <div className="flex items-center justify-center gap-1.5 mt-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">
-                        {station.language || "Radio"}
+                    {station.description && (
+                      <p className="text-xs text-slate-500 line-clamp-2 mb-2">
+                        {station.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold">
+                        {station.language || "N/A"}
                       </span>
-                      <span className="text-slate-300">·</span>
-                      <span className="text-[10px] text-slate-400 font-medium flex items-center gap-0.5">
-                        <Headphones size={9} />
+                      <span className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold">
+                        {station.genre || "N/A"}
+                      </span>
+                      <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5">
+                        <Headphones size={9} />{" "}
                         {formatCount(station.total_listeners || 0)}
                       </span>
                     </div>
                   </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Expanded Full-Screen Player ── */}
-      <AnimatePresence>
-        {isExpanded && currentStation && !noSongsError && (
-          <ExpandedPlayer
-            station={currentStation}
-            stationSongs={stationSongs}
-            currentSong={currentSong}
-            songIndex={songIndex}
-            isPlaying={playing}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            onVolumeChange={handleVolumeChange}
-            isMuted={isMuted}
-            toggleMute={toggleMute}
-            onNext={handleNext}
-            onPrev={handlePrev}
-            onClose={handleClosePlayer}
-            onCollapse={() => setIsExpanded(false)}
-            isLiked={likedStations.has(currentStation.id)}
-            onToggleLike={() => toggleLikeStation(currentStation.id)}
-            onSongSelect={skipToIndex}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* ── Mini Bottom Player ── */}
-      <AnimatePresence>
-        {currentStation && !noSongsError && !isExpanded && (
-          <RadioPlayer
-            station={currentStation}
-            currentSong={currentSong}
-            isPlaying={playing}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            onVolumeChange={handleVolumeChange}
-            isMuted={isMuted}
-            toggleMute={toggleMute}
-            onNext={handleNext}
-            onPrev={handlePrev}
-            onClose={handleClosePlayer}
-            isLiked={likedStations.has(currentStation.id)}
-            onToggleLike={() => toggleLikeStation(currentStation.id)}
-            songIndex={songIndex}
-            totalSongs={stationSongs.length}
-            onExpand={() => setIsExpanded(true)}
-          />
-        )}
-      </AnimatePresence>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
-export default Radio;
+export default RadioAdmin;

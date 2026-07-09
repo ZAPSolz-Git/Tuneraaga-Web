@@ -26,10 +26,10 @@ import MyPodcasts from "./pages/MyPodcasts";
 import NewPlaylist from "./pages/NewPlaylist";
 import Footer from "./components/Footer";
 
-// Getway integration pages
+// Getway Payment Integration pages
 import ProPlans from "./pages/ProPlans";
 import PackageSummary from "./pages/PackageSummary";
-// import OrderSummaryPay from "./pages/OrderSummaryPay";
+
 import ProLogin from "./pages/ProLogin";
 import PaymentReceipt from "./pages/PaymentReceipt";
 
@@ -53,96 +53,106 @@ import ArtistLayout from "./artist/ArtistLayout1";
 import AdminLayout from "./admin/AdminLayout1";
 import LoginPage from "./pages/LoginPage";
 
+// Authfetchuser
+import { AuthProvider } from "./components/AuthContext";
+
 function App() {
   return (
     <Router>
-      <PlayerProvider>
-        <Routes>
-          {/* ═══ PUBLIC ROUTES (inside Layout — with sidebar) ═══ */}
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="about" element={<About />} />
-            <Route path="knowledge" element={<Knowledge />} />
-            <Route path="reached" element={<Reached />} />
-            <Route path="audience" element={<Audience />} />
-            <Route path="what" element={<WhatPage />} />
-            <Route path="footer" element={<Footer />} />
-            <Route path="new-release" element={<NewRelease />} />
-            <Route path="topartist" element={<TopArtist />} />
-            <Route path="top-chart" element={<TopChart />} />
-            <Route path="top-playlist" element={<TopPlayList />} />
-            <Route path="new-releases" element={<NewRelease />} />
-            <Route path="podcast" element={<Podcast />} />
-            <Route path="radio" element={<Radio />} />
-            <Route path="history" element={<History />} />
-            <Route path="liked" element={<LikedSongs />} />
-            <Route path="my-albums" element={<MyAlbums />} />
-            <Route path="my-artists" element={<MyArtists />} />
-            <Route path="my-podcasts" element={<MyPodcasts />} />
-            <Route path="playlist/new" element={<NewPlaylist />} />
-            <Route path="playlist/:playlistId/edit" element={<NewPlaylist />} />
+      {/* ADDED: AuthProvider wrapper to share role across the app */}
+      <AuthProvider>
+        <PlayerProvider>
+          <Routes>
+            {/* ═══ PUBLIC ROUTES (inside Layout — with sidebar) ═══ */}
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="about" element={<About />} />
+              <Route path="knowledge" element={<Knowledge />} />
+              <Route path="reached" element={<Reached />} />
+              <Route path="audience" element={<Audience />} />
+              <Route path="what" element={<WhatPage />} />
+              <Route path="footer" element={<Footer />} />
+              <Route path="new-release" element={<NewRelease />} />
+              <Route path="topartist" element={<TopArtist />} />
+              <Route path="top-chart" element={<TopChart />} />
+              <Route path="top-playlist" element={<TopPlayList />} />
+              <Route path="new-releases" element={<NewRelease />} />
+              <Route path="podcast" element={<Podcast />} />
+              <Route path="radio" element={<Radio />} />
+              <Route path="history" element={<History />} />
+              <Route path="liked" element={<LikedSongs />} />
+              <Route path="my-albums" element={<MyAlbums />} />
+              <Route path="my-artists" element={<MyArtists />} />
+              <Route path="my-podcasts" element={<MyPodcasts />} />
+              <Route path="playlist/new" element={<NewPlaylist />} />
+              <Route
+                path="playlist/:playlistId/edit"
+                element={<NewPlaylist />}
+              />
 
-            <Route path="pro" element={<ProPlans />} />
-            <Route path="/pro/plan/:id" element={<PackageSummary />} />
-            {/* <Route path="/pro/pay/:orderId" element={<OrderSummaryPay />} /> */}
-            <Route path="/pro/login" element={<ProLogin />} />
-            <Route path="/pro/receipt" element={<PaymentReceipt />} />
+              <Route path="pro" element={<ProPlans />} />
+              <Route path="/pro/plan/:id" element={<PackageSummary />} />
 
+              <Route path="/pro/login" element={<ProLogin />} />
+              <Route path="/pro/receipt" element={<PaymentReceipt />} />
+
+              <Route
+                path="new-playlist"
+                element={<Navigate to="/playlist/new" replace />}
+              />
+            </Route>
+
+            {/* ═══ FULL-SCREEN PAGES (no sidebar) ═══ */}
+
+            <Route path="/album/:albumName" element={<AlbumDetail />} />
+            <Route path="/artist/:artistName" element={<ArtistProfile />} />
+            <Route path="/login" element={<LoginPage />} />
+
+            {/* ═══ ARTIST ROUTES (PROTECTED) ═══ */}
             <Route
-              path="new-playlist"
-              element={<Navigate to="/playlist/new" replace />}
-            />
-          </Route>
+              path="/artist"
+              element={
+                <ProtectedRoute requiredRole="artist">
+                  <ArtistLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route
+                index
+                element={<Navigate to="/artist/dashboard" replace />}
+              />
+              <Route path="dashboard" element={<ArtistDashboard />} />
+              <Route path="settings" element={<ArtistSettings />} />
+            </Route>
 
-          {/* ═══ FULL-SCREEN PAGES (no sidebar) ═══ */}
-
-          <Route path="/album/:albumName" element={<AlbumDetail />} />
-          <Route path="/artist/:artistName" element={<ArtistProfile />} />
-          <Route path="/login" element={<LoginPage />} />
-
-          {/* ═══ ARTIST ROUTES (PROTECTED) ═══ */}
-          <Route
-            path="/artist"
-            element={
-              <ProtectedRoute requiredRole="artist">
-                <ArtistLayout />
-              </ProtectedRoute>
-            }
-          >
+            {/* ═══ ADMIN ROUTES (PROTECTED) ═══ */}
             <Route
-              index
-              element={<Navigate to="/artist/dashboard" replace />}
-            />
-            <Route path="dashboard" element={<ArtistDashboard />} />
-            <Route path="settings" element={<ArtistSettings />} />
-          </Route>
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AdminDash />} />
+              <Route path="artist" element={<ArtistManager />} />
+              <Route path="trending-songs" element={<TrendingSongsAdmin />} />
+              <Route path="latest-releases" element={<LatestReleasesAdmin />} />
+              <Route path="top-10-india" element={<Top10IndiaAdmin />} />
+              <Route path="top-charts" element={<TopChartAdmin />} />
+              <Route path="top-playlists" element={<TopPlaylistAdmin />} />
+              <Route path="new-release" element={<AdminNewRelease />} />
+              <Route path="song-edit" element={<SongEditAdmin />} />
+              <Route path="podcasts" element={<PodcastAdmin />} />
+              <Route path="radio" element={<RadioAdmin />} />
+            </Route>
 
-          {/* ═══ ADMIN ROUTES (PROTECTED) ═══ */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDash />} />
-            <Route path="artist" element={<ArtistManager />} />
-            <Route path="trending-songs" element={<TrendingSongsAdmin />} />
-            <Route path="latest-releases" element={<LatestReleasesAdmin />} />
-            <Route path="top-10-india" element={<Top10IndiaAdmin />} />
-            <Route path="top-charts" element={<TopChartAdmin />} />
-            <Route path="top-playlists" element={<TopPlaylistAdmin />} />
-            <Route path="new-release" element={<AdminNewRelease />} />
-            <Route path="song-edit" element={<SongEditAdmin />} />
-            <Route path="podcasts" element={<PodcastAdmin />} />
-            <Route path="radio" element={<RadioAdmin />} />
-          </Route>
-
-          {/* ═══ 404 ═══ */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </PlayerProvider>
+            {/* ═══ 404 ═══ */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </PlayerProvider>
+      </AuthProvider>
+      {/* ADDED ENDS */}
     </Router>
   );
 }

@@ -8,7 +8,7 @@ exports.login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email aur password zaroori hain.",
+        message: "Email and password are required.",
       });
     }
 
@@ -101,19 +101,17 @@ exports.signup = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email aur password zaroori hain.",
+        message: "Email and password are required.",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Password kam se kam 6 characters ka hona chahiye.",
+        message: "Password must be at least 6 characters long.",
       });
     }
 
-    
-    
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -124,7 +122,7 @@ exports.signup = async (req, res) => {
       if (authError.message.toLowerCase().includes("already registered")) {
         return res.status(400).json({
           success: false,
-          message: "Yeh email pehle se registered hai. Login karo.",
+          message: "This email is already registered. Please login.",
         });
       }
       return res.status(400).json({
@@ -135,8 +133,6 @@ exports.signup = async (req, res) => {
 
     const userId = authData.user.id;
 
-   
-    
     const { data: newUser, error: insertError } = await supabaseAdmin
       .from("users")
       .insert({
@@ -149,12 +145,8 @@ exports.signup = async (req, res) => {
 
     if (insertError) {
       console.error("User insert error (Non-Critical):", insertError.message);
-    
-      
     }
 
-    
-    
     let session = null;
     if (authData.session) {
       session = {
@@ -168,7 +160,7 @@ exports.signup = async (req, res) => {
       success: true,
       message: session
         ? "Registration successful!"
-        : "Registration successful! Apna email verify karo, uske baad login ho payega.",
+        : "Registration successful! Please verify your email, then you can login.",
       data: {
         user: newUser || {
           id: userId,
@@ -214,7 +206,7 @@ exports.getProfile = async (req, res) => {
       if (insertError) {
         return res.status(404).json({
           success: false,
-          message: "User profile nahi mila.",
+          message: "User profile not found.",
         });
       }
 
@@ -243,8 +235,7 @@ exports.logout = async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
-      
-      
+
       await supabaseAdmin.auth.admin.signOut(token);
     }
 
@@ -298,8 +289,6 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-
-
 exports.updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
@@ -308,7 +297,7 @@ exports.updateUserRole = async (req, res) => {
     if (!["user", "admin"].includes(role)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid role. 'user' ya 'admin' hona chahiye.",
+        message: "Invalid role. 'user' or 'admin' is required.",
       });
     }
 
@@ -328,7 +317,7 @@ exports.updateUserRole = async (req, res) => {
     if (req.user.id === id && role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: "Aap apna role change nahi kar sakte.",
+        message: "You cannot change your own role.",
       });
     }
 
@@ -349,7 +338,7 @@ exports.updateUserRole = async (req, res) => {
     if (!data) {
       return res.status(404).json({
         success: false,
-        message: "User nahi mila.",
+        message: "User not found.",
       });
     }
 
@@ -388,7 +377,7 @@ exports.deleteUser = async (req, res) => {
     if (req.user.id === id) {
       return res.status(403).json({
         success: false,
-        message: "Aap apna account delete nahi kar sakte.",
+        message: "You cannot delete your own account.",
       });
     }
 
@@ -415,7 +404,7 @@ exports.deleteUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "User successfully delete ho gaya!",
+      message: "User successfully deleted!",
     });
   } catch (err) {
     console.error("Delete User Error:", err);

@@ -1,7 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const upload = require("../middleware/uploadMiddleware");
-const authenticateUser = require("../middleware/authMiddleware");
+const {
+  authenticateUser,
+  requireAdmin,
+} = require("../middleware/authMiddleware");
 const {
   getAllArtists,
   createArtist,
@@ -9,16 +12,28 @@ const {
   deleteArtist,
 } = require("../controllers/artistController");
 
-// 1. GET ALL ARTISTS (Public)
+// Public — Users ko artists dikhane ke liye
 router.get("/", getAllArtists);
 
-// 2. CREATE ARTIST (Public)
-router.post("/", upload.single("image"), createArtist);
+// ✅ SECURED — Sirf admin naya artist bana sakta hai
+router.post(
+  "/",
+  authenticateUser,
+  requireAdmin,
+  upload.single("image"),
+  createArtist,
+);
 
-// 3. UPDATE ARTIST - authenticateUser 
-router.put("/:id", upload.single("image"), updateArtist);
+// ✅ SECURED — Sirf admin edit kar sakta hai
+router.put(
+  "/:id",
+  authenticateUser,
+  requireAdmin,
+  upload.single("image"),
+  updateArtist,
+);
 
-// 4. DELETE ARTIST - authenticateUser
-router.delete("/:id", deleteArtist);
+// ✅ SECURED — Sirf admin delete kar sakta hai
+router.delete("/:id", authenticateUser, requireAdmin, deleteArtist);
 
 module.exports = router;

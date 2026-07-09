@@ -28,6 +28,8 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const API_BASE = "http://localhost:5000/api/content"; // SECURE BACKEND API
+
 const LANGUAGES = [
   "Hindi",
   "Tamil",
@@ -1119,11 +1121,22 @@ const AlbumReleaseForm = () => {
     }
   };
 
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║  ✅ SECURE DELETE — Backend API ke through, not direct DB  ║
+  // ╚══════════════════════════════════════════════════════════════╝
   const handleDeleteTrack = async (id) => {
     setDeletingId(id);
     try {
-      const { error } = await supabase.from("releases").delete().eq("id", id);
-      if (error) throw error;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const response = await fetch(`${API_BASE}/releases/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      const res = await response.json();
+      if (!response.ok) throw new Error(res.error || "Failed to delete");
+
       setSavedTracks((prev) => {
         const filtered = prev.filter((t) => t.id !== id);
         return filtered.map((t, i) => ({ ...t, track_number: i + 1 }));
@@ -1282,13 +1295,14 @@ const AlbumReleaseForm = () => {
                       value={albumName}
                       onChange={(e) => setAlbumName(e.target.value)}
                       placeholder="e.g. Cocktail 2, Pushpa 3"
-                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
+                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                     />
                   </div>
-                  {!coverUrl && !coverSizeError && (
+                  {(!coverUrl || !albumName.trim()) && (
                     <div className="flex items-center gap-2 text-amber-600 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
                       <AlertCircle size={16} className="flex-shrink-0" />
-                      Album cover and name are required.
+                      Cover image and album name are required. Minimum 2 tracks
+                      needed to proceed.
                     </div>
                   )}
                 </div>
@@ -1296,337 +1310,197 @@ const AlbumReleaseForm = () => {
 
               {step === 2 && (
                 <div className="space-y-5">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900 mb-1">
-                      Add Tracks One by One
-                    </h2>
-                    <p className="text-sm text-slate-500">
-                      Fill form → click <strong>"Save Track"</strong> → form
-                      resets for next. Repeat.
-                    </p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900 mb-1">
+                        Add Tracks
+                      </h2>
+                      <p className="text-sm text-slate-500">
+                        Save each track individually. Minimum 2 required.
+                      </p>
+                    </div>
+                    <span
+                      className={`px-3 py-1 rounded-full text-sm font-bold ${savedTracks.length >= 2 ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"}`}
+                    >
+                      {savedTracks.length} / ∞ Saved
+                    </span>
                   </div>
 
-                  <AnimatePresence>
-                    {justSaved && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10, height: 0 }}
-                        animate={{ opacity: 1, y: 0, height: "auto" }}
-                        exit={{ opacity: 0, y: -10, height: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="flex items-center gap-2 bg-emerald-500 text-white rounded-xl px-4 py-3 text-sm font-semibold">
-                          <CheckCircle2 size={18} />
-                          Track {savedTracks.length} saved to server! Now fill
-                          the next track below.
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {savedTracks.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        Saved Tracks ({savedTracks.length})
-                      </p>
-                      <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                        {savedTracks.map((t) => (
-                          <motion.div
-                            key={t.id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3"
-                          >
-                            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                              <span className="text-emerald-700 font-bold text-xs">
-                                {t.track_number}
-                              </span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800 truncate">
-                                {t.title}
-                              </p>
-                              <p className="text-xs text-slate-500 truncate">
-                                {t.primary_artist}
-                                {t.featuring_artists
-                                  ? ` ft. ${t.featuring_artists}`
-                                  : ""}{" "}
-                                · {t.genre} · {t.language}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span
-                                className="w-2 h-2 rounded-full bg-emerald-400"
-                                title="Saved to server"
-                              ></span>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteTrack(t.id)}
-                                disabled={deletingId === t.id}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                                title="Delete this track"
-                              >
-                                {deletingId === t.id ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <Trash2 size={14} />
-                                )}
-                              </button>
-                            </div>
-                          </motion.div>
-                        ))}
-                      </div>
+                  {trackError && (
+                    <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+                      <AlertCircle size={16} className="flex-shrink-0" />
+                      {trackError}
                     </div>
                   )}
 
-                  <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
-                        <Music2 size={14} className="text-blue-500" />
-                        Track {savedTracks.length + 1}
-                        <span className="text-[10px] font-normal text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                          FILL & SAVE
-                        </span>
-                      </h4>
+                  {justSaved && (
+                    <div className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-200 rounded-xl p-3 text-sm">
+                      <CheckCircle2 size={16} className="flex-shrink-0" />
+                      Track saved successfully! Add the next one.
                     </div>
+                  )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {/* Current Track Form */}
+                    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                      <h4 className="font-bold text-slate-900 text-sm">
+                        Track #{currentTrack.track_number}
+                      </h4>
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Song Title <span className="text-red-400">*</span>
+                          Title <span className="text-red-400">*</span>
                         </label>
                         <input
                           value={currentTrack.title}
                           onChange={(e) =>
                             setTrackField("title", e.target.value)
                           }
-                          placeholder="e.g. Tum Hi Ho"
+                          placeholder="Song title"
                           className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Track #
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={currentTrack.track_number}
-                          onChange={(e) =>
-                            setTrackField(
-                              "track_number",
-                              parseInt(e.target.value) ||
-                                savedTracks.length + 1,
-                            )
-                          }
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                        />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Artist <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            value={currentTrack.primary_artist}
+                            onChange={(e) =>
+                              setTrackField("primary_artist", e.target.value)
+                            }
+                            placeholder="Artist name"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Language <span className="text-red-400">*</span>
+                          </label>
+                          <select
+                            value={currentTrack.language}
+                            onChange={(e) =>
+                              setTrackField("language", e.target.value)
+                            }
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
+                          >
+                            <option value="">Select</option>
+                            {LANGUAGES.map((l) => (
+                              <option key={l} value={l}>
+                                {l}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Genre <span className="text-red-400">*</span>
+                          </label>
+                          <select
+                            value={currentTrack.genre}
+                            onChange={(e) => {
+                              setTrackField("genre", e.target.value);
+                              setTrackField("subgenre", "");
+                            }}
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
+                          >
+                            <option value="">Select</option>
+                            {genres.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Movie
+                          </label>
+                          <input
+                            value={currentTrack.movie_name}
+                            onChange={(e) =>
+                              setTrackField("movie_name", e.target.value)
+                            }
+                            placeholder="Optional"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                          />
+                        </div>
+                      </div>
+                      <AudioUpload
+                        label="Audio File"
+                        value={currentTrack.audio_url}
+                        onChange={(url) => setTrackField("audio_url", url)}
+                        required
+                        compact
+                      />
+                      <button
+                        onClick={handleSaveTrack}
+                        disabled={savingTrack || !isCurrentTrackValid()}
+                        className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                      >
+                        {savingTrack ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />{" "}
+                            Saving…
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={16} /> Save Track
+                          </>
+                        )}
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Primary Artist <span className="text-red-400">*</span>
-                      </label>
-                      <div className="relative">
-                        <User
-                          size={14}
-                          className="absolute left-3 top-3 text-slate-400"
-                        />
-                        <input
-                          value={currentTrack.primary_artist}
-                          onChange={(e) =>
-                            setTrackField("primary_artist", e.target.value)
-                          }
-                          placeholder="Type artist name"
-                          className="w-full pl-8 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                        />
+                    {/* Saved Tracks List */}
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-[520px] overflow-y-auto">
+                      <div className="bg-slate-50 px-4 py-3 border-b font-bold text-sm text-slate-700 sticky top-0 z-10 flex items-center gap-2">
+                        <Music2 size={14} className="text-blue-500" />
+                        Saved Tracks ({savedTracks.length})
                       </div>
-                    </div>
-
-                    <TagInput
-                      label="Featuring Artists"
-                      hint="(type name + Enter)"
-                      tags={currentTrack.featuring_artists}
-                      onAdd={(v) =>
-                        setTrackField("featuring_artists", [
-                          ...currentTrack.featuring_artists,
-                          v,
-                        ])
-                      }
-                      onRemove={(v) =>
-                        setTrackField(
-                          "featuring_artists",
-                          currentTrack.featuring_artists.filter((a) => a !== v),
-                        )
-                      }
-                      placeholder="Type artist name and press Enter"
-                    />
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Language <span className="text-red-400">*</span>
-                        </label>
-                        <select
-                          value={currentTrack.language}
-                          onChange={(e) =>
-                            setTrackField("language", e.target.value)
-                          }
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
-                        >
-                          <option value="">Select Language</option>
-                          {LANGUAGES.map((l) => (
-                            <option key={l} value={l}>
-                              {l}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Genre <span className="text-red-400">*</span>
-                        </label>
-                        <select
-                          value={currentTrack.genre}
-                          onChange={(e) => {
-                            setTrackField("genre", e.target.value);
-                            setTrackField("subgenre", "");
-                          }}
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
-                        >
-                          <option value="">Select Genre</option>
-                          {genres.map((g) => (
-                            <option key={g} value={g}>
-                              {g}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {currentTrack.genre && currentSubgenres.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          Sub-genre
-                        </label>
-                        <select
-                          value={currentTrack.subgenre}
-                          onChange={(e) =>
-                            setTrackField("subgenre", e.target.value)
-                          }
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
-                        >
-                          <option value="">Select Sub-genre</option>
-                          {currentSubgenres.map((sg) => (
-                            <option key={sg.value} value={sg.value}>
-                              {sg.text}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <TagInput
-                      label="Actor / Cast Names"
-                      hint="(for film songs)"
-                      tags={currentTrack.actor_names}
-                      onAdd={(v) =>
-                        setTrackField("actor_names", [
-                          ...currentTrack.actor_names,
-                          v,
-                        ])
-                      }
-                      onRemove={(v) =>
-                        setTrackField(
-                          "actor_names",
-                          currentTrack.actor_names.filter((a) => a !== v),
-                        )
-                      }
-                      placeholder="Type actor name and press Enter"
-                    />
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        <span className="flex items-center gap-1.5">
-                          <Film size={13} className="text-slate-400" />
-                          Movie / Film Name
-                          <span className="font-normal text-slate-400 normal-case ml-1">
-                            (optional)
-                          </span>
-                        </span>
-                      </label>
-                      <div className="relative">
-                        <Film
-                          size={15}
-                          className="absolute left-3 top-3 text-slate-400"
-                        />
-                        <input
-                          value={currentTrack.movie_name}
-                          onChange={(e) =>
-                            setTrackField("movie_name", e.target.value)
-                          }
-                          placeholder="e.g. Pushpa 2, Animal, Jawan"
-                          className="w-full pl-9 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <AudioUpload
-                      label={`Track ${savedTracks.length + 1} Audio`}
-                      value={currentTrack.audio_url}
-                      onChange={(v) => setTrackField("audio_url", v)}
-                      required
-                      compact
-                    />
-
-                    {trackError && (
-                      <div className="flex items-start gap-2 text-red-500 bg-red-50 border border-red-200 rounded-lg p-3 text-xs">
-                        <AlertCircle
-                          size={14}
-                          className="flex-shrink-0 mt-0.5"
-                        />
-                        <span>{trackError}</span>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleSaveTrack}
-                      disabled={!isCurrentTrackValid() || savingTrack}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"
-                    >
-                      {savingTrack ? (
-                        <>
-                          <Loader2 size={16} className="animate-spin" /> Saving
-                          Track {savedTracks.length + 1} to Server…
-                        </>
+                      {savedTracks.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 text-sm">
+                          No tracks saved yet. Add your first track.
+                        </div>
                       ) : (
-                        <>
-                          <CheckCircle2 size={16} /> Save Track{" "}
-                          {savedTracks.length + 1} to Server
-                        </>
+                        savedTracks.map((track) => (
+                          <div
+                            key={track.id}
+                            className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                          >
+                            <span className="text-blue-600 font-bold text-xs w-6 text-center">
+                              {track.track_number}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm truncate text-slate-900">
+                                {track.title}
+                              </p>
+                              <p className="text-xs text-slate-400 truncate">
+                                {track.primary_artist} · {track.genre} ·{" "}
+                                {track.language}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteTrack(track.id)}
+                              disabled={deletingId === track.id}
+                              className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-all flex-shrink-0 disabled:opacity-50"
+                              title="Delete this track"
+                            >
+                              {deletingId === track.id ? (
+                                <Loader2
+                                  size={15}
+                                  className="animate-spin text-red-400"
+                                />
+                              ) : (
+                                <Trash2 size={15} />
+                              )}
+                            </button>
+                          </div>
+                        ))
                       )}
-                    </button>
+                    </div>
                   </div>
-
-                  {savedTracks.length < 2 && (
-                    <div className="flex items-center gap-2 text-amber-600 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
-                      <AlertCircle size={16} className="flex-shrink-0" />
-                      {savedTracks.length === 0
-                        ? "Save at least 2 tracks to unlock the Next button."
-                        : `1 track saved. Save at least 1 more to continue.`}
-                    </div>
-                  )}
-
-                  {savedTracks.length >= 2 && (
-                    <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm">
-                      <CheckCircle2 size={16} className="flex-shrink-0" />
-                      <span className="font-semibold">
-                        {savedTracks.length} tracks saved!
-                      </span>{" "}
-                      Add more or click <strong>"Next →"</strong> below.
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1634,21 +1508,32 @@ const AlbumReleaseForm = () => {
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900 mb-1">
-                      Lyrics
+                      Album Lyrics
                     </h2>
                     <p className="text-sm text-slate-500">
-                      Optional — these lyrics will be applied to all{" "}
-                      {savedTracks.length} tracks.
+                      These lyrics will be applied to ALL tracks in this album.
+                      Leave empty if not needed.
                     </p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                    <Disc3 size={20} className="text-blue-500" />
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">
+                        {albumName}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {savedTracks.length} tracks · Lyrics will be shared
+                      </p>
+                    </div>
                   </div>
                   <textarea
                     value={lyrics}
                     onChange={(e) => setLyrics(e.target.value)}
-                    rows={12}
-                    placeholder="[Verse 1]\nLyrics yahan...\n\n[Chorus]\n..."
-                    className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm font-mono resize-y leading-relaxed"
+                    rows={14}
+                    placeholder="[Verse 1]\nYour lyrics here...\n\n[Chorus]\n..."
+                    className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-mono resize-y leading-relaxed"
                   />
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-400">
                     {lyrics.length} characters
                   </p>
                 </div>
@@ -1661,68 +1546,43 @@ const AlbumReleaseForm = () => {
                       Copyright & Publishing
                     </h2>
                     <p className="text-sm text-slate-500">
-                      This will be applied to ALL {savedTracks.length} tracks
-                      and they will go live.
+                      This info applies to all {savedTracks.length} tracks.
                     </p>
                   </div>
-                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-5 text-white">
-                    <div className="flex items-center gap-3">
+                  <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-white">
+                    <div className="flex items-center gap-4">
                       {coverUrl && (
                         <img
                           src={coverUrl}
-                          className="w-14 h-14 rounded-xl object-cover border-2 border-white/30 flex-shrink-0"
+                          className="w-16 h-16 rounded-xl object-cover border-2 border-white/30 flex-shrink-0"
                           alt=""
                         />
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-lg leading-tight truncate">
-                          {albumName || "Untitled Album"}
+                          {albumName}
                         </p>
-                        <p className="text-blue-100 text-sm truncate">
-                          {savedTracks[0]?.primary_artist || "Unknown Artist"} ·{" "}
-                          {savedTracks.length} tracks
+                        <p className="text-blue-200 text-sm">
+                          {savedTracks.length} tracks · Album
                         </p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                            Album
-                          </span>
-                          {savedTracks[0]?.genre && (
-                            <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              {savedTracks[0].genre}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {savedTracks.slice(0, 5).map((t) => (
+                            <span
+                              key={t.id}
+                              className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full truncate max-w-[120px]"
+                            >
+                              {t.title}
                             </span>
-                          )}
-                          {savedTracks[0]?.language && (
+                          ))}
+                          {savedTracks.length > 5 && (
                             <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              {savedTracks[0].language}
+                              +{savedTracks.length - 5} more
                             </span>
                           )}
                         </div>
                       </div>
                     </div>
                   </div>
-
-                  <div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Tracks that will be published:
-                    </p>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                      {savedTracks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2"
-                        >
-                          <span className="text-xs font-bold text-blue-600 w-5">
-                            {t.track_number}
-                          </span>
-                          <span className="truncate flex-1">{t.title}</span>
-                          <span className="text-slate-400 text-xs">
-                            by {t.primary_artist}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -1737,7 +1597,7 @@ const AlbumReleaseForm = () => {
                           }))
                         }
                         placeholder="e.g. Universal Music India Pvt. Ltd."
-                        className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
+                        className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -1753,7 +1613,7 @@ const AlbumReleaseForm = () => {
                               year: e.target.value,
                             }))
                           }
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm bg-white"
+                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm bg-white"
                         >
                           {Array.from(
                             { length: 10 },
@@ -1778,15 +1638,14 @@ const AlbumReleaseForm = () => {
                             }))
                           }
                           placeholder="e.g. T-Series"
-                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm"
+                          className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                         />
                       </div>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500 leading-relaxed">
                       <Shield size={14} className="inline mr-1 text-blue-500" />
-                      By submitting, you confirm you own or have licensed all
-                      rights to this content. All {savedTracks.length} tracks
-                      will be published immediately.
+                      By publishing, you confirm you own or have licensed all
+                      rights to all {savedTracks.length} tracks in this album.
                     </div>
                   </div>
                 </div>
@@ -1809,7 +1668,7 @@ const AlbumReleaseForm = () => {
               <button
                 onClick={() => setStep((s) => s + 1)}
                 disabled={!canProceed()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-500/20"
               >
                 Next <ChevronRight size={18} />
               </button>
@@ -1817,7 +1676,7 @@ const AlbumReleaseForm = () => {
               <button
                 onClick={handlePublish}
                 disabled={!canProceed() || submitting}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-500/20"
               >
                 {submitting ? (
                   <>
@@ -1838,84 +1697,45 @@ const AlbumReleaseForm = () => {
   );
 };
 
+// ═══════════════════════════════════════════
+// MAIN COMPONENT — TAB SWITCHER
+// ═══════════════════════════════════════════
 
-const LatestReleasesAdmin = () => {
-  const [selectedFormat, setSelectedFormat] = useState(null);
-
-  if (selectedFormat === "single") return <SingleReleaseForm />;
-  if (selectedFormat === "album") return <AlbumReleaseForm />;
+const AdminNewRelease = () => {
+  const [mode, setMode] = useState("single");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center p-6">
-      <div className="max-w-lg w-full">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 bg-slate-800 text-white text-xs font-bold px-4 py-1.5 rounded-full mb-4 tracking-wider uppercase">
-            <Upload size={13} /> New Release
-          </div>
-          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">
-            Choose Format
-          </h1>
-          <p className="text-slate-500 mt-2">
-            Select whether you're releasing a single song or a full album.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <motion.button
-            whileHover={{ scale: 1.03, y: -4 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setSelectedFormat("single")}
-            className="group bg-white rounded-2xl border-2 border-slate-200 hover:border-teal-400 p-6 text-left transition-all shadow-sm hover:shadow-xl hover:shadow-teal-500/10"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-teal-100 flex items-center justify-center mb-4 group-hover:bg-teal-500 transition-colors">
-              <Music
-                size={26}
-                className="text-teal-600 group-hover:text-white transition-colors"
-              />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Single</h3>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Release one song with cover art, audio, lyrics & copyright info.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-teal-600 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-              Get Started <ChevronRight size={16} />
-            </div>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.03, y: -4 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setSelectedFormat("album")}
-            className="group bg-white rounded-2xl border-2 border-slate-200 hover:border-blue-400 p-6 text-left transition-all shadow-sm hover:shadow-xl hover:shadow-blue-500/10"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
-              <Disc3
-                size={26}
-                className="text-blue-600 group-hover:text-white transition-colors"
-              />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Album</h3>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Release multiple tracks under one album. Tracks save one by one to
-              server.
-            </p>
-            <div className="mt-4 flex items-center gap-1 text-blue-600 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-              Get Started <ChevronRight size={16} />
-            </div>
-          </motion.button>
-        </div>
-
-        <div className="text-center mt-8">
+    <div className="min-h-screen bg-slate-50">
+      {/* Tab Bar */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-center gap-4">
           <button
-            onClick={() => window.history.back()}
-            className="text-sm text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1 mx-auto"
+            onClick={() => setMode("single")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
+              mode === "single"
+                ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
           >
-            <ChevronLeft size={14} /> Go Back
+            <Music2 size={16} /> Single
+          </button>
+          <button
+            onClick={() => setMode("album")}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
+              mode === "album"
+                ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            <Disc3 size={16} /> Album
           </button>
         </div>
       </div>
+
+      {/* Render Form */}
+      {mode === "single" ? <SingleReleaseForm /> : <AlbumReleaseForm />}
     </div>
   );
 };
 
-export default LatestReleasesAdmin;
+export default AdminNewRelease;

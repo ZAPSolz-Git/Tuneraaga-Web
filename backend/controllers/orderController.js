@@ -13,7 +13,7 @@ const createOrderSummaryPay = async (req, res) => {
     if (req.user && req.user.id !== userId) {
       return res.status(403).json({
         success: false,
-        message: "userId logged-in user se match nahi karta.",
+        message: "userId logged-in user not match.",
       });
     }
 
@@ -27,7 +27,7 @@ const createOrderSummaryPay = async (req, res) => {
     if (planErr || !planRow) {
       return res.status(404).json({
         success: false,
-        message: "Plan nahi mila ya inactive hai.",
+        message: "Plan not found or inactive.",
       });
     }
 
@@ -41,7 +41,7 @@ const createOrderSummaryPay = async (req, res) => {
     if (priceErr || !priceRow) {
       return res.status(400).json({
         success: false,
-        message: "Amount is plan ki kisi bhi valid price se match nahi karta.",
+        message: "Amount is not valid for the selected plan.",
       });
     }
 
@@ -64,20 +64,20 @@ const createOrderSummaryPay = async (req, res) => {
       console.error("Order insert error:", insertErr.message);
       return res.status(500).json({
         success: false,
-        message: "Order create nahi ho paaya.",
+        message: "Order create failed.",
       });
     }
 
     return res.status(201).json({
       success: true,
-      message: "Order successfully create ho gaya.",
+      message: "Order successfully created.",
       order,
     });
   } catch (err) {
     console.error("createOrderSummaryPay error:", err.message);
     return res.status(500).json({
       success: false,
-      message: "Kuch galat ho gaya, dobara try karein.",
+      message: "Something went wrong, please try again.",
     });
   }
 };
@@ -108,7 +108,7 @@ const createRazorpayOrder = async (req, res) => {
       console.error("Order fetch error:", fetchErr?.message);
       return res
         .status(404)
-        .json({ success: false, message: "Order nahi mila." });
+        .json({ success: false, message: "Order not found." });
     }
 
     if (req.user && order.user_id !== req.user.id) {
@@ -188,7 +188,7 @@ const createRazorpayOrder = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: rzpError?.description || "Razorpay order create nahi ho paaya.",
+      message: rzpError?.description || "Razorpay order create failed.",
     });
   }
 };
@@ -234,7 +234,7 @@ const verifyPayment = async (req, res) => {
       console.error("❌ Signature mismatch for order:", orderId);
       return res.status(400).json({
         success: false,
-        message: "Payment verify nahi ho paaya (invalid signature).",
+        message: "Payment verify failed (invalid signature).",
       });
     }
 
@@ -254,7 +254,7 @@ const verifyPayment = async (req, res) => {
 
     if (updateErr) {
       console.warn(
-        "⚠️ paid_at column shayad exist nahi karta, retry without it. Error:",
+        "⚠️ paid_at column i think not exists:",
         updateErr.message,
       );
 
@@ -328,7 +328,7 @@ const checkOrderStatus = async (req, res) => {
     if (error || !order) {
       return res
         .status(404)
-        .json({ success: false, message: "Order nahi mila." });
+        .json({ success: false, message: "Order not found." });
     }
 
     return res.status(200).json({ success: true, status: order.status });
@@ -336,7 +336,7 @@ const checkOrderStatus = async (req, res) => {
     console.error("checkOrderStatus error:", err.message);
     return res
       .status(500)
-      .json({ success: false, message: "Status check fail hua." });
+      .json({ success: false, message: "Status check failed." });
   }
 };
 
@@ -357,7 +357,7 @@ const downloadReceipt = async (req, res) => {
     if (fetchErr || !order) {
       return res
         .status(404)
-        .json({ success: false, message: "Order nahi mila." });
+        .json({ success: false, message: "Order not found." });
     }
 
     if (req.user && order.user_id !== req.user.id) {
@@ -368,7 +368,7 @@ const downloadReceipt = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Is order ke liye receipt available nahi hai (payment pending hai).",
+          "this order for not receipt available (payment pending).",
       });
     }
 
