@@ -23,8 +23,6 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
-// ─── Shared helpers (import these from here everywhere instead of
-// re-declaring them per-page, so formatting stays consistent) ───
 export const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
   if (typeof val === "string") return val;
@@ -48,13 +46,7 @@ export const parseArtists = (artistStr) => {
     .filter(Boolean);
 };
 
-// Max time we'll let an ad play before we force it to end. This is a
-// safety net in case the ad file's "ended" event never fires (bad
-// metadata, network hiccup, etc.) — without this, a broken ad could
-// block songs forever.
 const AD_FAILSAFE_MS = 45000;
-
-// After how many seconds of an ad the user is allowed to skip it.
 const AD_SKIP_AFTER_SECONDS = 5;
 
 const PlayerContext = createContext(null);
@@ -79,26 +71,12 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const [isShuffle, setIsShuffle] = useState(false);
   const [isAdPlaying, setIsAdPlaying] = useState(false);
   const [user, setUser] = useState(null);
-  // ✅ Has the auth session actually finished loading yet? Prevents the
-  // top banner from flashing on screen for a split second on page load
-  // while we're still checking if the user is logged in.
   const [authChecked, setAuthChecked] = useState(false);
-
-  // ✅ TOP PROMO BANNER — "Ad-free music... Start free trial". Only ever
-  // shown to logged-out users. Dismissing it (X button) only hides it for
-  // this browser tab/session — it is NOT remembered across reloads, so a
-  // logged-out user will always see it again next visit, exactly as
-  // requested ("hamesha dikhna chahiye jab login nahi").
   const [topBannerDismissed, setTopBannerDismissed] = useState(false);
 
-  // Optional "expand" behavior (e.g. TopPlaylist opens its playlist-profile
-  // panel when you tap the Maximize2 icon on the sticky player). Any page
-  // can plug in its own handler; pages that don't call setExpandHandler
-  // just won't show the expand icon.
   const [expandHandler, setExpandHandlerState] = useState(null);
   const [profileOpen, setProfileOpenState] = useState(false);
   const setExpandHandler = useCallback((fn) => {
-    // fn may be a function or null to clear it
     setExpandHandlerState(() => fn);
   }, []);
 
@@ -110,31 +88,13 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const countedSongIds = useRef(new Set());
   const userRef = useRef(null);
 
-  // ✅ AD REFS
   const isAdPlayingRef = useRef(false);
   const pendingSongRef = useRef(null);
   const adsListRef = useRef([]);
   const adsFetchedRef = useRef(false);
   const adFailsafeTimerRef = useRef(null);
 
-  // 🔒 PLAY TOKEN: every time we start loading something new (ad OR song),
-  // we bump this counter and remember "my" number. If an OLD play()
-  // promise (e.g. the ad's) resolves LATE — after we've already moved on
-  // to the song — its token no longer matches the current one, so we
-  // force-pause it instead of letting it audibly keep playing.
   const playTokenRef = useRef(0);
-
-  // 🔑 Which song.id is ACTUALLY loaded into the <audio> element right
-  // now (i.e. audio.src really points at that song's file). This is
-  // DELIBERATELY separate from currentSongRef: currentSongRef also gets
-  // pointed at the *upcoming* song while an ad is still playing (so the
-  // sticky player can show its name/art), and a useEffect keeps
-  // currentSongRef in sync with the currentSong *state* on every render.
-  // Deciding "is this song new?" off currentSongRef was the bug that made
-  // the ad loop forever instead of ever reaching the real song: the
-  // moment the ad started, currentSongRef already equalled the pending
-  // song, so once the ad ended we'd think the song was "already loaded"
-  // and just resume playback — except audio.src was still the AD file.
   const loadedSongIdRef = useRef(null);
 
   useEffect(() => {
@@ -150,11 +110,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     isShuffleRef.current = isShuffle;
   }, [isShuffle]);
 
-  // ✅ AUTH & SESSION — single subscription, shared everywhere. This is
-  // the ONE source of truth for "logged in or not". Because it lives here
-  // (not duplicated per-page), every page that uses usePlayer() reads the
-  // exact same auth state that decides whether ads play AND whether the
-  // top "start free trial" banner shows.
+  // ✅ AUTH & SESSION
   useEffect(() => {
     const getSession = async () => {
       const {
@@ -171,10 +127,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       setUser(session?.user ?? null);
       userRef.current = session?.user ?? null;
       setAuthChecked(true);
-      // 🔑 If the user just logged in, make sure the banner doesn't stay
-      // dismissed-and-hidden state lingering from before — reset it so
-      // that IF they log out again later in this same tab, it shows
-      // fresh rather than staying dismissed forever.
       if (session?.user) {
         setTopBannerDismissed(false);
       }
@@ -266,22 +218,17 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     }
   };
 
-  // ─── Generic "try to play, but abandon this attempt if a newer play
-  // request has already superseded it" helper. Used for both ads and
-  // songs so neither can ever leak audio after being superseded. ───
   const attemptPlay = useCallback((token, onFailure) => {
     const audio = audioRef.current;
     if (!audio) return;
     let hasStarted = false;
     const tryPlay = () => {
       if (hasStarted) return;
-      if (playTokenRef.current !== token) return; // superseded before we even tried
+      if (playTokenRef.current !== token) return;
       audio
         .play()
         .then(() => {
           if (playTokenRef.current !== token) {
-            // 🔒 We were superseded WHILE play() was resolving. Stop it
-            // immediately so it can never leak audio.
             audio.pause();
             return;
           }
@@ -309,9 +256,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     }
   }, []);
 
-  // Loads a brand-new source (ad or song), bumps the play token (which
-  // automatically invalidates/pauses whatever was playing before), and
-  // plays it once ready.
   const loadAndPlay = useCallback(
     (url) => {
       const audio = audioRef.current;
@@ -326,26 +270,17 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     [attemptPlay],
   );
 
-  // ─── Actually plays the real song (called directly for logged-in
-  // users, or after the pre-roll ad finishes/is skipped for logged-out
-  // users) ───
   const startActualSong = useCallback(
     (song) => {
       if (!song || !song.audioUrl) return;
       const audio = audioRef.current;
       if (!audio) return;
-      // 🔑 Use loadedSongIdRef (what's really in audio.src), NOT
-      // currentSongRef — see the comment on loadedSongIdRef's declaration
-      // for why currentSongRef is unsafe for this check.
       const isNewSong = loadedSongIdRef.current !== song.id;
 
       clearAdFailsafe();
       isAdPlayingRef.current = false;
       setIsAdPlaying(false);
 
-      // Always keep the display state in sync with the song we're
-      // actually about to play, regardless of whether it's "new" to the
-      // audio element or not.
       setCurrentSong(song);
       currentSongRef.current = song;
 
@@ -355,21 +290,14 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         incrementSongCounts(song);
         if (song.release_id) saveToHistory(song.release_id);
         loadedSongIdRef.current = song.id;
-        // 🔒 loadAndPlay bumps the play token itself, which is what
-        // forces any still-in-flight ad play() to pause itself the
-        // moment it resolves.
         loadAndPlay(song.audioUrl);
       } else {
-        // Same song already loaded (e.g. resuming after pause) — don't
-        // touch src/position, just resume playback at the current token.
         attemptPlay(playTokenRef.current);
       }
     },
     [incrementSongCounts, saveToHistory, loadAndPlay, attemptPlay],
   );
 
-  // ─── Called when the ad ends, fails, times out, or is skipped by the
-  // user — plays the pending song ───
   const finishAdAndPlayPending = useCallback(() => {
     clearAdFailsafe();
     isAdPlayingRef.current = false;
@@ -379,29 +307,16 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     if (song) startActualSong(song);
   }, [startActualSong]);
 
-  // ─── Plays an ad (skippable after AD_SKIP_AFTER_SECONDS), then the
-  // song ───
   const playAd = useCallback(
     async (song) => {
       const audio = audioRef.current;
       if (!audio) return;
 
-      // 🔒 Lock immediately, BEFORE the async ad fetch below, AND bump
-      // the play token now — not after the fetch resolves. This (1)
-      // blocks a second click from sneaking in during the fetch, and (2)
-      // means that if anything about this specific ad request goes stale
-      // later (see attemptPlay), it gets shut down automatically instead
-      // of playing over whatever comes next.
       isAdPlayingRef.current = true;
       setIsAdPlaying(true);
       pendingSongRef.current = song;
-      setCurrentSong(song); // show the upcoming song's name behind "Advertisement"
+      setCurrentSong(song);
       currentSongRef.current = song;
-      // 🔑 The audio element is about to hold the AD's src, not the
-      // song's — so whatever song.id was last loaded no longer matches
-      // what's really playing. This guarantees startActualSong() treats
-      // the song as "new" once the ad ends, and actually loads it instead
-      // of just resuming the ad.
       loadedSongIdRef.current = null;
       setDuration(0);
       setCurrentTime(0);
@@ -409,13 +324,9 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
 
       const ad = await getRandomAd();
 
-      // Something newer already took over while we were fetching the ad
-      // (shouldn't normally happen since clicks are blocked, but this is
-      // the safety net) — bail out instead of stomping on it.
       if (playTokenRef.current !== token) return;
 
       if (!ad || !ad.audio_url) {
-        // no ad configured / fetch failed — release the lock, don't block
         isAdPlayingRef.current = false;
         setIsAdPlaying(false);
         startActualSong(song);
@@ -426,8 +337,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       audio.src = ad.audio_url;
       audio.load();
 
-      // 🔒 Safety net: if "ended" never fires for some reason, force the
-      // real song to start after AD_FAILSAFE_MS instead of hanging forever.
       clearAdFailsafe();
       adFailsafeTimerRef.current = setTimeout(() => {
         if (playTokenRef.current !== token) return;
@@ -439,15 +348,10 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     [getRandomAd, startActualSong, attemptPlay, finishAdAndPlayPending],
   );
 
-  // ─── PUBLIC play entrypoint — every song click routes through here.
-  // Logged-in users (userRef.current truthy) always skip straight to the
-  // song. Logged-out users get an ad first, every single time a *new*
-  // song is requested — so it's ad → song → ad → song → ... forever,
-  // and never an ad again once you log in. ───
   const playSong = useCallback(
     (song) => {
       if (!song || !song.audioUrl) return;
-      if (isAdPlayingRef.current) return; // ad is playing — ignore new-song clicks
+      if (isAdPlayingRef.current) return;
 
       const isNewSong =
         !currentSongRef.current || currentSongRef.current.id !== song.id;
@@ -458,7 +362,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       }
 
       if (userRef.current) {
-        // ✅ logged-in users never see ads
         startActualSong(song);
       } else {
         playAd(song);
@@ -518,7 +421,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     [playSong],
   );
 
-  // list = the array this song belongs to (queue), used for next/prev/shuffle
   const handleSongClick = useCallback(
     (index, song, list) => {
       if (isAdPlayingRef.current) return;
@@ -535,7 +437,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     [handlePlayPause, playSong],
   );
 
-  // Convenience: play a whole list starting at its first track (e.g. "Play All")
   const playList = useCallback(
     (list) => {
       if (!list || list.length === 0) return;
@@ -544,14 +445,21 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     [handleSongClick],
   );
 
-  // ─── Skip the currently playing ad. Only works once
-  // AD_SKIP_AFTER_SECONDS have elapsed (mirrors the "Skip in Xs" UI). ───
   const skipAd = useCallback(() => {
     if (!isAdPlayingRef.current) return;
     if (currentTime < AD_SKIP_AFTER_SECONDS) return;
     finishAdAndPlayPending();
   }, [currentTime, finishAdAndPlayPending]);
 
+  // ✅ FIX: Keep refs in sync with latest callbacks (no re-render, no infinite loop)
+  const handleNextRef = useRef(handleNext);
+  const finishAdPlayAndPlayPendingRef = useRef(finishAdAndPlayPending);
+  useEffect(() => {
+    handleNextRef.current = handleNext;
+    finishAdPlayAndPlayPendingRef.current = finishAdAndPlayPending;
+  });
+
+  // ✅ FIX: Audio setup runs ONCE — uses refs for callbacks, not direct dependencies
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
@@ -566,16 +474,16 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     const onPause = () => setPlaying(false);
     const onError = () => {
       if (isAdPlayingRef.current) {
-        finishAdAndPlayPending();
+        finishAdAndPlayPendingRef.current();
       } else {
         setPlaying(false);
       }
     };
     const onEnded = () => {
       if (isAdPlayingRef.current) {
-        finishAdAndPlayPending();
+        finishAdPlayAndPlayPendingRef.current();
       } else {
-        handleNext();
+        handleNextRef.current();
       }
     };
     audio.addEventListener("timeupdate", onTimeUpdate);
@@ -596,8 +504,8 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       audio.removeAttribute("src");
       audio.load();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleNext, finishAdAndPlayPending]);
+    // ✅ Empty dependency array — runs ONCE on mount, never re-runs
+  }, []);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -642,11 +550,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const toggleShuffle = useCallback(() => setIsShuffle((s) => !s), []);
 
   const canSkipAd = isAdPlaying && currentTime >= AD_SKIP_AFTER_SECONDS;
-
-  // ✅ Single source of truth for "should the promo banner show right now".
-  // - authChecked: wait until we actually know the auth state (no flash)
-  // - !user: only for logged-out users
-  // - !topBannerDismissed: respects the X button for this session
   const showTopBanner = authChecked && !user && !topBannerDismissed;
 
   const dismissTopBanner = useCallback(() => {
@@ -654,7 +557,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   }, []);
 
   const value = {
-    // state
     playing,
     currentSong,
     currentList,
@@ -672,7 +574,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     setProfileOpen: setProfileOpenState,
     showTopBanner,
     dismissTopBanner,
-    // actions
     playSong,
     playList,
     handleSongClick,
@@ -692,11 +593,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     <PlayerContext.Provider value={value}>
       {children}
 
-      {/* ✅ Bottom stack: promo banner (only for logged-out users) sits
-          directly ABOVE the sticky player — both live in the same fixed
-          bottom-anchored column, so the banner is never at the page top
-          and always hugs the top edge of the player bar. When there's no
-          song playing, the banner just sits alone at the bottom. */}
       <div className="fixed bottom-0 left-0 right-0 z-[100] flex flex-col pointer-events-none">
         <AnimatePresence>
           {showTopBanner && (
@@ -709,9 +605,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
           )}
         </AnimatePresence>
 
-        {/* Sticky player is rendered ONCE here, globally — pages just call
-            usePlayer().playSong()/handleSongClick(), they never render
-            their own <StickyPlayer> or own an <audio> element. */}
         <AnimatePresence>
           {currentSong && (
             <div className="pointer-events-auto">
@@ -747,24 +640,10 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
 }
 
 // ─── TOP AD-FREE / FREE-TRIAL BANNER ───
-// Only ever mounted when the user is logged out (see showTopBanner above).
-// Purely presentational except for the trial-click handler below.
 const TopAdBanner = ({ onClose, proPlansRoute }) => {
   const navigate = useNavigate();
   const [trialLoading, setTrialLoading] = useState(false);
 
-  // ✅ SELF-CONTAINED TRIAL FLOW — does NOT depend on knowing/guessing
-  // the ProPlans list page's route. We already know for certain (from
-  // ProPlans.jsx / ProLogin.jsx / PackageSummary.jsx) that the confirmed,
-  // always-correct routes are:
-  //   • /pro/login?plan=<id>   (login, then redirects to the plan)
-  //   • /pro/plan/<id>         (package summary, logged-in only)
-  // Since this banner only ever renders for logged-OUT users, we just
-  // need the trial/popular plan's id, fetch it directly here (same
-  // tables ProPlans.jsx reads), then send the user straight to
-  // /pro/login?plan=<id> — exactly where "Start Free Trial" would land
-  // a logged-out user, without ever needing to guess the plans-listing
-  // page's own route.
   const handleTrialClick = async () => {
     if (trialLoading) return;
     setTrialLoading(true);
@@ -778,8 +657,6 @@ const TopAdBanner = ({ onClose, proPlansRoute }) => {
 
       if (plansErr || !plansData || plansData.length === 0) {
         console.error("Trial banner: could not load plans", plansErr);
-        // Last-resort fallback only — goes to the (possibly-guessed)
-        // plans listing page instead of doing nothing.
         navigate(proPlansRoute);
         return;
       }
@@ -876,7 +753,7 @@ const StickyPlayer = ({
       exit={{ y: 100 }}
       className="w-full bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
     >
-      <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
+      <div className="max-w-screen-2xl mx-auto flex flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
         <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
           <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10">
             {isAdPlaying ? (
@@ -981,9 +858,7 @@ const StickyPlayer = ({
                 onChange={(e) =>
                   !disabled && onSeek(parseFloat(e.target.value))
                 }
-                className={`absolute inset-0 w-full h-full opacity-0 z-10 ${
-                  disabled ? "cursor-not-allowed" : "cursor-pointer"
-                }`}
+                className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
               />
               <div
                 className={`absolute top-0 left-0 h-full rounded-full ${
@@ -1010,8 +885,6 @@ const StickyPlayer = ({
             <span className="w-10 font-mono">{formatDuration(duration)}</span>
           </div>
 
-          {/* ✅ AD SKIP CONTROL — countdown until AD_SKIP_AFTER_SECONDS,
-              then a real "Skip Ad" button. */}
           {isAdPlaying && (
             <div className="mt-1.5 h-4 flex items-center">
               {canSkipAd ? (
@@ -1030,7 +903,6 @@ const StickyPlayer = ({
           )}
         </div>
 
-        {/* Mobile Right */}
         <div className="flex md:hidden items-center gap-1 flex-shrink-0">
           {onExpand && (
             <button
@@ -1059,7 +931,6 @@ const StickyPlayer = ({
           </button>
         </div>
 
-        {/* Desktop Right */}
         <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
           <div className="flex items-center gap-3 w-full justify-end">
             {onExpand && (
@@ -1112,7 +983,9 @@ const StickyPlayer = ({
               />
               <div
                 className="absolute top-0 left-0 h-full rounded-full bg-green-500"
-                style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
+                style={{
+                  width: `${(isMuted ? 0 : volume) * 100}%`,
+                }}
               />
             </div>
           </div>

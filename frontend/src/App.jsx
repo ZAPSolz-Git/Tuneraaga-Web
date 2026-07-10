@@ -33,6 +33,9 @@ import PackageSummary from "./pages/PackageSummary";
 import ProLogin from "./pages/ProLogin";
 import PaymentReceipt from "./pages/PaymentReceipt";
 
+// Aniinspect
+import useAntiInspect from "./hooks/useAntiInspect";
+
 import AlbumDetail from "./pages/AlbumDetail";
 import ArtistProfile from "./pages/ArtistProfile";
 import AdminDash from "./admin/AdminDash.jsx";
@@ -57,6 +60,7 @@ import LoginPage from "./pages/LoginPage";
 import { AuthProvider } from "./components/AuthContext";
 
 function App() {
+  useAntiInspect();
   return (
     <Router>
       {/* ADDED: AuthProvider wrapper to share role across the app */}
