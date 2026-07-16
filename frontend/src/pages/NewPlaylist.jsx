@@ -13,10 +13,6 @@ import {
   Disc3,
   Play,
   Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
   X,
   Clock,
   AlertCircle,
@@ -24,23 +20,30 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
-const parseArtists = (val) => {
-  if (Array.isArray(val))
-    return val.map((s) => String(s).trim()).filter(Boolean);
-  if (!val || typeof val === "number" || typeof val === "boolean") return [];
-  return String(val)
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean);
-};
+// ✅ Shared Player Hook (Exactly like NewRelease)
+import {
+  usePlayer,
+  formatDuration,
+  parseArtists,
+} from "../components/PlayerContext";
 
-const formatDuration = (val) => {
-  if (!val || !isFinite(val) || val <= 0) return "0:00";
-  if (typeof val === "string") return val;
-  const m = Math.floor(val / 60);
-  const s = Math.floor(val % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
-};
+// ✅ Helper: Supabase data ko player format mein map karna
+const mapReleaseToSong = (release) => ({
+  id: release.id,
+  title: release.title,
+  artist: release.primary_artist,
+  featuringArtists: release.featuring_artists || "",
+  actorNames: release.actor_names || "",
+  movieName: release.movie_name || "",
+  img: release.cover_url || "https://via.placeholder.com/300",
+  audioUrl: release.audio_url,
+  language: release.language || "",
+  genre: release.genre || "",
+  albumName: release.album_name || "",
+  albumCoverUrl: release.album_cover_url || release.cover_url || "",
+  duration: release.duration || 0,
+  playCount: release.play_count || 0,
+});
 
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => {
@@ -52,7 +55,11 @@ const Toast = ({ message, type, onClose }) => {
       initial={{ opacity: 0, y: 50, x: "-50%" }}
       animate={{ opacity: 1, y: 0, x: "-50%" }}
       exit={{ opacity: 0, y: 50, x: "-50%" }}
-      className={`fixed bottom-24 left-1/2 z-[200] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl ${type === "success" ? "bg-green-50/95 border-green-200 text-green-800" : "bg-red-50/95 border-red-200 text-red-800"}`}
+      className={`fixed bottom-24 left-1/2 z-[200] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl ${
+        type === "success"
+          ? "bg-green-50/95 border-green-200 text-green-800"
+          : "bg-red-50/95 border-red-200 text-red-800"
+      }`}
     >
       {type === "success" ? (
         <CheckCircle2 size={20} className="text-green-600 flex-shrink-0" />
@@ -71,10 +78,14 @@ const SongResultRow = ({ song, isAdded, onToggle }) => (
   <button
     type="button"
     onClick={() => onToggle(song)}
-    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left group ${isAdded ? "bg-blue-50 border border-blue-200" : "hover:bg-slate-50 border border-transparent"}`}
+    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left group ${
+      isAdded
+        ? "bg-blue-50 border border-blue-200"
+        : "hover:bg-slate-50 border border-transparent"
+    }`}
   >
     <img
-      src={song.cover_url || "https://via.placeholder.com/44"}
+      src={song.img || "https://via.placeholder.com/44"}
       alt=""
       className="w-11 h-11 rounded-lg object-cover shadow-sm border border-slate-100 flex-shrink-0"
       onError={(e) => {
@@ -83,19 +94,25 @@ const SongResultRow = ({ song, isAdded, onToggle }) => (
     />
     <div className="flex-1 min-w-0">
       <p
-        className={`text-sm font-semibold truncate ${isAdded ? "text-blue-700" : "text-slate-900"}`}
+        className={`text-sm font-semibold truncate ${
+          isAdded ? "text-blue-700" : "text-slate-900"
+        }`}
       >
         {song.title}
       </p>
       <p className="text-xs text-slate-500 truncate mt-0.5">
-        {song.primary_artist}
-        {parseArtists(song.featuring_artists).length > 0
-          ? ` ft. ${parseArtists(song.featuring_artists).join(", ")}`
+        {song.artist}
+        {parseArtists(song.featuringArtists).length > 0
+          ? ` ft. ${parseArtists(song.featuringArtists).join(", ")}`
           : ""}
       </p>
     </div>
     <div
-      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all ${isAdded ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600"}`}
+      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+        isAdded
+          ? "bg-blue-600 text-white"
+          : "bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600"
+      }`}
     >
       {isAdded ? <Check size={16} /> : <Plus size={16} />}
     </div>
@@ -106,8 +123,8 @@ const NewPlaylist = () => {
   const navigate = useNavigate();
   const { playlistId } = useParams();
 
-  const [user, setUser] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  // ✅ Shared Player Context (Same as NewRelease)
+  const { user, playing, currentSong, handleSongClick } = usePlayer();
 
   // Create modal
   const [showNameModal, setShowNameModal] = useState(false);
@@ -124,64 +141,22 @@ const NewPlaylist = () => {
   const [searching, setSearching] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
 
-  // Player
-  const [playing, setPlaying] = useState(false);
-  const [currentSong, setCurrentSong] = useState(null);
-  const [currentList, setCurrentList] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-
   // UI
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const audioRef = useRef(null);
-  const currentSongRef = useRef(null);
-  const currentListRef = useRef([]);
-  const currentIndexRef = useRef(null);
   const searchTimeoutRef = useRef(null);
-
-  useEffect(() => {
-    currentSongRef.current = currentSong;
-  }, [currentSong]);
-  useEffect(() => {
-    currentListRef.current = currentList;
-  }, [currentList]);
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-
-  // Auth
-  useEffect(() => {
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      setAuthChecked(true);
-    };
-    init();
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_e, s) => {
-      setUser(s?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   // If playlistId exists → load detail. If not → show create modal.
   useEffect(() => {
-    if (!user || !authChecked) return;
+    if (!user) return;
     if (playlistId) {
       loadPlaylistDetail(playlistId);
     } else {
       setShowNameModal(true);
     }
-  }, [playlistId, user, authChecked]);
+  }, [playlistId, user]);
 
   const loadPlaylistDetail = async (id) => {
     setLoadingDetail(true);
@@ -204,10 +179,11 @@ const NewPlaylist = () => {
       setCurrentPlaylist(pl);
 
       const { data: rows, error: rErr } = await supabase
-        .from("user_playlist_songs")
+        .from("newcreate_playlist_songs")
         .select("release_id, position")
         .eq("playlist_id", id)
         .order("position", { ascending: true });
+
       if (rErr) throw rErr;
       if (!rows || rows.length === 0) {
         setSelectedSongs([]);
@@ -221,11 +197,16 @@ const NewPlaylist = () => {
         .select("*")
         .in("id", ids);
       if (relErr) throw relErr;
-      setSelectedSongs(
-        rows
-          .map((row) => rels?.find((r) => r.id === row.release_id))
-          .filter(Boolean),
-      );
+
+      // ✅ Map to player format
+      const mappedSongs = rows
+        .map((row) => {
+          const rel = rels?.find((r) => r.id === row.release_id);
+          return rel ? mapReleaseToSong(rel) : null;
+        })
+        .filter(Boolean);
+
+      setSelectedSongs(mappedSongs);
     } catch (err) {
       console.error("Load detail error:", err);
       setErrorMsg("Failed to load: " + (err.message || ""));
@@ -234,41 +215,67 @@ const NewPlaylist = () => {
     }
   };
 
-  // Search
+  // ✅ Fetch Songs Logic: Direct releases fetch karega jab panel khulega
   useEffect(() => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    searchTimeoutRef.current = setTimeout(async () => {
+    if (!showSearchPanel) return;
+
+    const fetchSongs = async () => {
+      setSearching(true);
       try {
-        const q = searchQuery.trim();
-        const { data, error } = await supabase
+        let query = supabase
           .from("releases")
-          .select(
-            "id, title, primary_artist, featuring_artists, album_name, cover_url, audio_url, duration",
-          )
+          .select("*")
           .eq("status", "Published")
-          .or(
-            `title.ilike.%${q}%,primary_artist.ilike.%${q}%,album_name.ilike.%${q}%`,
-          )
-          .limit(20);
-        if (!error && data) setSearchResults(data);
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        if (searchQuery.trim()) {
+          const q = searchQuery.trim();
+          query = supabase
+            .from("releases")
+            .select("*")
+            .eq("status", "Published")
+            .or(
+              `title.ilike.%${q}%,primary_artist.ilike.%${q}%,album_name.ilike.%${q}%`,
+            )
+            .limit(30);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error("Error fetching songs for playlist:", error.message);
+          setSearchResults([]);
+        } else {
+          // ✅ Map to player format
+          setSearchResults(data.map(mapReleaseToSong) || []);
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Catch error:", e);
+        setSearchResults([]);
       } finally {
         setSearching(false);
       }
-    }, 300);
-  }, [searchQuery]);
+    };
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    if (!searchQuery.trim()) {
+      fetchSongs();
+    } else {
+      searchTimeoutRef.current = setTimeout(fetchSongs, 300);
+    }
+
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [searchQuery, showSearchPanel]);
 
   const isSongSelected = useCallback(
     (sid) => selectedSongs.some((s) => s.id === sid),
     [selectedSongs],
   );
+
   const toggleSong = useCallback((song) => {
     setSelectedSongs((p) => {
       const ex = p.some((s) => s.id === song.id);
@@ -283,7 +290,7 @@ const NewPlaylist = () => {
       if (currentPlaylist?.id) {
         try {
           await supabase
-            .from("user_playlist_songs")
+            .from("newcreate_playlist_songs")
             .delete()
             .eq("playlist_id", currentPlaylist.id)
             .eq("release_id", sid);
@@ -295,7 +302,7 @@ const NewPlaylist = () => {
     [currentPlaylist?.id],
   );
 
-  // Create
+  // Create Playlist
   const handleCreate = async () => {
     if (!user || !playlistName.trim()) return;
     setSaving(true);
@@ -324,7 +331,7 @@ const NewPlaylist = () => {
     }
   };
 
-  // Save songs
+  // Save Songs to Playlist
   const handleSaveSongs = async () => {
     if (!currentPlaylist || selectedSongs.length === 0) return;
     setSaving(true);
@@ -332,35 +339,43 @@ const NewPlaylist = () => {
     try {
       const pid = currentPlaylist.id;
       await supabase
-        .from("user_playlist_songs")
+        .from("newcreate_playlist_songs")
         .delete()
         .eq("playlist_id", pid);
+
       const rows = selectedSongs.map((s, i) => ({
         playlist_id: pid,
         release_id: s.id,
         position: i,
       }));
-      const { error } = await supabase.from("user_playlist_songs").insert(rows);
+
+      const { error } = await supabase
+        .from("newcreate_playlist_songs")
+        .insert(rows);
+
       if (error) {
         setErrorMsg(error.message);
         throw error;
       }
-      if (!currentPlaylist.cover_url && selectedSongs[0]?.cover_url) {
+
+      if (!currentPlaylist.cover_url && selectedSongs[0]?.img) {
         await supabase
           .from("user_playlists")
-          .update({ cover_url: selectedSongs[0].cover_url })
+          .update({ cover_url: selectedSongs[0].img })
           .eq("id", pid);
         setCurrentPlaylist((p) => ({
           ...p,
-          cover_url: selectedSongs[0].cover_url,
+          cover_url: selectedSongs[0].img,
         }));
       }
+
       await loadPlaylistDetail(pid);
       setShowSearchPanel(false);
       setSearchQuery("");
-      setSearchResults([]);
       setToast({
-        message: `${selectedSongs.length} song${selectedSongs.length !== 1 ? "s" : ""} saved!`,
+        message: `${selectedSongs.length} song${
+          selectedSongs.length !== 1 ? "s" : ""
+        } saved!`,
         type: "success",
       });
     } catch (e) {
@@ -370,120 +385,41 @@ const NewPlaylist = () => {
     }
   };
 
-  const saveHistory = async (rid) => {
-    if (!user || !rid) return;
+  // ✅ Direct Delete Playlist Option
+  const handleDeletePlaylist = async () => {
+    if (!currentPlaylist) return;
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${currentPlaylist.title}"? This action cannot be undone.`,
+    );
+    if (!confirmDelete) return;
+
+    setSaving(true);
+    setErrorMsg("");
     try {
-      await supabase
-        .from("history")
-        .insert({ user_id: user.id, release_id: rid });
-    } catch (e) {}
-  };
+      const { error } = await supabase
+        .from("user_playlists")
+        .delete()
+        .eq("id", currentPlaylist.id)
+        .eq("user_id", user.id);
 
-  const playSong = useCallback(
-    (song, list, index) => {
-      if (!song || !song.audio_url) return;
-      const a = audioRef.current;
-      const f = {
-        ...song,
-        audioUrl: song.audio_url,
-        img: song.cover_url,
-        artist: song.primary_artist,
-      };
-      setCurrentSong(f);
-      currentSongRef.current = f;
-      setCurrentList(list);
-      currentListRef.current = list;
-      setCurrentIndex(index);
-      currentIndexRef.current = index;
-      setDuration(0);
-      setCurrentTime(0);
-      a.src = song.audio_url;
-      a.load();
-      a.play()
-        .then(() => setPlaying(true))
-        .catch((e) => {
-          if (e.name !== "AbortError") console.error(e);
-        });
-      if (song.id) saveHistory(song.id);
-    },
-    [user],
-  );
+      if (error) throw error;
 
-  useEffect(() => {
-    const a = new Audio();
-    audioRef.current = a;
-    const onT = () => setCurrentTime(a.currentTime);
-    const onM = () => {
-      if (isFinite(a.duration)) setDuration(a.duration);
-    };
-    const onP = () => setPlaying(true);
-    const onPa = () => setPlaying(false);
-    const onE = () => {
-      if (!currentListRef.current.length || currentIndexRef.current === null)
-        return;
-      const i = (currentIndexRef.current + 1) % currentListRef.current.length;
-      setCurrentIndex(i);
-      currentIndexRef.current = i;
-      playSong(currentListRef.current[i], currentListRef.current, i);
-    };
-    a.addEventListener("timeupdate", onT);
-    a.addEventListener("loadedmetadata", onM);
-    a.addEventListener("play", onP);
-    a.addEventListener("pause", onPa);
-    a.addEventListener("ended", onE);
-    return () => {
-      a.pause();
-      [onT, onM, onP, onPa, onE].forEach((fn, i) =>
-        a.removeEventListener(
-          ["timeupdate", "loadedmetadata", "play", "pause", "ended"][i],
-          fn,
-        ),
-      );
-    };
-  }, [playSong]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    playing ? audioRef.current.pause() : audioRef.current.play();
-  };
-  const seek = (t) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = t;
-      setCurrentTime(t);
+      setToast({ message: "Playlist deleted successfully", type: "success" });
+      setTimeout(() => navigate(-1), 500);
+    } catch (err) {
+      console.error("Delete error:", err);
+      setErrorMsg("Failed to delete playlist: " + (err.message || ""));
+    } finally {
+      setSaving(false);
     }
   };
-  const closePlayer = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current.removeAttribute("src");
-      audioRef.current.load();
-    }
-    setCurrentSong(null);
-    currentSongRef.current = null;
-    setPlaying(false);
-    setCurrentIndex(null);
-    currentIndexRef.current = null;
-    setCurrentList([]);
-    currentListRef.current = [];
-    setDuration(0);
-    setCurrentTime(0);
+
+  // ✅ Play Song using Shared Player Context
+  const playSong = (song, list, index) => {
+    handleSongClick(index, song, list);
   };
-  const toggleMute = () => setIsMuted(!isMuted);
 
   // ═══════ LOADING / AUTH ═══════
-  if (!authChecked)
-    return (
-      <div className="w-full min-h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin text-blue-600" size={32} />
-      </div>
-    );
   if (!user)
     return (
       <div className="w-full min-h-screen flex items-center justify-center px-4">
@@ -501,6 +437,7 @@ const NewPlaylist = () => {
         </div>
       </div>
     );
+
   if (loadingDetail)
     return (
       <div className="w-full min-h-screen flex items-center justify-center">
@@ -670,10 +607,22 @@ const NewPlaylist = () => {
               </button>
               <button
                 onClick={() => setShowSearchPanel(!showSearchPanel)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-full border-2 font-bold text-sm transition-all ${showSearchPanel ? "border-blue-500 text-blue-600 bg-blue-50" : "border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"}`}
+                className={`flex items-center gap-2 px-6 py-3 rounded-full border-2 font-bold text-sm transition-all ${
+                  showSearchPanel
+                    ? "border-blue-500 text-blue-600 bg-blue-50"
+                    : "border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
+                }`}
               >
                 <Plus size={16} />
                 Add Songs
+              </button>
+              <button
+                onClick={handleDeletePlaylist}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-3 rounded-full border-2 border-red-200 text-red-600 font-bold text-sm transition-all hover:border-red-500 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 size={16} />
+                Delete Playlist
               </button>
             </div>
           </motion.div>
@@ -694,7 +643,7 @@ const NewPlaylist = () => {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search songs..."
+                    placeholder="Search or browse new releases..."
                     className="w-full pl-10 pr-10 py-3 rounded-full border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
                     autoFocus
                   />
@@ -711,7 +660,7 @@ const NewPlaylist = () => {
                     <div className="text-center py-10">
                       <Music2 className="w-10 h-10 text-slate-200 mx-auto mb-2" />
                       <p className="text-sm text-slate-400">
-                        Search to add songs
+                        No published songs found in database
                       </p>
                     </div>
                   ) : (
@@ -771,48 +720,54 @@ const NewPlaylist = () => {
             </div>
           ) : (
             <div className="divide-y divide-slate-50">
-              {selectedSongs.map((song, i) => (
-                <motion.div
-                  key={song.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="flex items-center gap-2 px-4 py-3 cursor-pointer transition-all group"
-                  onClick={() => playSong(song, selectedSongs, i)}
-                >
-                  <div
-                    className={`flex-1 flex items-center gap-4 min-w-0 rounded-xl px-2 py-1 ${currentSongRef.current?.id === song.id ? "bg-blue-50 border border-blue-100" : "border border-transparent"}`}
+              {selectedSongs.map((song, i) => {
+                const isTrackActive = currentSong?.id === song.id;
+                return (
+                  <motion.div
+                    key={song.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors group ${isTrackActive ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                    onClick={() => playSong(song, selectedSongs, i)}
                   >
+                    {/* ✅ Yahan humne number ki jagah hamesha Play button dikhana shuru kar diya hai */}
                     <div className="w-8 flex-shrink-0 flex items-center justify-center">
-                      {currentSongRef.current?.id === song.id && playing ? (
-                        <div className="flex items-end gap-[2px] h-4">
-                          <span
-                            className="w-[3px] bg-blue-600 rounded-full animate-pulse"
-                            style={{ height: "60%" }}
+                      {isTrackActive && playing ? (
+                        <div className="flex items-end gap-0.5 h-4">
+                          <motion.div
+                            animate={{ height: ["40%", "100%", "40%"] }}
+                            transition={{ repeat: Infinity, duration: 0.6 }}
+                            className="w-1 bg-blue-600 rounded-full"
                           />
-                          <span
-                            className="w-[3px] bg-blue-600 rounded-full animate-pulse"
-                            style={{ height: "100%", animationDelay: "0.15s" }}
+                          <motion.div
+                            animate={{ height: ["100%", "40%", "100%"] }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 0.6,
+                              delay: 0.15,
+                            }}
+                            className="w-1 bg-blue-600 rounded-full"
                           />
-                          <span
-                            className="w-[3px] bg-blue-600 rounded-full animate-pulse"
-                            style={{ height: "40%", animationDelay: "0.3s" }}
+                          <motion.div
+                            animate={{ height: ["60%", "100%", "60%"] }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 0.6,
+                              delay: 0.3,
+                            }}
+                            className="w-1 bg-blue-600 rounded-full"
                           />
                         </div>
                       ) : (
-                        <>
-                          <span className="text-sm font-medium text-slate-400 group-hover:hidden">
-                            {i + 1}
-                          </span>
-                          <Play
-                            size={14}
-                            className="text-slate-900 hidden group-hover:block fill-slate-900"
-                          />
-                        </>
+                        <Play
+                          size={18}
+                          className="text-blue-600 fill-blue-600"
+                        />
                       )}
                     </div>
                     <img
-                      src={song.cover_url || "https://via.placeholder.com/40"}
+                      src={song.img || "https://via.placeholder.com/40"}
                       alt=""
                       className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100"
                       onError={(e) => {
@@ -821,178 +776,41 @@ const NewPlaylist = () => {
                     />
                     <div className="flex-1 min-w-0">
                       <p
-                        className={`text-sm font-semibold truncate ${currentSongRef.current?.id === song.id ? "text-blue-700" : "text-slate-900"}`}
+                        className={`text-sm font-semibold truncate ${
+                          isTrackActive ? "text-blue-600" : "text-slate-900"
+                        }`}
                       >
                         {song.title}
                       </p>
                       <p className="text-xs text-slate-500 truncate mt-0.5">
-                        {song.primary_artist}
+                        {song.artist}
+                        {parseArtists(song.featuringArtists).length > 0
+                          ? ` ft. ${parseArtists(song.featuringArtists).join(", ")}`
+                          : ""}
                       </p>
                     </div>
-                    <span className="text-xs text-slate-400 font-medium w-10 text-right flex-shrink-0">
-                      {song.duration ? formatDuration(song.duration) : "—"}
+                    {/* ✅ Yahan se maine "-" (dash) hata diya hai agar duration nahi hai toh */}
+                    <span className="text-xs text-slate-400 font-medium w-10 text-right flex-shrink-0 hidden sm:block">
+                      {song.duration ? formatDuration(song.duration) : ""}
                     </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeSong(song.id);
-                    }}
-                    className="flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </motion.div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSong(song.id);
+                      }}
+                      className="flex-shrink-0 text-slate-300 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {currentSong && (
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-[100]">
-          <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 px-4 py-3 md:py-4 md:px-8">
-            <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
-              <div className="w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10 flex-shrink-0">
-                <img
-                  src={currentSong.img || "https://via.placeholder.com/50"}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex flex-col overflow-hidden">
-                <h4 className="font-bold text-white truncate text-base leading-tight">
-                  {currentSong.title}
-                </h4>
-                <p className="text-xs text-gray-400 truncate mt-0.5">
-                  {currentSong.artist}
-                </p>
-              </div>
-            </div>
-            <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
-              <div className="flex items-center gap-4 md:gap-6 mb-2">
-                <button
-                  onClick={() => {
-                    if (
-                      !currentListRef.current.length ||
-                      currentIndexRef.current === null
-                    )
-                      return;
-                    const i =
-                      (currentIndexRef.current -
-                        1 +
-                        currentListRef.current.length) %
-                      currentListRef.current.length;
-                    playSong(
-                      currentListRef.current[i],
-                      currentListRef.current,
-                      i,
-                    );
-                  }}
-                  className="text-gray-400 hover:text-white transition-colors hover:scale-110"
-                >
-                  <SkipBack size={20} />
-                </button>
-                <button
-                  onClick={togglePlay}
-                  className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-110 transition-all bg-white text-slate-900"
-                >
-                  {playing ? (
-                    <Pause size={24} className="fill-slate-900" />
-                  ) : (
-                    <Play size={24} className="fill-slate-900 ml-1" />
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    if (
-                      !currentListRef.current.length ||
-                      currentIndexRef.current === null
-                    )
-                      return;
-                    const i =
-                      (currentIndexRef.current + 1) %
-                      currentListRef.current.length;
-                    playSong(
-                      currentListRef.current[i],
-                      currentListRef.current,
-                      i,
-                    );
-                  }}
-                  className="text-gray-400 hover:text-white transition-colors hover:scale-110"
-                >
-                  <SkipForward size={20} />
-                </button>
-              </div>
-              <div className="w-full flex items-center gap-3 text-xs text-gray-400 font-medium px-0 md:px-8">
-                <span className="w-10 text-right font-mono">
-                  {formatDuration(currentTime)}
-                </span>
-                <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer">
-                  <input
-                    type="range"
-                    min="0"
-                    max={duration || 100}
-                    value={currentTime}
-                    onChange={(e) => seek(parseFloat(e.target.value))}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  />
-                  <div
-                    className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"
-                    style={{
-                      width: duration
-                        ? `${(currentTime / duration) * 100}%`
-                        : "0%",
-                    }}
-                  />
-                </div>
-                <span className="w-10 font-mono">
-                  {formatDuration(duration)}
-                </span>
-              </div>
-            </div>
-            <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
-              <button
-                onClick={closePlayer}
-                className="text-gray-400 hover:text-red-500 transition-colors hover:rotate-90"
-              >
-                <X size={20} />
-              </button>
-              <div className="flex items-center gap-3 w-full justify-end mt-1">
-                <button
-                  onClick={toggleMute}
-                  className="text-gray-400 hover:text-green-500 hover:scale-110"
-                >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX size={18} />
-                  ) : (
-                    <Volume2 size={18} />
-                  )}
-                </button>
-                <div className="flex-1 relative h-1.5 bg-gray-700 rounded-full cursor-pointer w-24">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={isMuted ? 0 : volume}
-                    onChange={(e) => {
-                      setVolume(parseFloat(e.target.value));
-                      setIsMuted(parseFloat(e.target.value) === 0);
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  />
-                  <div
-                    className="absolute top-0 left-0 h-full rounded-full bg-blue-500"
-                    style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <AnimatePresence>
         {toast && (
           <Toast

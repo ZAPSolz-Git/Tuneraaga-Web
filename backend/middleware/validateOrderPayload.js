@@ -1,4 +1,3 @@
-
 const validateOrderPayload = (req, res, next) => {
   const { email, userId, plan, amount } = req.body;
   const errors = [];
@@ -36,7 +35,6 @@ const validateOrderPayload = (req, res, next) => {
     });
   }
 
- 
   req.body.amount = Number(amount);
 
   next();

@@ -1,181 +1,205 @@
-// import React, { useState, useEffect } from "react";
-// import { useNavigate } from "react-router-dom";
-// import { motion } from "framer-motion";
-// import { supabase } from "@/lib/supabaseClient";
-// import { Lock, Key, CheckCircle, ArrowLeft } from "lucide-react";
+// src/pages/ResetPassword.jsx
+import React, { useState, useEffect } from "react";
+import { useSearchParams, Link } from "react-router-dom";
+import { Lock, Loader2, CheckCircle, XCircle, ArrowLeft } from "lucide-react";
 
-// const ResetPassword = () => {
-//   const [newPassword, setNewPassword] = useState("");
-//   const [confirmPassword, setConfirmPassword] = useState("");
-//   const [isLoading, setIsLoading] = useState(false);
-//   const [message, setMessage] = useState("");
-//   const [error, setError] = useState("");
-//   const [success, setSuccess] = useState(false);
-//   const navigate = useNavigate();
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-//   useEffect(() => {
-//     // Check if we have a hash fragment from Supabase
-//     const hashParams = new URLSearchParams(window.location.hash.substring(1));
-//     const accessToken = hashParams.get("access_token");
+export default function ResetPassword() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
 
-//     if (!accessToken) {
-//       setError("Invalid or expired reset link. Please request a new one.");
-//     }
-//   }, []);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
-//   const handleResetPassword = async (e) => {
-//     e.preventDefault();
-//     setIsLoading(true);
-//     setMessage("");
-//     setError("");
+  useEffect(() => {
+    if (!token) {
+      setError(
+        "This link is invalid. Please request a new password reset link.",
+      );
+    }
+  }, [token]);
 
-//     // Validate passwords
-//     if (newPassword.length < 6) {
-//       setError("Password must be at least 6 characters long.");
-//       setIsLoading(false);
-//       return;
-//     }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
 
-//     if (newPassword !== confirmPassword) {
-//       setError("Passwords do not match.");
-//       setIsLoading(false);
-//       return;
-//     }
+    if (!password || !confirmPassword) {
+      setError("Both fields are required.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
 
-//     try {
-//       const { error } = await supabase.auth.updateUser({
-//         password: newPassword,
-//       });
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
 
-//       if (error) throw error;
+      const data = await res.json();
 
-//       setSuccess(true);
-//       setMessage("Password updated successfully!");
+      if (!res.ok) {
+        setError(data.message || "Failed to reset password.");
+        return;
+      }
 
-//       setTimeout(() => {
-//         navigate("/login");
-//       }, 3000);
-//     } catch (err) {
-//       setError(err.message || "Failed to update password. Please try again.");
-//     } finally {
-//       setIsLoading(false);
-//     }
-//   };
+      setSuccess(true);
+    } catch (err) {
+      console.error("Reset password error:", err);
+      setError("Could not connect to the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-//   return (
-//     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-100 flex items-center justify-center px-4">
-//       <motion.div
-//         initial={{ opacity: 0, scale: 0.9 }}
-//         animate={{ opacity: 1, scale: 1 }}
-//         transition={{ duration: 0.5, type: "spring" }}
-//         className="w-full max-w-md bg-white/90 backdrop-blur-3xl border border-white/60 p-8 md:p-10 rounded-[2rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.2)]"
-//       >
-//         <div className="text-center mb-8">
-//           <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-6 shadow-2xl bg-gradient-to-br from-blue-500 to-blue-600">
-//             <Key className="w-10 h-10 text-white" />
-//           </div>
-//           <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600 mb-2">
-//             Reset Password
-//           </h2>
-//           <p className="text-slate-500 text-sm">
-//             Enter your new password below
-//           </p>
-//         </div>
+  // ─── No token state ───
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <XCircle size={48} className="mx-auto text-red-400 mb-4" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            Invalid Link
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">
+            This reset link is invalid or has expired. Please request a new one.
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-blue-700 transition-colors text-sm"
+          >
+            <ArrowLeft size={16} />
+            Go Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
-//         {success && (
-//           <motion.div
-//             initial={{ opacity: 0, y: -10 }}
-//             animate={{ opacity: 1, y: 0 }}
-//             className="mb-6 p-4 bg-green-50 border border-green-200 rounded-2xl text-green-600 text-sm text-center"
-//           >
-//             <CheckCircle className="w-5 h-5 inline-block mr-2" />
-//             {message}
-//           </motion.div>
-//         )}
+  // ─── Success state ───
+  if (success) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            Password Updated! ✅
+          </h2>
+          <p className="text-slate-500 text-sm mb-6">
+            Your password has been successfully updated. You can now log in with
+            your new password.
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-blue-700 transition-colors text-sm"
+          >
+            <ArrowLeft size={16} />
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
-//         {error && (
-//           <motion.div
-//             initial={{ opacity: 0, y: -10 }}
-//             animate={{ opacity: 1, y: 0 }}
-//             className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-sm text-center"
-//           >
-//             {error}
-//           </motion.div>
-//         )}
+  // ─── Reset form ───
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full">
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto mb-3">
+            <Lock size={24} className="text-blue-600" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-slate-900">
+            Reset Password
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">Set your new password.</p>
+        </div>
 
-//         {!success && (
-//           <form onSubmit={handleResetPassword} className="space-y-5">
-//             <div className="space-y-2">
-//               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
-//                 New Password
-//               </label>
-//               <div className="relative">
-//                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-//                   <Lock className="h-5 w-5 text-blue-500" />
-//                 </div>
-//                 <input
-//                   type="password"
-//                   required
-//                   value={newPassword}
-//                   onChange={(e) => setNewPassword(e.target.value)}
-//                   placeholder="Enter new password"
-//                   className="block w-full pl-11 pr-3 py-4 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
-//                 />
-//               </div>
-//               <p className="text-xs text-slate-400 ml-1">
-//                 Minimum 6 characters
-//               </p>
-//             </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">
+              New Password
+            </label>
+            <div className="relative">
+              <Lock
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
 
-//             <div className="space-y-2">
-//               <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">
-//                 Confirm Password
-//               </label>
-//               <div className="relative">
-//                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-//                   <Lock className="h-5 w-5 text-blue-500" />
-//                 </div>
-//                 <input
-//                   type="password"
-//                   required
-//                   value={confirmPassword}
-//                   onChange={(e) => setConfirmPassword(e.target.value)}
-//                   placeholder="Confirm new password"
-//                   className="block w-full pl-11 pr-3 py-4 border border-slate-200 rounded-xl leading-5 bg-white/60 text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
-//                 />
-//               </div>
-//             </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">
+              Confirm Password
+            </label>
+            <div className="relative">
+              <Lock
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
 
-//             <motion.button
-//               whileHover={{ scale: 1.02 }}
-//               whileTap={{ scale: 0.98 }}
-//               type="submit"
-//               disabled={isLoading}
-//               className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl disabled:opacity-70"
-//             >
-//               {isLoading ? (
-//                 <>
-//                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-//                   Updating...
-//                 </>
-//               ) : (
-//                 "Update Password"
-//               )}
-//             </motion.button>
-//           </form>
-//         )}
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              {error}
+            </div>
+          )}
 
-//         <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-//           <button
-//             onClick={() => navigate("/login")}
-//             className="text-sm text-slate-500 hover:text-blue-600 transition-colors font-medium flex items-center justify-center gap-1 w-full"
-//           >
-//             <ArrowLeft size={14} /> Back to Login
-//           </button>
-//         </div>
-//       </motion.div>
-//     </div>
-//   );
-// };
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white font-bold py-2.5 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Updating...
+              </>
+            ) : (
+              "Reset Password"
+            )}
+          </button>
+        </form>
 
-// export default ResetPassword;
+        <div className="mt-5 text-center">
+          <Link
+            to="/"
+            className="text-sm text-blue-600 font-semibold hover:underline inline-flex items-center gap-1"
+          >
+            <ArrowLeft size={14} />
+            Back to Home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

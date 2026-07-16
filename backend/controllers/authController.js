@@ -1,4 +1,8 @@
+// backend/controllers/authController.js — FULL UPDATED FILE
+
+const crypto = require("crypto"); // ✅ NEW
 const { supabase, supabaseAdmin } = require("../config/supabaseClient");
+const { sendResetEmail } = require("../utils/sendEmail"); // ✅ NEW
 
 // --- 1. LOGIN ---
 exports.login = async (req, res) => {
@@ -12,7 +16,6 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Step 1: Sign in with Supabase Auth (this is the ONLY place login actually happens)
     const { data: authData, error: authError } =
       await supabase.auth.signInWithPassword({
         email,
@@ -20,34 +23,30 @@ exports.login = async (req, res) => {
       });
 
     if (authError) {
-      // Log the REAL reason on the server so you can debug easily
       console.error("Login auth error:", authError.message);
 
-      // Give the user a more useful message depending on the actual reason
       if (authError.message.toLowerCase().includes("email not confirmed")) {
         return res.status(401).json({
           success: false,
           message:
-            "Aapka email verify nahi hua hai. Signup ke baad bheja gaya confirmation email check karo.",
+            "Your email is not verified. Please check the confirmation email sent after signup.",
         });
       }
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email ya password.",
+        message: "Invalid email or password.",
       });
     }
 
     const userId = authData.user.id;
 
-    // Step 2: Check if user exists in users table (Use supabaseAdmin to bypass RLS)
     let { data: existingUser, error: fetchError } = await supabaseAdmin
       .from("users")
       .select("id, email, role, created_at, updated_at")
       .eq("id", userId)
       .single();
 
-    // Step 3: If not in users table (e.g. old account), create entry now
     if (fetchError || !existingUser) {
       const { data: newUser, error: insertError } = await supabaseAdmin
         .from("users")
@@ -235,7 +234,6 @@ exports.logout = async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
-
       await supabaseAdmin.auth.admin.signOut(token);
     }
 
@@ -289,6 +287,7 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
+// --- 6. UPDATE USER ROLE (ADMIN ONLY) ---
 exports.updateUserRole = async (req, res) => {
   try {
     const { id } = req.params;
@@ -458,6 +457,194 @@ exports.getUserStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: err.message,
+    });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// ✅ NEW — 9. FORGOT PASSWORD
+// ═══════════════════════════════════════════════════════
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: "Email is required.",
+    });
+  }
+
+  try {
+    // ---- Look up user by email in Supabase Auth ----
+    const { data: listData, error: listError } =
+      await supabaseAdmin.auth.admin.listUsers({ perPage: 10000 });
+
+    if (listError) {
+      console.error("listUsers error:", listError);
+      return res.json({
+        success: true,
+        message:
+          "If this email is registered, a reset link has been sent.",
+      });
+    }
+
+    const authUser = listData.users.find(
+      (u) => u.email.toLowerCase() === email.toLowerCase()
+    );
+
+    // ---- Email not found — still return success (security) ----
+    if (!authUser) {
+      console.log(`⚠ forgotPassword: email not found — ${email}`);
+      return res.json({
+        success: true,
+        message:
+          "If this email is registered, a reset link has been sent.",
+      });
+    }
+
+    // ---- Invalidate previous unused tokens for this email ----
+    await supabaseAdmin
+      .from("password_resets")
+      .update({ used: true })
+      .eq("email", email)
+      .eq("used", false);
+
+    // ---- Generate new token ----
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+    // ---- Store token ----
+    const { error: insertError } = await supabaseAdmin
+      .from("password_resets")
+      .insert({
+        user_id: authUser.id,
+        email: email,
+        token: token,
+        expires_at: expiresAt,
+        used: false,
+      });
+
+    if (insertError) {
+      console.error("Token insert error:", insertError);
+      return res.status(500).json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
+    }
+
+    // ---- Send reset email via Nodemailer ----
+    const frontendUrl =
+      process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
+
+    try {
+      await sendResetEmail(email, resetUrl);
+    } catch (emailError) {
+      console.error("Email send error:", emailError);
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to send email. Please try again later.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message:
+        "If this email is registered, a reset link has been sent. Please check your inbox (and spam folder).",
+    });
+  } catch (err) {
+    console.error("forgotPassword unexpected error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again.",
+    });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
+// ✅ NEW — 10. RESET PASSWORD
+// ═══════════════════════════════════════════════════════
+exports.resetPassword = async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Token and new password are both required.",
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be at least 6 characters long.",
+    });
+  }
+
+  try {
+    // ---- Look up token ----
+    const { data: resetRecord, error: fetchError } = await supabaseAdmin
+      .from("password_resets")
+      .select("*")
+      .eq("token", token)
+      .eq("used", false)
+      .single();
+
+    if (fetchError || !resetRecord) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This reset link is invalid or has already been used. Please request a new one.",
+      });
+    }
+
+    // ---- Check expiry ----
+    if (new Date(resetRecord.expires_at) < new Date()) {
+      await supabaseAdmin
+        .from("password_resets")
+        .update({ used: true })
+        .eq("id", resetRecord.id);
+
+      return res.status(400).json({
+        success: false,
+        message: "This reset link has expired. Please request a new one.",
+      });
+    }
+
+    // ---- Update password in Supabase Auth ----
+    const { error: updateError } =
+      await supabaseAdmin.auth.admin.updateUserById(resetRecord.user_id, {
+        password: password,
+      });
+
+    if (updateError) {
+      console.error("Password update error:", updateError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update password. Please try again.",
+      });
+    }
+
+    // ---- Mark token as used ----
+    await supabaseAdmin
+      .from("password_resets")
+      .update({ used: true })
+      .eq("id", resetRecord.id);
+
+    console.log(
+      `✅ Password reset successful for ${resetRecord.email}`
+    );
+
+    return res.json({
+      success: true,
+      message: "Password updated successfully! You can now log in.",
+    });
+  } catch (err) {
+    console.error("resetPassword unexpected error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong. Please try again.",
     });
   }
 };

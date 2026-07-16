@@ -33,6 +33,9 @@ import PackageSummary from "./pages/PackageSummary";
 import ProLogin from "./pages/ProLogin";
 import PaymentReceipt from "./pages/PaymentReceipt";
 
+// ✅ NEW — Forgot Password reset page
+import ResetPassword from "./pages/ResetPassword";
+
 // Aniinspect
 import useAntiInspect from "./hooks/useAntiInspect";
 
@@ -60,7 +63,7 @@ import LoginPage from "./pages/LoginPage";
 import { AuthProvider } from "./components/AuthContext";
 
 function App() {
-  useAntiInspect();
+  // useAntiInspect();
   return (
     <Router>
       {/* ADDED: AuthProvider wrapper to share role across the app */}
@@ -111,6 +114,9 @@ function App() {
             <Route path="/album/:albumName" element={<AlbumDetail />} />
             <Route path="/artist/:artistName" element={<ArtistProfile />} />
             <Route path="/login" element={<LoginPage />} />
+
+            {/* ✅ NEW — Forgot Password reset page (full-screen, no sidebar) */}
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* ═══ ARTIST ROUTES (PROTECTED) ═══ */}
             <Route

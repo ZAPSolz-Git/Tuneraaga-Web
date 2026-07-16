@@ -1,3 +1,5 @@
+// backend/server.js — VERIFY this line exists (no change needed)
+
 require("dotenv").config({ path: "./.env" });
 const express = require("express");
 const cors = require("cors");
@@ -8,7 +10,6 @@ const { supabase } = require("./config/supabaseClient");
 const artistRoutes = require("./routes/artistRoutes");
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
-
 const contentRoutes = require("./routes/contentRoutes");
 
 const app = express();
@@ -20,8 +21,8 @@ app.use(express.json({ limit: "50mb" }));
 app.use(helmet());
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100,
   }),
 );
 
@@ -35,7 +36,7 @@ app.use("/api/content", contentRoutes);
 
 // --- Route Mounting ---
 app.use("/api/artists", artistRoutes);
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authRoutes); // ← YEH LINE ZAROOR HO — isse /api/auth/forgot-password banega
 app.use("/api", orderRoutes);
 
 // --- Start Server ---
