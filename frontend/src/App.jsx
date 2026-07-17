@@ -33,11 +33,11 @@ import PackageSummary from "./pages/PackageSummary";
 import ProLogin from "./pages/ProLogin";
 import PaymentReceipt from "./pages/PaymentReceipt";
 
-// ✅ NEW — Forgot Password reset page
+// Forgot Password reset page
 import ResetPassword from "./pages/ResetPassword";
 
 // Aniinspect
-import useAntiInspect from "./hooks/useAntiInspect";
+// import useAntiInspect from "./hooks/useAntiInspect";
 
 import AlbumDetail from "./pages/AlbumDetail";
 import ArtistProfile from "./pages/ArtistProfile";
@@ -59,6 +59,9 @@ import ArtistLayout from "./artist/ArtistLayout1";
 import AdminLayout from "./admin/AdminLayout1";
 import LoginPage from "./pages/LoginPage";
 
+// ✅ Center Toast
+import CenterToast from "./components/CenterToast";
+
 // Authfetchuser
 import { AuthProvider } from "./components/AuthContext";
 
@@ -66,7 +69,6 @@ function App() {
   // useAntiInspect();
   return (
     <Router>
-      {/* ADDED: AuthProvider wrapper to share role across the app */}
       <AuthProvider>
         <PlayerProvider>
           <Routes>
@@ -115,7 +117,7 @@ function App() {
             <Route path="/artist/:artistName" element={<ArtistProfile />} />
             <Route path="/login" element={<LoginPage />} />
 
-            {/* ✅ NEW — Forgot Password reset page (full-screen, no sidebar) */}
+            {/* Forgot Password reset page (full-screen, no sidebar) */}
             <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* ═══ ARTIST ROUTES (PROTECTED) ═══ */}
@@ -162,7 +164,9 @@ function App() {
           </Routes>
         </PlayerProvider>
       </AuthProvider>
-      {/* ADDED ENDS */}
+
+      {/* ✅ CENTER TOAST — outside everything, always on top */}
+      <CenterToast />
     </Router>
   );
 }

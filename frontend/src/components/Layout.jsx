@@ -32,6 +32,9 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import Footer from "./Footer";
 import Auth from "./Auth";
+import GlobalToast from "./GlobalToast";
+import { toastEvents } from "../utils/toastEvents";
+import { centerToastEvents } from "./CenterToast";
 
 const BLUE_LIGHT = "#3b82f6";
 const BLUE_DARK = "#1d4ed8";
@@ -189,6 +192,8 @@ const UserMenu = ({ user, onOpenAuth }) => {
               onClick={async () => {
                 setMenuOpen(false);
                 await supabase.auth.signOut();
+                // ✅ Center toast on logout — same as login/signup
+                centerToastEvents.show("Logged out successfully", "success");
               }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-colors"
             >
@@ -554,6 +559,7 @@ const Layout = () => {
         </main>
 
         <Footer />
+        <GlobalToast />
       </div>
     );
   }
@@ -723,105 +729,105 @@ const Layout = () => {
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
         {/* ✅ TOP NAVBAR — Go Pro on LEFT side, before search bar */}
         <div className="sticky top-0 z-30 pointer-events-none bg-gradient-to-b from-slate-50 via-slate-50 to-transparent pb-2 pt-4">
-<div className="grid grid-cols-3 items-center px-4 md:px-8 pointer-events-auto">
-  {/* LEFT */}
-  <div className="flex justify-start">
-    <Link to="/pro" className="hidden md:block">
-      <button
-  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full
+          <div className="grid grid-cols-3 items-center px-4 md:px-8 pointer-events-auto">
+            {/* LEFT */}
+            <div className="flex justify-start">
+              <Link to="/pro" className="hidden md:block">
+                <button
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full
              bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500
              text-white text-[12px] font-bold
              shadow-sm hover:shadow-md
              hover:from-cyan-500 hover:via-sky-500 hover:to-blue-600
              transition-all duration-200 hover:scale-105"
->
-  <Crown size={14} className="fill-white text-white" />
-  <span>Go Pro</span>
-</button>
-    </Link>
-  </div>
+                >
+                  <Crown size={14} className="fill-white text-white" />
+                  <span>Go Pro</span>
+                </button>
+              </Link>
+            </div>
 
-  {/* CENTER */}
-  <div className="flex justify-center">
-    <div className="relative w-full max-w-lg">
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-        <Search className="w-4 h-4" />
-      </div>
+            {/* CENTER */}
+            <div className="flex justify-center">
+              <div className="relative w-full max-w-lg">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Search className="w-4 h-4" />
+                </div>
 
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search songs, artists, movies, lyrics..."
-        className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
-      />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search songs, artists, movies, lyrics..."
+                  className="w-full pl-11 pr-4 py-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+                />
 
-      {searchQuery && (
-        <button
-          onClick={() => {
-            setSearchQuery("");
-            setShowSearchDropdown(false);
-          }}
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      )}
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setShowSearchDropdown(false);
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
 
-      <SearchDropdown
-        results={searchResults}
-        visible={showSearchDropdown}
-        onNavigate={handleSearchResultClick}
-        onClose={handleCloseSearchDropdown}
-      />
-    </div>
-  </div>
+                <SearchDropdown
+                  results={searchResults}
+                  visible={showSearchDropdown}
+                  onNavigate={handleSearchResultClick}
+                  onClose={handleCloseSearchDropdown}
+                />
+              </div>
+            </div>
 
-  {/* RIGHT */}
-  <div className="flex justify-end">
-    <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-4 rounded-full border border-slate-200 shadow-sm">
-      <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
-        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
-      </Bell>
+            {/* RIGHT */}
+            <div className="flex justify-end">
+              <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-4 rounded-full border border-slate-200 shadow-sm">
+                <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
+                </Bell>
 
-      {user ? (
-        <UserMenu
-          user={user}
-          onOpenAuth={() => setShowAuthModal(true)}
-        />
-      ) : (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setAuthMode("login");
-              setShowAuthModal(true);
-            }}
-            className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
-          >
-            Log In
-          </button>
+                {user ? (
+                  <UserMenu
+                    user={user}
+                    onOpenAuth={() => setShowAuthModal(true)}
+                  />
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setAuthMode("login");
+                        setShowAuthModal(true);
+                      }}
+                      className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+                    >
+                      Log In
+                    </button>
 
-          <button
-            onClick={() => {
-              setAuthMode("signup");
-              setShowAuthModal(true);
-            }}
-            className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
-          >
-            Sign Up
-          </button>
-        </div>
-      )}
+                    <button
+                      onClick={() => {
+                        setAuthMode("signup");
+                        setShowAuthModal(true);
+                      }}
+                      className="text-[13px] font-bold text-slate-800 hover:text-blue-600 transition-colors whitespace-nowrap"
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+                )}
 
-      <div
-        className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
-        onClick={() => navigate("/login")}
-      >
-        <User className="w-3.5 h-3.5 text-slate-600" />
-      </div>
-    </div>
-  </div>
-</div>
+                <div
+                  className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:ring-2 ring-blue-500 transition-all overflow-hidden"
+                  onClick={() => navigate("/login")}
+                >
+                  <User className="w-3.5 h-3.5 text-slate-600" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -831,6 +837,7 @@ const Layout = () => {
           <Footer />
         </div>
       </div>
+      <GlobalToast />
     </div>
   );
 };

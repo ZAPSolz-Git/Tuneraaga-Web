@@ -11,11 +11,12 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { toastEvents } from "../utils/toastEvents";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
-  const [mode, setMode] = useState(initialMode); // "login" | "signup" | "forgot"
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,14 +27,6 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
   const resetMessages = () => {
     setError("");
     setInfoMessage("");
-  };
-
-  const handleAuthed = () => {
-    if (onSuccess) {
-      onSuccess();
-    } else {
-      onClose?.();
-    }
   };
 
   // ─── FORGOT PASSWORD ───
@@ -109,7 +102,12 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
         }
 
         if (data?.session) {
-          handleAuthed();
+          toastEvents.show("Logged in successfully", "success");
+          if (onSuccess) {
+            onSuccess();
+          } else {
+            onClose?.();
+          }
         }
       } else {
         // signup
@@ -140,7 +138,12 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
         }
 
         if (data?.session) {
-          handleAuthed();
+          toastEvents.show("Account created successfully", "success");
+          if (onSuccess) {
+            onSuccess();
+          } else {
+            onClose?.();
+          }
         } else {
           setInfoMessage(
             "Signup successful! Please check your inbox and click the confirmation link to log in.",
@@ -305,7 +308,6 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
                         mode === "login" ? "current-password" : "new-password"
                       }
                     />
-                    {/* 👁️ Show/Hide password toggle */}
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
@@ -319,7 +321,6 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
                     </button>
                   </div>
 
-                  {/* ✅ FORGOT PASSWORD LINK — only in login mode */}
                   {mode === "login" && (
                     <div className="mt-1.5 text-right">
                       <button
