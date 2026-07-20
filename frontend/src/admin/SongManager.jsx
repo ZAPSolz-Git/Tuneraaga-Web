@@ -25,15 +25,16 @@ import {
   FileText,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️ CONFIGURATION
+// This client (anon key) is used for READS only — RLS restricts it
+// to SELECT. All writes go through the secure backend (see lib/secureApi).
 // --- ENV CONFIGURATION ---
-// .env file se variables load kar rahe hain
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-const BUCKET_NAME = "TuneRaaga";
 
 // ─────────────────────────────────────────────────────────────
 // 📚 DATA: GENRES & LANGUAGES
@@ -326,7 +327,7 @@ const AudioReleaseForm = ({
 
   const prevStep = () => setStep((s) => Math.max(0, s - 1));
 
-  // --- SUBMIT LOGIC ---
+  // ── SECURE SUBMIT: uploads + insert/update, all via the backend API ──
   const handleSubmit = async () => {
     if (step < 3) return;
     setLoading(true);
@@ -337,18 +338,10 @@ const AudioReleaseForm = ({
       if (newCoverFile) {
         setUploading(true);
         try {
-          const fileName = `covers/${Date.now()}-${newCoverFile.name}`;
-          const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(fileName, newCoverFile);
-          if (error) throw error;
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from(BUCKET_NAME).getPublicUrl(data.path);
-          finalCoverUrl = publicUrl;
+          finalCoverUrl = await uploadFileSecure(newCoverFile, "covers");
         } catch (err) {
           console.error(err);
-          notify("Cover upload failed", "error");
+          notify("Cover upload failed: " + err.message, "error");
           return;
         } finally {
           setUploading(false);
@@ -358,18 +351,10 @@ const AudioReleaseForm = ({
       if (newAudioFile) {
         setUploading(true);
         try {
-          const fileName = `audio/${Date.now()}-${newAudioFile.name}`;
-          const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(fileName, newAudioFile);
-          if (error) throw error;
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from(BUCKET_NAME).getPublicUrl(data.path);
-          finalAudioUrl = publicUrl;
+          finalAudioUrl = await uploadFileSecure(newAudioFile, "audio");
         } catch (err) {
           console.error(err);
-          notify("Audio upload failed", "error");
+          notify("Audio upload failed: " + err.message, "error");
           return;
         } finally {
           setUploading(false);
@@ -394,23 +379,18 @@ const AudioReleaseForm = ({
         status: "Published",
       };
 
-      let error;
       if (existingRelease && existingRelease.id) {
-        const { error: updateError } = await supabase
-          .from("releases")
-          .update(payload)
-          .eq("id", existingRelease.id)
-          .select();
-        error = updateError;
+        await apiRequest(`/releases/${existingRelease.id}`, {
+          method: "PUT",
+          body: payload,
+        });
       } else {
-        const { error: insertError } = await supabase
-          .from("releases")
-          .insert([payload])
-          .select();
-        error = insertError;
+        await apiRequest("/releases", {
+          method: "POST",
+          body: payload,
+        });
       }
 
-      if (error) throw error;
       notify(
         `Release ${existingRelease ? "Updated" : "Submitted"} Successfully!`,
         "success",
@@ -418,7 +398,7 @@ const AudioReleaseForm = ({
       onSuccess();
     } catch (error) {
       console.error("Error submitting release:", error);
-      notify("Failed to submit release", "error");
+      notify(error.message || "Failed to submit release", "error");
     } finally {
       setLoading(false);
     }
@@ -840,6 +820,7 @@ const SongManager = () => {
     setTimeout(() => setToast((prev) => ({ ...prev, show: false })), 3000);
   };
 
+  // ── READ: still direct via supabase — RLS restricts to SELECT only ──
   const fetchSongs = async () => {
     setLoading(true);
     try {
@@ -869,7 +850,6 @@ const SongManager = () => {
     }
   };
 
-  // NEW: Fetch Artists for the Dropdown
   const fetchArtists = async () => {
     try {
       const { data, error } = await supabase
@@ -921,16 +901,16 @@ const SongManager = () => {
     fetchSongs();
   };
 
+  // ── SECURE DELETE — via backend API ──────────────────────────────
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this release?"))
       return;
     try {
-      const { error } = await supabase.from("releases").delete().eq("id", id);
-      if (error) throw error;
+      await apiRequest(`/releases/${id}`, { method: "DELETE" });
       showToast("Deleted successfully");
       fetchSongs();
     } catch (error) {
-      showToast("Failed to delete", "error");
+      showToast(error.message || "Failed to delete", "error");
     }
   };
 

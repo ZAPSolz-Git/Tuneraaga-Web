@@ -197,46 +197,62 @@ const LoginPage = () => {
       const userId = authData.user.id;
       const userEmail = authData.user.email;
 
-      let profileData = null;
-      const { data: dbProfile } = await supabase
+      const { data: dbProfile, error: profileError } = await supabase
         .from("users")
         .select("*")
-        .eq("email", userEmail)
+        .eq("id", userId)
         .maybeSingle();
 
-      if (dbProfile) {
-        profileData = dbProfile;
-      } else {
-        console.log("Profile not found in DB. Attempting to auto-create...");
+      if (profileError) {
+        console.error("Error fetching user profile:", profileError);
+      }
+
+      let profileData = dbProfile;
+
+      // ✅ DEBUG: log exact raw role value so hidden whitespace/case issues
+      // are visible in the console
+      if (profileData) {
+        console.log(
+          `Fetched profile — role: [${profileData.role}] (length: ${(profileData.role || "").length})`,
+        );
+      }
+
+      if (!profileData) {
+        console.log(
+          "No matching row in 'users' table for this id. Attempting to auto-create as 'user'...",
+        );
         const { data: newProfile, error: insertError } = await supabase
           .from("users")
           .insert({
             id: userId,
             email: userEmail,
-            role: loginType,
+            role: "user",
           })
           .select()
           .maybeSingle();
 
         if (insertError) {
           console.warn(
-            "Auto-create blocked by RLS. Using fallback auth data.",
+            "Auto-create blocked (likely RLS). Row still missing.",
             insertError,
           );
         }
 
-        if (newProfile) {
-          profileData = newProfile;
-        } else {
-          profileData = {
-            id: userId,
-            email: userEmail,
-            role: loginType,
-          };
-        }
+        profileData = newProfile;
       }
 
-      const userRole = (profileData.role || loginType).toLowerCase();
+      if (!profileData) {
+        await supabase.auth.signOut();
+        throw new Error(
+          "No profile found for this account. Please contact an administrator to set up your access.",
+        );
+      }
+
+      // ✅ FIXED: added .trim() in addition to .toLowerCase() — protects
+      // against a trailing/leading space accidentally typed into the
+      // "role" column (e.g. "admin " instead of "admin"), which would
+      // otherwise never match and always deny access.
+      const userRole = (profileData.role || "").toLowerCase().trim();
 
       if (loginType === "admin") {
         if (userRole !== "admin") {
@@ -286,6 +302,8 @@ const LoginPage = () => {
       } else if (msg.includes("email not confirmed")) {
         errorMessage =
           "❌ Your email is not confirmed. Please check your inbox.";
+      } else if (msg.includes("no profile found")) {
+        errorMessage = "❌ " + err.message;
       }
 
       setError(errorMessage);

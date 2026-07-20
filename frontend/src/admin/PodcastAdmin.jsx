@@ -16,9 +16,9 @@ import {
   List,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
 
-const BUCKET_NAME = "TuneRaaga";
 const PODCAST_TYPES = [
   "Interview",
   "Storytelling",
@@ -28,8 +28,6 @@ const PODCAST_TYPES = [
   "Comedy",
   "News",
 ];
-
-const API_BASE = "http://localhost:5000/api/content"; // SECURE BACKEND API
 
 const PodcastAdmin = () => {
   const [step, setStep] = useState(0);
@@ -54,6 +52,7 @@ const PodcastAdmin = () => {
   const [podcasts, setPodcasts] = useState([]);
   const [viewMode, setViewMode] = useState("grid");
 
+  // ── READ: still direct via supabase — RLS only allows SELECT ──────
   const fetchPodcasts = async () => {
     setFetching(true);
     try {
@@ -85,21 +84,13 @@ const PodcastAdmin = () => {
     }
   };
 
+  // ── SECURE: audio upload goes through the backend ──────────────────
   const handleAudioUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setUploadingAudio(true);
     try {
-      const fileName = `podcast-audio/${Date.now()}-${file.name}`;
-      const { data: audData, error: audError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, file);
-      if (audError) throw audError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(BUCKET_NAME).getPublicUrl(audData.path);
-
+      const publicUrl = await uploadFileSecure(file, "podcast-audio");
       setCurrentEpisode((prev) => ({ ...prev, audio_url: publicUrl }));
     } catch (err) {
       Swal.fire("Upload Failed", err.message, "error");
@@ -108,7 +99,7 @@ const PodcastAdmin = () => {
     }
   };
 
-  // ✅ SECURE DELETE FUNCTION VIA BACKEND
+  // ── SECURE DELETE via backend ───────────────────────────────────────
   const handleDeletePodcast = async (id, title) => {
     const result = await Swal.fire({
       title: "Delete Podcast?",
@@ -123,17 +114,7 @@ const PodcastAdmin = () => {
     if (!result.isConfirmed) return;
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const response = await fetch(`${API_BASE}/podcasts/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-
-      const res = await response.json();
-      if (!response.ok) throw new Error(res.error || "Failed to delete");
-
+      await apiRequest(`/podcasts/${id}`, { method: "DELETE" });
       Swal.fire("Deleted!", `"${title}" has been deleted.`, "success");
       fetchPodcasts();
     } catch (err) {
@@ -168,6 +149,7 @@ const PodcastAdmin = () => {
     setEpisodes(episodes.filter((ep) => ep.id !== id));
   };
 
+  // ── SECURE SUBMIT: upload cover + create podcast, both via backend ──
   const handleSubmit = async () => {
     if (
       !formData.title ||
@@ -183,41 +165,22 @@ const PodcastAdmin = () => {
     }
     setLoading(true);
     try {
-      const imgFileName = `podcastcover/${Date.now()}-${formData.image.name}`;
-      const { data: imgData, error: imgError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(imgFileName, formData.image);
-      if (imgError) throw imgError;
+      const imgUrl = await uploadFileSecure(formData.image, "podcastcover");
 
-      const {
-        data: { publicUrl: imgUrl },
-      } = supabase.storage.from(BUCKET_NAME).getPublicUrl(imgData.path);
-
-      const { data: newPodcast, error: podError } = await supabase
-        .from("podcasts")
-        .insert({
+      await apiRequest("/podcasts", {
+        method: "POST",
+        body: {
           title: formData.title,
           host: formData.host,
           type: formData.type,
           image_url: imgUrl,
-          total_listens: 0,
-        })
-        .select()
-        .single();
-      if (podError) throw podError;
-
-      const episodesPayload = episodes.map((ep) => ({
-        podcast_id: newPodcast.id,
-        episode_title: ep.title,
-        episode_number: parseInt(ep.episode_number, 10),
-        audio_url: ep.audio_url,
-        duration: "0:00",
-      }));
-
-      const { error: epsError } = await supabase
-        .from("podcast_episodes")
-        .insert(episodesPayload);
-      if (epsError) throw epsError;
+          episodes: episodes.map((ep) => ({
+            title: ep.title,
+            episode_number: ep.episode_number,
+            audio_url: ep.audio_url,
+          })),
+        },
+      });
 
       Swal.fire("Success", "Podcast Created Successfully!", "success");
       resetForm();
@@ -608,7 +571,6 @@ const PodcastAdmin = () => {
                   key={pod.id}
                   className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all relative"
                 >
-                  {/* SECURE DELETE BUTTON */}
                   <button
                     onClick={() => handleDeletePodcast(pod.id, pod.title)}
                     className="absolute top-3 right-3 text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-full transition-all z-10"

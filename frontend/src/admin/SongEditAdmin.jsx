@@ -22,9 +22,12 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { genres, getSubgenres } from "../lib/subgener";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Read-only client — RLS restricts this key to SELECT. All writes and
+// storage uploads go through the secure backend (see lib/secureApi).
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const LANGUAGES = [
@@ -50,27 +53,12 @@ const LANGUAGES = [
 ];
 const STATUS_OPTIONS = ["Published", "Draft", "Unlisted"];
 
-const getMimeType = (ext) => {
-  const map = {
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    flac: "audio/flac",
-    aac: "audio/aac",
-    ogg: "audio/ogg",
-    m4a: "audio/mp4",
-    opus: "audio/opus",
-  };
-  return map[ext?.toLowerCase()] || "audio/mpeg";
-};
-
 // ─── ROBUST: CONVERT ANY FORMAT → ARRAY ───
 // Handles: null, undefined, "", " ", "A, B", ["A","B"], already array
 const strToArray = (val) => {
-  // Already an array — return a clean copy
   if (Array.isArray(val)) {
     return val.map((s) => String(s).trim()).filter(Boolean);
   }
-  // null, undefined, number, boolean, empty
   if (
     val == null ||
     val === "" ||
@@ -79,7 +67,6 @@ const strToArray = (val) => {
   ) {
     return [];
   }
-  // Force to string, trim, split by comma, clean each item
   const str = String(val).trim();
   if (str === "") return [];
   return str
@@ -111,7 +98,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// ─── INLINE IMAGE UPLOAD ───
+// ─── INLINE IMAGE UPLOAD (secure) ───
 const InlineImageUpload = ({ value, onChange, label }) => {
   const ref = useRef();
   const [uploading, setUploading] = useState(false);
@@ -125,16 +112,9 @@ const InlineImageUpload = ({ value, onChange, label }) => {
     setError("");
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop().toLowerCase();
-      const path = `covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadErr } = await supabase.storage
-        .from("music-assets")
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (uploadErr) throw uploadErr;
-      const { data } = supabase.storage.from("music-assets").getPublicUrl(path);
-      if (!data?.publicUrl) throw new Error("Public URL nahi mila");
-      onChange(data.publicUrl);
-      setPreview(data.publicUrl);
+      const url = await uploadFileSecure(file, "music-assets/covers");
+      onChange(url);
+      setPreview(url);
     } catch (e) {
       setError("Upload failed: " + e.message);
     } finally {
@@ -205,7 +185,7 @@ const InlineImageUpload = ({ value, onChange, label }) => {
   );
 };
 
-// ─── INLINE AUDIO UPLOAD ───
+// ─── INLINE AUDIO UPLOAD (secure) ───
 const InlineAudioUpload = ({ value, onChange }) => {
   const ref = useRef();
   const [uploading, setUploading] = useState(false);
@@ -218,22 +198,8 @@ const InlineAudioUpload = ({ value, onChange }) => {
     setFileName(file.name);
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop().toLowerCase();
-      const mimeType = getMimeType(ext);
-      const path = `audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data: uploadData, error: uploadErr } = await supabase.storage
-        .from("music-assets")
-        .upload(path, file, {
-          upsert: true,
-          contentType: mimeType,
-          cacheControl: "3600",
-        });
-      if (uploadErr) throw uploadErr;
-      const { data } = supabase.storage
-        .from("music-assets")
-        .getPublicUrl(uploadData?.path || path);
-      if (!data?.publicUrl) throw new Error("Public URL nahi mila");
-      onChange(data.publicUrl);
+      const url = await uploadFileSecure(file, "music-assets/audio");
+      onChange(url);
       setFileName("✓ " + file.name);
     } catch (e) {
       setError(e.message);
@@ -285,7 +251,7 @@ const InlineAudioUpload = ({ value, onChange }) => {
       {error && (
         <div className="flex items-start gap-2 mt-1 text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs">
           <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
-          <span>{error} — Supabase storage bucket check karo</span>
+          <span>{error}</span>
         </div>
       )}
       {value && !uploading && (
@@ -344,7 +310,6 @@ const EditTagInput = ({ label, tags, onAdd, onRemove, placeholder }) => {
           <Plus size={14} />
         </button>
       </div>
-      {/* ── TAGS: Show count even if 0 so user knows field is loaded ── */}
       {tags.length === 0 ? (
         <p className="text-[10px] text-slate-300 italic">No items added yet</p>
       ) : (
@@ -375,19 +340,8 @@ const EditTagInput = ({ label, tags, onAdd, onRemove, placeholder }) => {
   );
 };
 
-// ─── EDIT MODAL ───
+// ─── EDIT MODAL (secure save) ───
 const EditModal = ({ song, onClose, onSaved }) => {
-  // ── DEBUG: Log raw values to verify data from DB ──
-  console.log("EDIT MODAL — raw song data:", {
-    id: song.id,
-    featuring_artists_raw: song.featuring_artists,
-    featuring_artists_type: typeof song.featuring_artists,
-    actor_names_raw: song.actor_names,
-    actor_names_type: typeof song.actor_names,
-    movie_name_raw: song.movie_name,
-    album_name_raw: song.album_name,
-  });
-
   const [form, setForm] = useState({
     title: song.title || "",
     primary_artist: song.primary_artist || "",
@@ -408,12 +362,6 @@ const EditModal = ({ song, onClose, onSaved }) => {
     copyright_year: song.copyright_year || String(new Date().getFullYear()),
     publisher: song.publisher || "",
     format: song.format || "Single",
-  });
-
-  // ── DEBUG: Log parsed values ──
-  console.log("EDIT MODAL — parsed arrays:", {
-    featuring_artists: form.featuring_artists,
-    actor_names: form.actor_names,
   });
 
   const [saving, setSaving] = useState(false);
@@ -450,22 +398,11 @@ const EditModal = ({ song, onClose, onSaved }) => {
         format: form.format || null,
       };
 
-      console.log(
-        "EDIT MODAL — saving payload featuring_artists:",
-        payload.featuring_artists,
-      );
-      console.log(
-        "EDIT MODAL — saving payload actor_names:",
-        payload.actor_names,
-      );
+      await apiRequest(`/releases/${song.id}`, {
+        method: "PUT",
+        body: payload,
+      });
 
-      const { data, error } = await supabase
-        .from("releases")
-        .update(payload)
-        .eq("id", song.id)
-        .select();
-
-      if (error) throw error;
       setSaved(true);
       setTimeout(() => {
         onSaved();
@@ -950,17 +887,13 @@ const EditModal = ({ song, onClose, onSaved }) => {
   );
 };
 
-// ─── DELETE CONFIRM ───
+// ─── DELETE CONFIRM (secure) ───
 const DeleteConfirm = ({ song, onClose, onDeleted }) => {
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from("releases")
-        .delete()
-        .eq("id", song.id);
-      if (error) throw error;
+      await apiRequest(`/releases/${song.id}`, { method: "DELETE" });
       onDeleted();
       onClose();
     } catch (e) {
@@ -1025,6 +958,7 @@ const SongEditAdmin = () => {
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
 
+  // ── READ: still direct via supabase — RLS restricts to SELECT only ──
   const fetchSongs = async () => {
     setLoading(true);
     try {
@@ -1033,21 +967,6 @@ const SongEditAdmin = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      // ── DEBUG: Log first song's featuring_artists and actor_names ──
-      if (data && data.length > 0) {
-        console.log(
-          "FETCHED SONGS — sample featuring_artists:",
-          data[0].featuring_artists,
-          "type:",
-          typeof data[0].featuring_artists,
-        );
-        console.log(
-          "FETCHED SONGS — sample actor_names:",
-          data[0].actor_names,
-          "type:",
-          typeof data[0].actor_names,
-        );
-      }
       setSongs(data || []);
     } catch (e) {
       console.error("Fetch error:", e);

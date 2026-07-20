@@ -82,8 +82,6 @@ const createOrderSummaryPay = async (req, res) => {
   }
 };
 
-
-
 const createRazorpayOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -193,8 +191,6 @@ const createRazorpayOrder = async (req, res) => {
   }
 };
 
-
-
 const verifyPayment = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -240,8 +236,12 @@ const verifyPayment = async (req, res) => {
 
     const paidAt = new Date().toISOString();
 
-    let updateErr = null;
-    const firstAttempt = await supabaseAdmin
+    // ✅ FIXED: removed the double-update retry logic. The "orders" table
+    // schema already has a "paid_at" column, so the fallback that retried
+    // without it was dead code — it only added an extra query and could
+    // silently mask a real DB error instead of surfacing it. Now this is
+    // a single, clean update; if it fails, the real error is returned.
+    const { error: updateErr } = await supabaseAdmin
       .from("orders")
       .update({
         status: "paid",
@@ -249,25 +249,6 @@ const verifyPayment = async (req, res) => {
         paid_at: paidAt,
       })
       .eq("id", orderId);
-
-    updateErr = firstAttempt.error;
-
-    if (updateErr) {
-      console.warn(
-        "⚠️ paid_at column i think not exists:",
-        updateErr.message,
-      );
-
-      const fallbackAttempt = await supabaseAdmin
-        .from("orders")
-        .update({
-          status: "paid",
-          razorpay_payment_id,
-        })
-        .eq("id", orderId);
-
-      updateErr = fallbackAttempt.error;
-    }
 
     if (updateErr) {
       console.error("❌ Order status update FULL ERROR:", updateErr.message);
@@ -329,7 +310,9 @@ const handleRazorpayWebhook = async (req, res) => {
 
     if (!process.env.RAZORPAY_KEY_SECRET) {
       console.error("Missing Razorpay secret for webhook verification.");
-      return res.status(500).json({ success: false, message: "Server config error." });
+      return res
+        .status(500)
+        .json({ success: false, message: "Server config error." });
     }
 
     if (!signature) {
@@ -345,7 +328,9 @@ const handleRazorpayWebhook = async (req, res) => {
 
     if (expectedSignature !== signature) {
       console.error("Razorpay webhook signature mismatch.");
-      return res.status(400).json({ success: false, message: "Invalid signature." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid signature." });
     }
 
     const event = req.body?.event;
@@ -372,7 +357,9 @@ const handleRazorpayWebhook = async (req, res) => {
     }
 
     if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found." });
     }
 
     let status = order.status;
@@ -477,8 +464,7 @@ const downloadReceipt = async (req, res) => {
     if (order.status !== "paid") {
       return res.status(400).json({
         success: false,
-        message:
-          "this order for not receipt available (payment pending).",
+        message: "this order for not receipt available (payment pending).",
       });
     }
 

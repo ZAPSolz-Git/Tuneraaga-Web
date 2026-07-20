@@ -23,10 +23,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
-
-const BUCKET_NAME = "TuneRaaga";
-const API_BASE = "http://localhost:5000/api/content";
 
 const DEFAULT_STREAM_URL = "https://stream.zeno.fm/0r0xa792kwzuv";
 
@@ -110,7 +108,7 @@ const RadioAdmin = () => {
   const isEditMode = !!editingStation;
 
   // ═══════════════════════════════════════════════════════════
-  // FETCH PUBLISHED RELEASES
+  // READS — still direct via supabase; RLS restricts to SELECT only
   // ═══════════════════════════════════════════════════════════
   const fetchPublishedReleases = useCallback(
     async (reset = true) => {
@@ -156,9 +154,6 @@ const RadioAdmin = () => {
     if (songPage > 0 && step === 2) fetchPublishedReleases(false);
   }, [songPage, fetchPublishedReleases, step]);
 
-  // ═══════════════════════════════════════════════════════════
-  // FETCH STATIONS
-  // ═══════════════════════════════════════════════════════════
   const fetchStations = async () => {
     setFetching(true);
     try {
@@ -180,7 +175,7 @@ const RadioAdmin = () => {
   }, []);
 
   // ═══════════════════════════════════════════════════════════
-  // IMAGE UPLOAD
+  // IMAGE SELECT (local preview only — actual upload happens on submit)
   // ═══════════════════════════════════════════════════════════
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -194,7 +189,7 @@ const RadioAdmin = () => {
   };
 
   // ═══════════════════════════════════════════════════════════
-  // ✅ SECURE DELETE — Backend API (CASCADE handles radio_songs)
+  // SECURE DELETE — backend API (cascade handles radio_songs)
   // ═══════════════════════════════════════════════════════════
   const handleDeleteStation = async (id, name) => {
     const result = await Swal.fire({
@@ -209,15 +204,7 @@ const RadioAdmin = () => {
     if (!result.isConfirmed) return;
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const response = await fetch(`${API_BASE}/radio/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const res = await response.json();
-      if (!response.ok) throw new Error(res.error || "Failed to delete");
+      await apiRequest(`/radio/${id}`, { method: "DELETE" });
       Swal.fire("Deleted!", `"${name}" has been deleted.`, "success");
       fetchStations();
     } catch (err) {
@@ -226,7 +213,7 @@ const RadioAdmin = () => {
   };
 
   // ═══════════════════════════════════════════════════════════
-  // START EDIT
+  // START EDIT — reads song mappings directly (read-only op)
   // ═══════════════════════════════════════════════════════════
   const startEdit = async (station) => {
     setEditingStation(station);
@@ -333,7 +320,7 @@ const RadioAdmin = () => {
   ];
 
   // ═══════════════════════════════════════════════════════════
-  // ✅ SUBMIT — CREATE (direct) or UPDATE (backend API)
+  // SECURE SUBMIT — CREATE or UPDATE, both via backend API
   // ═══════════════════════════════════════════════════════════
   const handleSubmit = async () => {
     if (!formData.name) {
@@ -350,23 +337,14 @@ const RadioAdmin = () => {
     try {
       let imgUrl = editingStation?.image_url || null;
 
-      // Upload new image if selected
+      // Upload new image if selected — via secure backend
       if (formData.image) {
-        const imgFileName = `radiocover/${Date.now()}-${formData.image.name}`;
-        const { data: imgData, error: imgError } = await supabase.storage
-          .from(BUCKET_NAME)
-          .upload(imgFileName, formData.image);
-        if (imgError) throw imgError;
-        const { data: urlData } = supabase.storage
-          .from(BUCKET_NAME)
-          .getPublicUrl(imgData.path);
-        imgUrl = urlData.publicUrl;
+        imgUrl = await uploadFileSecure(formData.image, "radiocover");
       }
 
       if (isEditMode) {
         // ══════════════════════════════════════════
-        // ✅ EDIT MODE — SINGLE BACKEND API CALL
-        // No direct supabase.delete() anywhere!
+        // EDIT MODE — single backend API call
         // ══════════════════════════════════════════
         const toRemove = [...existingSongIds].filter(
           (id) => !selectedSongIds.has(id),
@@ -375,17 +353,9 @@ const RadioAdmin = () => {
           (id) => !existingSongIds.has(id),
         );
 
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        const response = await fetch(`${API_BASE}/radio/${editingStation.id}`, {
+        await apiRequest(`/radio/${editingStation.id}`, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
+          body: {
             name: formData.name,
             description: formData.description || null,
             language: formData.language,
@@ -394,11 +364,8 @@ const RadioAdmin = () => {
             stream_url: formData.stream_url || DEFAULT_STREAM_URL,
             removeSongs: toRemove,
             addSongs: toAdd,
-          }),
+          },
         });
-
-        const res = await response.json();
-        if (!response.ok) throw new Error(res.error || "Failed to update");
 
         const changes = [];
         if (toAdd.length > 0) changes.push(`+${toAdd.length} songs`);
@@ -413,33 +380,20 @@ const RadioAdmin = () => {
         );
       } else {
         // ══════════════════════════════════════════
-        // CREATE MODE
+        // CREATE MODE — single backend API call
         // ══════════════════════════════════════════
-        const { data: newStation, error: stationError } = await supabase
-          .from("radio_stations")
-          .insert({
+        await apiRequest("/radio", {
+          method: "POST",
+          body: {
             name: formData.name,
             description: formData.description || null,
             language: formData.language,
             genre: formData.genre,
             image_url: imgUrl,
             stream_url: formData.stream_url || DEFAULT_STREAM_URL,
-            is_live: true,
-            total_listeners: 0,
-          })
-          .select()
-          .single();
-        if (stationError) throw stationError;
-
-        const { error: mappingError } = await supabase
-          .from("radio_songs")
-          .insert(
-            Array.from(selectedSongIds).map((songId) => ({
-              radio_id: newStation.id,
-              song_id: songId,
-            })),
-          );
-        if (mappingError) throw mappingError;
+            songIds: Array.from(selectedSongIds),
+          },
+        });
 
         Swal.fire(
           "Success!",

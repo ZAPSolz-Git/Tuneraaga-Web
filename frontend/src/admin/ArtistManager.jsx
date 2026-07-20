@@ -25,6 +25,9 @@ import {
   Calendar,
   Lock,
   LogOut,
+  Clock,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -51,10 +54,13 @@ const ArtistCard = ({
   onDrop,
   onEdit,
   onDelete,
+  onApprove,
+  onReject,
   onToggleVerify,
 }) => {
   const isVerified = artist.status === "Verified" || artist.verified === true;
-  const isPending = artist.status === "Pending";
+  const isPending = artist.status === "Pending" && !isVerified;
+  const isRejected = artist.status === "Rejected";
 
   return (
     <div
@@ -84,9 +90,14 @@ const ArtistCard = ({
             <Check size={12} /> VERIFIED
           </div>
         )}
-        {isPending && !isVerified && (
+        {isPending && (
           <div className="absolute top-3 right-3 bg-yellow-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm flex items-center gap-1">
-            PENDING
+            <Clock size={12} /> PENDING
+          </div>
+        )}
+        {isRejected && (
+          <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm flex items-center gap-1">
+            REJECTED
           </div>
         )}
       </div>
@@ -107,32 +118,62 @@ const ArtistCard = ({
             <Edit size={18} />
           </button>
         </div>
+        {artist.email && (
+          <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+            <Mail size={12} /> {artist.email}
+          </div>
+        )}
         {artist.followers && (
           <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
             <Users size={12} /> {artist.followers}
           </div>
         )}
-        <div className="border-t border-gray-100 pt-3 flex items-center justify-between mt-auto">
-          <button
-            onClick={() => onToggleVerify(artist.id)}
-            className={`text-xs font-bold py-1.5 px-3 rounded-full flex items-center gap-2 ${isVerified ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}
-          >
-            {isVerified ? <Check size={14} /> : <X size={14} />}
-            {isVerified ? "Verified" : "Unverified"}
-          </button>
-          <button
-            onClick={() => onDelete(artist.id)}
-            className="text-gray-300 hover:text-red-500 p-1"
-          >
-            <Trash2 size={18} />
-          </button>
-        </div>
+
+        {/* Pending request → show Approve/Reject */}
+        {isPending ? (
+          <div className="border-t border-gray-100 pt-3 flex items-center justify-between mt-auto gap-2">
+            <button
+              onClick={() => onApprove(artist.id)}
+              className="flex-1 text-xs font-bold py-1.5 px-3 rounded-full flex items-center justify-center gap-1 bg-green-100 text-green-700 hover:bg-green-200 transition"
+            >
+              <ThumbsUp size={14} /> Approve
+            </button>
+            <button
+              onClick={() => onReject(artist.id)}
+              className="flex-1 text-xs font-bold py-1.5 px-3 rounded-full flex items-center justify-center gap-1 bg-red-100 text-red-700 hover:bg-red-200 transition"
+            >
+              <ThumbsDown size={14} /> Reject
+            </button>
+            <button
+              onClick={() => onDelete(artist.id)}
+              className="text-gray-300 hover:text-red-500 p-1"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ) : (
+          <div className="border-t border-gray-100 pt-3 flex items-center justify-between mt-auto">
+            <button
+              onClick={() => onToggleVerify(artist.id)}
+              className={`text-xs font-bold py-1.5 px-3 rounded-full flex items-center gap-2 ${isVerified ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}
+            >
+              {isVerified ? <Check size={14} /> : <X size={14} />}
+              {isVerified ? "Verified" : "Unverified"}
+            </button>
+            <button
+              onClick={() => onDelete(artist.id)}
+              className="text-gray-300 hover:text-red-500 p-1"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-// --- 2. Artist Modal Component ---
+// --- 2. Artist Modal Component (unchanged, only used for manual add/edit) ---
 const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
   const isEditing = Boolean(initialData);
 
@@ -744,6 +785,7 @@ const ArtistManager = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [artistToDelete, setArtistToDelete] = useState(null);
   const [authStatus, setAuthStatus] = useState("checking");
+  const [statusFilter, setStatusFilter] = useState("All"); // All | Pending | Verified | Rejected
 
   useEffect(() => {
     let isMounted = true;
@@ -759,8 +801,9 @@ const ArtistManager = () => {
         return;
       }
 
+      // ✅ FIX: role "artists" table me nahi, "users" table me check karo
       const { data: profile, error } = await supabase
-        .from("artists")
+        .from("users")
         .select("role")
         .eq("id", session.user.id)
         .maybeSingle();
@@ -824,9 +867,18 @@ const ArtistManager = () => {
     }
   }, [authStatus]);
 
-  const filteredArtists = artists.filter((artist) =>
-    artist.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredArtists = artists
+    .filter((artist) =>
+      artist.name.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+    .filter((artist) => {
+      if (statusFilter === "All") return true;
+      return (artist.status || "Pending") === statusFilter;
+    });
+
+  const pendingCount = artists.filter(
+    (a) => (a.status || "Pending") === "Pending",
+  ).length;
 
   const openAddModal = () => {
     setEditingArtist(null);
@@ -848,7 +900,6 @@ const ArtistManager = () => {
     try {
       const data = new FormData();
 
-      // Basic profile fields
       data.append("name", formData.name || "");
       data.append("genre", formData.genre || "");
       data.append("email", formData.email || "");
@@ -865,20 +916,20 @@ const ArtistManager = () => {
       data.append("career", formData.career || "");
       data.append("recognition_awards", formData.recognition_awards || "");
 
-      // Password handling - only send if provided
       if (formData.password && formData.password.trim() !== "") {
         data.append("password", formData.password.trim());
       }
 
-      // Image upload
       if (formData.image instanceof File) {
         data.append("image", formData.image);
       }
 
-      let response;
+      // ✅ FIX: dono create aur edit ke liye auth headers zaroori hain
+      // (createArtist route bhi requireAdmin maangta hai)
+      const authHeaders = await getAuthHeaders();
 
+      let response;
       if (editingArtist) {
-        const authHeaders = await getAuthHeaders();
         response = await fetch(`${API_BASE}/${editingArtist.id}`, {
           method: "PUT",
           headers: authHeaders,
@@ -887,12 +938,14 @@ const ArtistManager = () => {
       } else {
         response = await fetch(API_BASE, {
           method: "POST",
+          headers: authHeaders, // ✅ pehle missing tha
           body: data,
         });
       }
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Server error");
+      if (!response.ok)
+        throw new Error(result.details || result.error || "Server error");
 
       await fetchArtists();
       closeModal();
@@ -969,6 +1022,58 @@ const ArtistManager = () => {
     }
   };
 
+  // ✅ NEW: Approve a pending "Become an Artist" request
+  const handleApprove = async (id) => {
+    setLoading(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/${id}/approve`, {
+        method: "PUT",
+        headers: authHeaders,
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.details || result.error || "Server error");
+
+      await fetchArtists();
+    } catch (error) {
+      console.error("Error approving request:", error);
+      alert("Error approving: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ NEW: Reject a pending "Become an Artist" request
+  const handleReject = async (id) => {
+    const reason = window.prompt(
+      "Optional: reason for rejecting this request (leave blank to skip)",
+      "",
+    );
+    // user clicked "Cancel" on the prompt
+    if (reason === null) return;
+
+    setLoading(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/${id}/reject`, {
+        method: "PUT",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.details || result.error || "Server error");
+
+      await fetchArtists();
+    } catch (error) {
+      console.error("Error rejecting request:", error);
+      alert("Error rejecting: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onDragStart = (e, id) => {
     setDraggedId(id);
     e.dataTransfer.effectAllowed = "move";
@@ -1006,6 +1111,11 @@ const ArtistManager = () => {
             <h1 className="text-2xl font-bold tracking-tight">
               Artist Manager
             </h1>
+            {pendingCount > 0 && (
+              <span className="bg-yellow-400 text-yellow-900 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                <Clock size={12} /> {pendingCount} Pending
+              </span>
+            )}
           </div>
           <div className="relative w-full md:max-w-lg">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-200">
@@ -1050,6 +1160,31 @@ const ArtistManager = () => {
           </div>
         </div>
       </header>
+
+      {/* ✅ NEW: Status filter tabs */}
+      <div className="container mx-auto px-4 pt-6">
+        <div className="flex gap-2 flex-wrap">
+          {["All", "Pending", "Verified", "Rejected"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-4 py-2 rounded-full text-sm font-bold transition ${
+                statusFilter === s
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-white text-slate-600 border border-gray-200 hover:bg-blue-50"
+              }`}
+            >
+              {s}
+              {s === "Pending" && pendingCount > 0 && (
+                <span className="ml-1.5 bg-yellow-400 text-yellow-900 text-xs px-1.5 py-0.5 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <main className="flex-grow container mx-auto px-4 py-8">
         {loading && artists.length === 0 ? (
           <div className="flex justify-center py-20">
@@ -1073,6 +1208,8 @@ const ArtistManager = () => {
                     onDrop={onDrop}
                     onEdit={openEditModal}
                     onDelete={handleDelete}
+                    onApprove={handleApprove}
+                    onReject={handleReject}
                     onToggleVerify={handleToggleVerify}
                   />
                 ))}
@@ -1105,86 +1242,110 @@ const ArtistManager = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredArtists.map((artist, index) => (
-                        <tr
-                          key={artist.id}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, artist.id)}
-                          onDragOver={onDragOver}
-                          onDrop={(e) => onDrop(e, artist.id)}
-                          className="hover:bg-blue-50 cursor-move"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <GripVertical
-                              className="text-gray-300 hover:text-blue-500 inline"
-                              size={16}
-                            />{" "}
-                            {index + 1}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className="flex-shrink-0 h-10 w-10">
-                                {artist.image ? (
-                                  <img
-                                    className="h-10 w-10 rounded-full object-cover"
-                                    src={artist.image}
-                                    alt=""
-                                  />
-                                ) : (
-                                  <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                    <User size={16} className="text-gray-400" />
+                      {filteredArtists.map((artist, index) => {
+                        const isPending =
+                          (artist.status || "Pending") === "Pending" &&
+                          !artist.verified;
+                        return (
+                          <tr
+                            key={artist.id}
+                            draggable
+                            onDragStart={(e) => onDragStart(e, artist.id)}
+                            onDragOver={onDragOver}
+                            onDrop={(e) => onDrop(e, artist.id)}
+                            className="hover:bg-blue-50 cursor-move"
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+                              <GripVertical
+                                className="text-gray-300 hover:text-blue-500 inline"
+                                size={16}
+                              />{" "}
+                              {index + 1}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0 h-10 w-10">
+                                  {artist.image ? (
+                                    <img
+                                      className="h-10 w-10 rounded-full object-cover"
+                                      src={artist.image}
+                                      alt=""
+                                    />
+                                  ) : (
+                                    <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                                      <User
+                                        size={16}
+                                        className="text-gray-400"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="ml-4">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {artist.name}
                                   </div>
-                                )}
-                              </div>
-                              <div className="ml-4">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {artist.name}
-                                </div>
-                                <div className="text-sm text-gray-500 truncate max-w-xs">
-                                  {artist.email || "No email"}
+                                  <div className="text-sm text-gray-500 truncate max-w-xs">
+                                    {artist.email || "No email"}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                              {artist.genre}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-semibold">
-                            {artist.followers || "0M"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
-                                artist.verified
-                                  ? "bg-green-100 text-green-700"
-                                  : artist.status === "Rejected"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                              }`}
-                            >
-                              {artist.status || "Pending"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => openEditModal(artist)}
-                                className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-2 rounded-full"
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                {artist.genre}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-semibold">
+                              {artist.followers || "0M"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                                  artist.verified
+                                    ? "bg-green-100 text-green-700"
+                                    : artist.status === "Rejected"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                }`}
                               >
-                                <Edit size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(artist.id)}
-                                className="text-red-600 hover:text-red-900 bg-red-50 p-2 rounded-full"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                {artist.status || "Pending"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              <div className="flex items-center justify-end gap-2">
+                                {isPending ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleApprove(artist.id)}
+                                      className="text-green-700 hover:text-green-900 bg-green-50 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1"
+                                    >
+                                      <ThumbsUp size={14} /> Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleReject(artist.id)}
+                                      className="text-red-700 hover:text-red-900 bg-red-50 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1"
+                                    >
+                                      <ThumbsDown size={14} /> Reject
+                                    </button>
+                                  </>
+                                ) : null}
+                                <button
+                                  onClick={() => openEditModal(artist)}
+                                  className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-2 rounded-full"
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(artist.id)}
+                                  className="text-red-600 hover:text-red-900 bg-red-50 p-2 rounded-full"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

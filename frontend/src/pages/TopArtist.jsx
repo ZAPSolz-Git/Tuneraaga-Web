@@ -42,13 +42,12 @@ import {
   Languages,
   PlayCircle,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
 import { Link, useLocation } from "react-router-dom";
 
-// ─── IMPORTS ───
+import { supabase } from "../lib/supabaseClient";
 import { genres } from "../lib/subgener";
+import { toastEvents } from "../utils/toastEvents"; // ✅ ADDED Toast Import
 
-// ─── MANUAL LANGUAGE LIST ───
 const LANGUAGES = [
   "For You",
   "Hindi",
@@ -69,13 +68,6 @@ const LANGUAGES = [
   "Assamese",
 ];
 
-// ─── CONFIGURATION ───
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-const BUCKET_NAME = "TuneRaaga";
-
-// ─── UTILITIES ───
 const formatDuration = (val) => {
   if (!val) return "0:00";
   if (typeof val === "string") return val;
@@ -86,16 +78,13 @@ const formatDuration = (val) => {
 
 const formatFollowers = (val) => {
   if (!val) return "0";
-  // Remove commas so "895,000,000" becomes 895000000
   const num = parseFloat(val.toString().replace(/,/g, ""));
-
   if (isNaN(num)) return "0";
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
   if (num >= 1000) return (num / 1000).toFixed(1) + "K";
   return num.toString();
 };
 
-// ─── SUB-COMPONENT: BECOME ARTIST MODAL ───
 const BecomeArtistModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   const [formData, setFormData] = useState({
     name: "",
@@ -444,7 +433,6 @@ const BecomeArtistModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   );
 };
 
-// ─── SUB-COMPONENT: BIOGRAPHY SECTION ───
 const BiographySection = ({ artist }) => {
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 space-y-8">
@@ -555,7 +543,6 @@ const BiographySection = ({ artist }) => {
   );
 };
 
-// ─── SUB-COMPONENT: STICKY PLAYER ───
 const StickyPlayer = ({
   song,
   isPlaying,
@@ -575,7 +562,6 @@ const StickyPlayer = ({
 }) => {
   if (!song) return null;
 
-  // Simply stop propagation, no preventDefault to avoid passive listener errors
   const handleVolumeInteraction = (e) => {
     e.stopPropagation();
   };
@@ -588,7 +574,6 @@ const StickyPlayer = ({
       className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-2xl border-t border-white/10 shadow-[0_-5px_30px_rgba(0,0,0,0.3)] z-[100]"
     >
       <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8 px-4 py-3 md:py-4 md:px-8">
-        {/* LEFT: Song Info */}
         <div className="flex items-center gap-4 w-full md:w-1/4 min-w-[180px]">
           <div className="relative group w-14 h-14 rounded-xl overflow-hidden shadow-lg border border-white/10">
             <img
@@ -605,7 +590,6 @@ const StickyPlayer = ({
           </div>
         </div>
 
-        {/* CENTER: Controls */}
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
           <div className="flex items-center gap-4 md:gap-6 mb-2">
             <button
@@ -670,9 +654,7 @@ const StickyPlayer = ({
           </div>
         </div>
 
-        {/* RIGHT: Volume & Close */}
         <div className="hidden md:flex w-1/4 min-w-[160px] flex-col items-end gap-2">
-          {/* Top Row: Close Button */}
           <div className="flex items-center gap-3 w-full justify-end">
             <button
               onClick={onClose}
@@ -683,7 +665,6 @@ const StickyPlayer = ({
             </button>
           </div>
 
-          {/* Bottom Row: Volume Controls */}
           <div className="flex items-center gap-3 w-full justify-end mt-1">
             <button
               onClick={(e) => {
@@ -724,7 +705,6 @@ const StickyPlayer = ({
   );
 };
 
-// ─── MAIN COMPONENT ───
 const TopArtist = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeArtist, setActiveArtist] = useState(null);
@@ -743,7 +723,6 @@ const TopArtist = () => {
   const [isShuffle, setIsShuffle] = useState(false);
   const location = useLocation();
 
-  // ─── FETCH ARTISTS ───
   useEffect(() => {
     const fetchArtistsData = async () => {
       setLoading(true);
@@ -790,9 +769,6 @@ const TopArtist = () => {
     fetchArtistsData();
   }, []);
 
-  // ─── AUDIO PLAYER LOGIC (FIXED: RESTART & VOLUME) ───
-
-  // 1. Initialize Audio Object ONCE
   useEffect(() => {
     const audio = new Audio();
     audioRef.current = audio;
@@ -817,7 +793,6 @@ const TopArtist = () => {
     };
   }, []);
 
-  // 2. Volume Controls (Don't recreate audio)
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -830,7 +805,6 @@ const TopArtist = () => {
     }
   }, [isMuted]);
 
-  // 3. Auto-play next song logic
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -856,14 +830,10 @@ const TopArtist = () => {
     return () => audio.removeEventListener("ended", handleEnded);
   }, [activeArtist, currentSong, isShuffle]);
 
-  // ─── KEY FIX: playSong Logic ───
-  // Ab agar same song play ho raha hai to hum src change nahi karenge,
-  // taaki song reset na ho (jisse suru se shuru na ho).
   const playSong = (song) => {
     if (!song) return;
     const audio = audioRef.current;
 
-    // Agar song change hua hai, tabhi src set karo
     if (currentSong?.id !== song.id) {
       setCurrentSong(song);
       audio.src = song.audioUrl;
@@ -903,12 +873,10 @@ const TopArtist = () => {
 
   const handlePlayPause = (song) => {
     const audio = audioRef.current;
-    // Agar same song play ho raha hai, to Pause karo
     if (currentSong && currentSong.id === song.id && playing) {
       audio.pause();
       setPlaying(false);
     } else {
-      // Naya song hai ya resume karna hai
       playSong(song);
     }
   };
@@ -942,15 +910,28 @@ const TopArtist = () => {
     if (audioRef.current) audioRef.current.pause();
   };
 
+  // ✅ FIXED: Replaced standard alerts with Custom Toast Events
   const handleArtistRequest = async (formData) => {
     setRequestLoading(true);
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        toastEvents.show(
+          "You must be logged in to submit an artist request.",
+          "error",
+        );
+        return;
+      }
+
       const data = new FormData();
       data.append("name", formData.name || "");
       data.append("genre", formData.genre || "");
       data.append("language", formData.language || "");
       data.append("bio", formData.bio || "");
-      data.append("email", formData.email || "");
       data.append("phone", formData.phone || "");
       data.append("born_date", formData.born_date || "");
       data.append("early_life", formData.early_life || "");
@@ -958,28 +939,48 @@ const TopArtist = () => {
       data.append("recognition_awards", formData.recognition_awards || "");
       data.append("profile_url", formData.profile_url || "");
       data.append("idDocumentUrl", formData.id_document_url || "");
-      data.append("status", "Pending");
-      data.append("verified", false);
-      data.append("followers", "0");
-      // Password nahi diya — backend default use karega
 
       if (formData.image instanceof File) {
         data.append("image", formData.image);
       }
 
-      const response = await fetch("http://localhost:5000/api/artists", {
-        method: "POST",
-        body: data,
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/artists/request",
+        {
+          method: "POST",
+          body: data,
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response from server:", text);
+        throw new Error(
+          `Server returned status ${response.status}. Check that the backend route exists and the server was restarted.`,
+        );
+      }
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Server error");
+      console.log("Backend Response:", result);
 
-      alert("Request sent successfully! The admin will review your profile.");
+      if (!response.ok) {
+        const errMsg =
+          result.details || result.error || result.message || "Server error";
+        throw new Error(errMsg);
+      }
+
+      // ✅ SUCCESS TOAST
+      toastEvents.show(
+        "Request sent successfully! The admin will review your profile.",
+        "success",
+      );
       setIsRequestModalOpen(false);
     } catch (error) {
       console.error("Error submitting request:", error);
-      alert("Error: " + error.message);
+      // ✅ ERROR TOAST
+      toastEvents.show("Error: " + error.message, "error");
     } finally {
       setRequestLoading(false);
     }
@@ -1191,133 +1192,129 @@ const TopArtist = () => {
                   <button
                     key={t}
                     onClick={() => setActiveTab(t.toLowerCase())}
-                    className={`pb-4 text-sm font-bold uppercase tracking-wider transition-all relative ${activeTab === t.toLowerCase() ? "text-blue-600" : "text-slate-400 hover:text-slate-600"}`}
+                    className={`pb-4 text-sm font-bold transition-colors relative whitespace-nowrap ${
+                      activeTab === t.toLowerCase()
+                        ? "text-blue-600"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
                   >
                     {t}
                     {activeTab === t.toLowerCase() && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full"
-                      />
+                      <div className="absolute bottom-0 left-0 w-full h-1 bg-blue-600 rounded-full"></div>
                     )}
                   </button>
                 ))}
               </div>
 
               {activeTab === "overview" && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10"
-                >
-                  <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow">
-                    <div className="p-4 bg-pink-50 text-pink-500 rounded-2xl">
-                      <Users size={24} />
-                    </div>
-                    <div>
-                      <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">
-                        Monthly Listeners
-                      </div>
-                      <div className="text-3xl font-black text-slate-900">
-                        {formatFollowers(activeArtist.followers)}
-                      </div>
+                <div className="space-y-10 pb-20">
+                  <div>
+                    <h3 className="text-2xl font-extrabold text-slate-900 mb-6 flex items-center gap-3">
+                      <Music size={24} className="text-blue-600" /> Popular
+                    </h3>
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      {activeArtist.songs && activeArtist.songs.length > 0 ? (
+                        activeArtist.songs.slice(0, 5).map((song, i) => (
+                          <div
+                            key={song.id}
+                            onClick={() => handlePlayPause(song)}
+                            className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-50 transition-colors ${
+                              currentSong?.id === song.id ? "bg-blue-50" : ""
+                            }`}
+                          >
+                            <div className="w-6 text-center text-slate-400 font-bold">
+                              {currentSong?.id === song.id && playing ? (
+                                <Play className="w-5 h-5 mx-auto fill-blue-600 text-blue-600" />
+                              ) : (
+                                i + 1
+                              )}
+                            </div>
+                            <img
+                              src={
+                                song.albumArt ||
+                                "https://via.placeholder.com/50"
+                              }
+                              alt={song.title}
+                              className="w-12 h-12 rounded-lg object-cover"
+                            />
+                            <div className="flex-1">
+                              <h4
+                                className={`font-semibold truncate ${currentSong?.id === song.id ? "text-blue-600" : "text-slate-800"}`}
+                              >
+                                {song.title}
+                              </h4>
+                              <p className="text-sm text-slate-500 truncate">
+                                {song.artist}
+                              </p>
+                            </div>
+                            <span className="text-sm text-slate-400 font-mono">
+                              {formatDuration(song.duration)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-8 text-center text-slate-400">
+                          No songs available for this artist.
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow">
-                    <div className="p-4 bg-purple-50 text-purple-500 rounded-2xl">
-                      <Music size={24} />
-                    </div>
-                    <div>
-                      <div className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">
-                        Total Songs
-                      </div>
-                      <div className="text-3xl font-black text-slate-900">
-                        {activeArtist.songs?.length || 0}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
+                </div>
               )}
 
               {activeTab === "songs" && (
-                <div className="space-y-3 mb-10">
-                  {activeArtist.songs && activeArtist.songs.length > 0 ? (
-                    activeArtist.songs.map((song, i) => (
-                      <motion.div
-                        key={song.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.05 }}
-                        onClick={() => handlePlayPause(song)}
-                        className={`flex items-center p-4 rounded-2xl transition-all cursor-pointer group border ${
-                          currentSong?.id === song.id
-                            ? "bg-blue-50/50 border-blue-200 shadow-sm"
-                            : "bg-white border-transparent hover:border-gray-200 hover:shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:translate-x-1"
-                        }`}
-                      >
-                        <span className="w-8 text-slate-400 font-bold text-center text-lg">
-                          {i + 1}
-                        </span>
-                        <img
-                          src={song.albumArt}
-                          className="w-14 h-14 rounded-xl object-cover mr-5 shadow-sm"
-                          alt=""
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h4
-                            className={`font-bold truncate text-lg ${currentSong?.id === song.id ? "text-blue-600" : "text-slate-900"}`}
-                          >
-                            {song.title}
-                          </h4>
-                          <p className="text-sm text-slate-500 truncate">
-                            {song.album}
-                          </p>
-                        </div>
-                        <span className="text-xs text-slate-400 mr-6 font-mono">
-                          {song.duration}
-                        </span>
-                        <div className="w-10 h-10 flex items-center justify-center">
-                          <div
-                            className={
-                              currentSong?.id === song.id && playing
-                                ? "block text-blue-500"
-                                : "hidden"
-                            }
-                          >
-                            <div className="flex items-end gap-0.5 h-4">
-                              <div className="w-1 bg-blue-500 animate-[bounce_1s_infinite] h-full"></div>
-                              <div className="w-1 bg-blue-500 animate-[bounce_1.2s_infinite] h-2/3"></div>
-                              <div className="w-1 bg-blue-500 animate-[bounce_0.8s_infinite] h-full"></div>
-                            </div>
+                <div className="space-y-4 pb-20">
+                  <h3 className="text-2xl font-extrabold text-slate-900 mb-6">
+                    All Songs
+                  </h3>
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    {activeArtist.songs && activeArtist.songs.length > 0 ? (
+                      activeArtist.songs.map((song, i) => (
+                        <div
+                          key={song.id}
+                          onClick={() => handlePlayPause(song)}
+                          className={`flex items-center gap-4 p-4 cursor-pointer hover:bg-slate-50 transition-colors border-b border-gray-50 last:border-b-0 ${
+                            currentSong?.id === song.id ? "bg-blue-50" : ""
+                          }`}
+                        >
+                          <div className="w-6 text-center text-slate-400 font-bold">
+                            {currentSong?.id === song.id && playing ? (
+                              <Play className="w-5 h-5 mx-auto fill-blue-600 text-blue-600" />
+                            ) : (
+                              i + 1
+                            )}
                           </div>
-                          <button className="text-slate-300 group-hover:text-blue-500 transition-colors opacity-0 group-hover:opacity-100">
-                            <Play
-                              size={24}
-                              className={
-                                currentSong?.id === song.id && playing
-                                  ? "hidden"
-                                  : "block"
-                              }
-                            />
-                            <Pause
-                              size={24}
-                              className={
-                                currentSong?.id === song.id && playing
-                                  ? "block text-blue-500"
-                                  : "hidden"
-                              }
-                            />
-                          </button>
+                          <img
+                            src={
+                              song.albumArt || "https://via.placeholder.com/50"
+                            }
+                            alt={song.title}
+                            className="w-12 h-12 rounded-lg object-cover"
+                          />
+                          <div className="flex-1">
+                            <h4
+                              className={`font-semibold truncate ${currentSong?.id === song.id ? "text-blue-600" : "text-slate-800"}`}
+                            >
+                              {song.title}
+                            </h4>
+                            <p className="text-sm text-slate-500 truncate">
+                              {song.artist}
+                            </p>
+                          </div>
+                          <span className="text-sm text-slate-400 font-mono">
+                            {formatDuration(song.duration)}
+                          </span>
                         </div>
-                      </motion.div>
-                    ))
-                  ) : (
-                    <p className="text-slate-400 text-center py-10">
-                      No songs found.
-                    </p>
-                  )}
+                      ))
+                    ) : (
+                      <div className="p-8 text-center text-slate-400">
+                        No songs available for this artist.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
               {activeTab === "biography" && (
                 <BiographySection artist={activeArtist} />
               )}
@@ -1327,18 +1324,18 @@ const TopArtist = () => {
       </div>
 
       <AnimatePresence>
-        {activeArtist && currentSong && (
+        {currentSong && (
           <StickyPlayer
             song={currentSong}
             isPlaying={playing}
             onPlayPause={handlePlayPause}
             onSeek={handleSeek}
-            onNext={handleNext}
             onPrev={handlePrev}
+            onNext={handleNext}
             currentTime={currentTime}
             duration={duration}
             volume={volume}
-            onVolumeChange={(v) => setVolume(v)}
+            onVolumeChange={setVolume}
             isMuted={isMuted}
             toggleMute={() => setIsMuted(!isMuted)}
             isShuffle={isShuffle}

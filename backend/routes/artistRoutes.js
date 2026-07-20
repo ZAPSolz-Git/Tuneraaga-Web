@@ -7,15 +7,35 @@ const {
 } = require("../middleware/authMiddleware");
 const {
   getAllArtists,
+  getMyArtistStatus,
   createArtist,
+  createArtistRequest,
+  approveArtistRequest,
+  rejectArtistRequest,
   updateArtist,
   deleteArtist,
 } = require("../controllers/artistController");
 
-// Public — For users to view artists
 router.get("/", getAllArtists);
 
-// ✅ SECURED — Only admins can create a new artist
+// ✅ Logged-in user checks their own artist request status
+router.get("/me/status", authenticateUser, getMyArtistStatus);
+
+router.post(
+  "/request",
+  authenticateUser,
+  upload.single("image"),
+  createArtistRequest,
+);
+
+router.put(
+  "/:id/approve",
+  authenticateUser,
+  requireAdmin,
+  approveArtistRequest,
+);
+router.put("/:id/reject", authenticateUser, requireAdmin, rejectArtistRequest);
+
 router.post(
   "/",
   authenticateUser,
@@ -23,8 +43,6 @@ router.post(
   upload.single("image"),
   createArtist,
 );
-
-// ✅ SECURED — Only admins can edit
 router.put(
   "/:id",
   authenticateUser,
@@ -32,8 +50,6 @@ router.put(
   upload.single("image"),
   updateArtist,
 );
-
-// ✅ SECURED — Only admins can delete
 router.delete("/:id", authenticateUser, requireAdmin, deleteArtist);
 
 module.exports = router;
