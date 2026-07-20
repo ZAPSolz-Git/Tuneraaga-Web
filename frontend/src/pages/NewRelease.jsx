@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -27,10 +33,6 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import Auth from "../components/Auth";
-// ✅ Everything playback-related now comes from the SHARED player, same
-// as TopPlaylist/Radio/Podcast. NewRelease no longer owns an <audio>
-// element, its own sticky player, its own play/pause/next/prev logic,
-// or its own auth listener — all of that lives once in PlayerProvider.
 import {
   usePlayer,
   formatDuration,
@@ -191,18 +193,24 @@ const FilterDropdown = ({ value, onChange, options, label }) => {
   );
 };
 
-const ArtistLink = ({ name, className = "" }) => {
-  const navigate = useNavigate();
+// ✅ FIXED: ArtistLink with proper navigation using React Router Link
+const ArtistLink = ({ name, className = "", onClick }) => {
+  if (!name || name.trim() === "") return null;
+
+  const encodedName = encodeURIComponent(name.trim());
+  const to = `/artist/${encodedName}`;
+
   return (
-    <span
+    <Link
+      to={to}
       onClick={(e) => {
         e.stopPropagation();
-        navigate(`/artist/${encodeURIComponent(name)}`);
+        if (onClick) onClick(e);
       }}
       className={`cursor-pointer hover:text-blue-600 hover:underline transition-colors ${className}`}
     >
       {name}
-    </span>
+    </Link>
   );
 };
 
@@ -463,7 +471,6 @@ const AlbumCard = ({
 const NewRelease = () => {
   const [searchParams] = useSearchParams();
 
-  // ✅ Everything playback-related now comes from the SHARED player.
   const {
     user,
     playing,
@@ -481,8 +488,6 @@ const NewRelease = () => {
   const [activeActor, setActiveActor] = useState(null);
   const [viewMode, setViewMode] = useState("grid");
 
-  // Profile panel state (which album is open — NOT the same as the
-  // global player's profileOpen boolean, which just tracks visibility)
   const [profileAlbum, setProfileAlbum] = useState(null);
   const [profileSongs, setProfileSongs] = useState([]);
 
@@ -513,8 +518,6 @@ const NewRelease = () => {
     if (data) setLikedSongs(new Set(data.map((l) => l.release_id)));
   }, []);
 
-  // ✅ Likes driven off the SHARED `user` from PlayerContext — no
-  // separate auth listener needed on this page.
   useEffect(() => {
     if (user) fetchLikes(user.id);
     else setLikedSongs(new Set());
@@ -586,7 +589,6 @@ const NewRelease = () => {
     }
   }, [likedSongs, profileOpen, profileSongs]);
 
-  // Handle query parameters from footer clicks
   useEffect(() => {
     const languageParam = searchParams.get("language");
     const actorParam = searchParams.get("actor");
@@ -608,8 +610,6 @@ const NewRelease = () => {
     }
   }, [searchParams]);
 
-  // Display-only duration probing — separate temp <audio> elements, does
-  // not touch the shared player's <audio> element.
   const fetchDurations = useCallback((tracks) => {
     tracks.forEach((track) => {
       if (trackDurationsRef.current[track.id] || !track.audioUrl) return;
@@ -683,33 +683,41 @@ const NewRelease = () => {
     fetchSongs();
   }, []);
 
-  // Filter songs based on language, genre, and actor
-  const filteredSongs = songs.filter((song) => {
-    const matchesLanguage =
-      activeLanguage.toLowerCase().trim() === "for you" ||
-      (song.language || "").toLowerCase().trim() ===
-        activeLanguage.toLowerCase().trim();
+  // ✅ FIXED: memoized so this doesn't create a brand-new array on every
+  // single render (which was cascading into an infinite update loop via
+  // handlePlayerExpandToggle → setExpandHandler → PlayerProvider re-render)
+  const filteredSongs = useMemo(() => {
+    return songs.filter((song) => {
+      const matchesLanguage =
+        activeLanguage.toLowerCase().trim() === "for you" ||
+        (song.language || "").toLowerCase().trim() ===
+          activeLanguage.toLowerCase().trim();
 
-    const matchesGenre =
-      activeGenre.toLowerCase().trim() === "all genres" ||
-      (song.genre || "").toLowerCase().trim() ===
-        activeGenre.toLowerCase().trim();
+      const matchesGenre =
+        activeGenre.toLowerCase().trim() === "all genres" ||
+        (song.genre || "").toLowerCase().trim() ===
+          activeGenre.toLowerCase().trim();
 
-    let matchesActor = true;
-    if (activeActor) {
-      const actorNames = parseArtists(song.actorNames);
-      matchesActor = actorNames.some(
-        (name) =>
-          name.toLowerCase().trim() === activeActor.toLowerCase().trim(),
-      );
-    }
+      let matchesActor = true;
+      if (activeActor) {
+        const actorNames = parseArtists(song.actorNames);
+        matchesActor = actorNames.some(
+          (name) =>
+            name.toLowerCase().trim() === activeActor.toLowerCase().trim(),
+        );
+      }
 
-    return matchesLanguage && matchesGenre && matchesActor;
-  });
+      return matchesLanguage && matchesGenre && matchesActor;
+    });
+  }, [songs, activeLanguage, activeGenre, activeActor]);
 
-  const { albums, singles } = groupByAlbum(filteredSongs);
+  // ✅ FIXED: memoized so `albums`/`singles` keep the same reference across
+  // unrelated re-renders (e.g. PlayerProvider context updates)
+  const { albums, singles } = useMemo(
+    () => groupByAlbum(filteredSongs),
+    [filteredSongs],
+  );
 
-  // ✅ All playback now routes through the SHARED player's handleSongClick.
   const handleAlbumTrackPlay = useCallback(
     (track, trackList, trackIndex) => {
       handleSongClick(trackIndex, track, trackList);
@@ -749,8 +757,6 @@ const NewRelease = () => {
     [profileOpen, profileAlbum, fetchDurations, likedSongs, setProfileOpen],
   );
 
-  // ✅ Wired to the shared player's expand button — opens the profile
-  // panel for whichever album/song is CURRENTLY PLAYING.
   const handlePlayerExpandToggle = useCallback(() => {
     if (!currentSong) return;
     const foundAlbum = albums.find((a) =>
@@ -1663,9 +1669,6 @@ const NewRelease = () => {
           </div>
         </div>
       )}
-
-      {/* ✅ No <StickyPlayer /> here — PlayerProvider renders ONE global
-          sticky player at the app root, same as TopPlaylist/Radio/Podcast. */}
     </div>
   );
 };

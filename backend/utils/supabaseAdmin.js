@@ -6,11 +6,11 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error(
-    "SUPABASE_URL aur SUPABASE_SERVICE_ROLE_KEY .env mein zaroori hain",
+    "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in .env",
   );
 }
 
-// Service-role client — RLS bypass karta hai, admin operations ke liye
+// Service-role client — bypasses RLS for admin operations
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: {
     autoRefreshToken: false,

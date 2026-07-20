@@ -30,6 +30,29 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const API_BASE = "http://localhost:5000/api/content"; // SECURE BACKEND API
 
+const uploadAssetToBackend = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token;
+
+  const response = await fetch(`${API_BASE}/upload`, {
+    method: "POST",
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: formData,
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || result.message || "Upload failed.");
+  }
+
+  return result.publicUrl;
+};
+
 const LANGUAGES = [
   "Hindi",
   "Tamil",
@@ -106,14 +129,13 @@ const ImageUpload = ({
     try {
       const ext = file.name.split(".").pop().toLowerCase();
       const filename = `covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("music-assets")
-        .upload(filename, file, { upsert: true, contentType: file.type });
-      if (uploadError) throw uploadError;
-      const { data: urlData } = supabase.storage
-        .from("music-assets")
-        .getPublicUrl(filename);
-      onChange(urlData.publicUrl);
+      try {
+        const publicUrl = await uploadAssetToBackend(file);
+        onChange(publicUrl);
+      } catch (e) {
+        console.warn("Backend upload failed, using local preview:", e.message);
+        onChange(localUrl);
+      }
     } catch (e) {
       console.warn("Storage upload failed, using local URL:", e.message);
       onChange(localUrl);
@@ -224,19 +246,7 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
     try {
       const ext = file.name.split(".").pop().toLowerCase();
       const uniqueName = `audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data: uploadData, error: uploadErr } = await supabase.storage
-        .from("music-assets")
-        .upload(uniqueName, file, {
-          upsert: true,
-          contentType: getMimeType(ext),
-          cacheControl: "3600",
-        });
-      if (uploadErr) throw new Error(uploadErr.message || "Upload failed");
-      const { data: urlData } = supabase.storage
-        .from("music-assets")
-        .getPublicUrl(uploadData.path || uniqueName);
-      const publicUrl = urlData?.publicUrl;
-      if (!publicUrl) throw new Error("Could not get public URL.");
+      const publicUrl = await uploadAssetToBackend(file);
       onChange(publicUrl);
       setUploadDone(true);
       setFileName(`✓ ${file.name}`);
@@ -477,8 +487,20 @@ const SingleReleaseForm = () => {
         play_count: 0,
         listeners_count: 0,
       };
-      const { error } = await supabase.from("releases").insert([payload]);
-      if (error) throw error;
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data?.session?.access_token;
+      const response = await fetch(`${API_BASE}/releases`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || result.message || "Release failed.");
+      }
       setSubmitted(true);
     } catch (e) {
       alert("Release failed: " + e.message);

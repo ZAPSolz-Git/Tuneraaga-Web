@@ -17,7 +17,16 @@ const port = process.env.PORT || 5000;
 
 // --- Middleware ---
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req, res, buf, encoding) => {
+      if (buf && buf.length) {
+        req.rawBody = buf.toString(encoding || "utf8");
+      }
+    },
+  }),
+);
 app.use(helmet());
 app.use(
   rateLimit({
@@ -36,7 +45,7 @@ app.use("/api/content", contentRoutes);
 
 // --- Route Mounting ---
 app.use("/api/artists", artistRoutes);
-app.use("/api/auth", authRoutes); // ← YEH LINE ZAROOR HO — isse /api/auth/forgot-password banega
+app.use("/api/auth", authRoutes); // ← THIS LINE IS REQUIRED — it enables /api/auth/forgot-password
 app.use("/api", orderRoutes);
 
 // --- Start Server ---

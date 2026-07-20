@@ -8,7 +8,7 @@ const authenticateUser = async (req, res, next) => {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. Token nahi mila.",
+        message: "Access denied. Authorization token is missing.",
       });
     }
 
@@ -23,7 +23,7 @@ const authenticateUser = async (req, res, next) => {
     if (error || !user) {
       return res.status(401).json({
         success: false,
-        message: "Invalid ya expired token.",
+        message: "Invalid or expired token.",
       });
     }
 
@@ -34,7 +34,7 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-// --- Optional auth - fail nahi karta agar token nahi hai ---
+// --- Optional auth - does not fail if the token is missing ---
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -64,7 +64,7 @@ const requireAdmin = async (req, res, next) => {
   if (!req.user) {
     return res.status(401).json({
       success: false,
-      message: "Access denied. Pehle login karo.",
+      message: "Access denied. Please log in first.",
     });
   }
 
@@ -81,7 +81,7 @@ const requireAdmin = async (req, res, next) => {
     if (!profile || profile.role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Sirf admin yeh action kar sakta hai.",
+        message: "Access denied. Only admins can perform this action.",
       });
     }
 

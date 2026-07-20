@@ -118,7 +118,7 @@ const createRazorpayOrder = async (req, res) => {
     if (order.status === "paid") {
       return res
         .status(400)
-        .json({ success: false, message: "Order already paid hai." });
+        .json({ success: false, message: "Order is already paid." });
     }
 
     const amountNum = Number(order.amount);
@@ -126,7 +126,7 @@ const createRazorpayOrder = async (req, res) => {
       console.error("❌ Invalid order.amount:", order.amount);
       return res.status(400).json({
         success: false,
-        message: "Order ka amount invalid hai.",
+        message: "Order amount is invalid.",
       });
     }
 
@@ -204,7 +204,7 @@ const verifyPayment = async (req, res) => {
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res
         .status(400)
-        .json({ success: false, message: "Payment details missing hain." });
+        .json({ success: false, message: "Payment details are missing." });
     }
 
     const { data: order, error: fetchErr } = await supabaseAdmin
@@ -216,13 +216,13 @@ const verifyPayment = async (req, res) => {
     if (fetchErr || !order) {
       return res
         .status(404)
-        .json({ success: false, message: "Order nahi mila." });
+        .json({ success: false, message: "Order not found." });
     }
 
     if (order.razorpay_order_id !== razorpay_order_id) {
       return res
         .status(400)
-        .json({ success: false, message: "Order ID match nahi karta." });
+        .json({ success: false, message: "Order ID does not match." });
     }
 
     const generatedSignature = crypto
@@ -278,6 +278,16 @@ const verifyPayment = async (req, res) => {
       });
     }
 
+    if (order.user_id) {
+      const { error: roleErr } = await supabaseAdmin
+        .from("users")
+        .update({ role: "premium" })
+        .eq("id", order.user_id);
+      if (roleErr) {
+        console.warn("Unable to update user role to premium:", roleErr.message);
+      }
+    }
+
     const { data: planRow } = await supabaseAdmin
       .from("pro_plans")
       .select("name")
@@ -309,6 +319,106 @@ const verifyPayment = async (req, res) => {
       success: false,
       message: "Verification fail hua: " + err.message,
     });
+  }
+};
+
+const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const signature = req.headers["x-razorpay-signature"];
+
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      console.error("Missing Razorpay secret for webhook verification.");
+      return res.status(500).json({ success: false, message: "Server config error." });
+    }
+
+    if (!signature) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Signature header missing." });
+    }
+
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(rawBody)
+      .digest("hex");
+
+    if (expectedSignature !== signature) {
+      console.error("Razorpay webhook signature mismatch.");
+      return res.status(400).json({ success: false, message: "Invalid signature." });
+    }
+
+    const event = req.body?.event;
+    const payment = req.body?.payload?.payment?.entity;
+
+    if (!payment) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing payment payload." });
+    }
+
+    const razorpayOrderId = payment.order_id;
+    const razorpayPaymentId = payment.id;
+    const paymentStatus = payment.status;
+
+    const { data: order, error: orderErr } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("razorpay_order_id", razorpayOrderId)
+      .maybeSingle();
+
+    if (orderErr) {
+      throw orderErr;
+    }
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found." });
+    }
+
+    let status = order.status;
+    if (event === "payment.captured" || paymentStatus === "captured") {
+      status = "paid";
+    } else if (event === "payment.failed" || paymentStatus === "failed") {
+      status = "failed";
+    }
+
+    const updates = {
+      status,
+      razorpay_payment_id: razorpayPaymentId,
+    };
+
+    if (status === "paid") {
+      updates.paid_at = new Date().toISOString();
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from("orders")
+      .update(updates)
+      .eq("id", order.id);
+
+    if (updateErr) {
+      throw updateErr;
+    }
+
+    if (status === "paid" && order.user_id) {
+      const { error: roleErr } = await supabaseAdmin
+        .from("users")
+        .update({ role: "premium" })
+        .eq("id", order.user_id);
+      if (roleErr) {
+        console.warn("Unable to update user role to premium:", roleErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Webhook processed successfully.",
+      event,
+      orderId: order.id,
+    });
+  } catch (err) {
+    console.error("handleRazorpayWebhook error:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -405,7 +515,7 @@ const downloadReceipt = async (req, res) => {
     console.error("❌ downloadReceipt FULL ERROR:", err.message);
     return res.status(500).json({
       success: false,
-      message: "Receipt generate nahi ho paayi.",
+      message: "Receipt generation failed.",
     });
   }
 };
@@ -414,6 +524,7 @@ module.exports = {
   createOrderSummaryPay,
   createRazorpayOrder,
   verifyPayment,
+  handleRazorpayWebhook,
   checkOrderStatus,
   downloadReceipt,
 };

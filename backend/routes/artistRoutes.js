@@ -12,10 +12,10 @@ const {
   deleteArtist,
 } = require("../controllers/artistController");
 
-// Public — Users ko artists dikhane ke liye
+// Public — For users to view artists
 router.get("/", getAllArtists);
 
-// ✅ SECURED — Sirf admin naya artist bana sakta hai
+// ✅ SECURED — Only admins can create a new artist
 router.post(
   "/",
   authenticateUser,
@@ -24,7 +24,7 @@ router.post(
   createArtist,
 );
 
-// ✅ SECURED — Sirf admin edit kar sakta hai
+// ✅ SECURED — Only admins can edit
 router.put(
   "/:id",
   authenticateUser,
@@ -33,7 +33,7 @@ router.put(
   updateArtist,
 );
 
-// ✅ SECURED — Sirf admin delete kar sakta hai
+// ✅ SECURED — Only admins can delete
 router.delete("/:id", authenticateUser, requireAdmin, deleteArtist);
 
 module.exports = router;

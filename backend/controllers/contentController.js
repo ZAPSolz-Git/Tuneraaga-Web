@@ -1,4 +1,115 @@
-// --- existing functions stay as-is, add these 3 new ones ---
+const path = require("path");
+const { supabaseAdmin } = require("../config/supabaseClient");
+
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "music-assets";
+
+exports.uploadAsset = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "File is required for upload." });
+    }
+
+    const extension = path.extname(req.file.originalname || "") || "";
+    const filename = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}${extension}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(filename, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: urlData, error: urlError } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(filename);
+
+    if (urlError) {
+      throw urlError;
+    }
+
+    return res.status(201).json({ success: true, publicUrl: urlData.publicUrl, path: filename });
+  } catch (err) {
+    console.error("uploadAsset error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.createRelease = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized. Please login." });
+    }
+
+    const {
+      title,
+      primary_artist,
+      featuring_artists,
+      genre,
+      subgenre,
+      language,
+      format,
+      cover_url,
+      audio_url,
+      lyrics,
+      copyright_holder,
+      copyright_year,
+      publisher,
+      status,
+      track_number,
+      actor_names,
+      movie_name,
+      album_name,
+      album_cover_url,
+      release_date,
+      play_count,
+      listeners_count,
+    } = req.body;
+
+    const payload = {
+      title,
+      primary_artist,
+      featuring_artists,
+      genre,
+      subgenre,
+      language,
+      format,
+      cover_url,
+      audio_url,
+      lyrics,
+      copyright_holder,
+      copyright_year,
+      publisher,
+      status,
+      track_number,
+      actor_names,
+      movie_name,
+      album_name,
+      album_cover_url,
+      release_date,
+      play_count,
+      listeners_count,
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from("releases")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(201).json({ success: true, release: data });
+  } catch (err) {
+    console.error("createRelease error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
 
 // --- UPDATE RADIO STATION + MANAGE SONGS ---
 exports.updateRadioStation = async (req, res) => {
