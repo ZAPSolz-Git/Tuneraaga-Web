@@ -17,9 +17,8 @@ import {
   List,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient"; // Adjust import path as needed
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
-
-const BUCKET_NAME = "TuneRaaga";
 
 const CHART_TYPES = [
   "Top 50",
@@ -58,6 +57,9 @@ const TopChartAdmin = () => {
   const [charts, setCharts] = useState([]);
   const [viewMode, setViewMode] = useState("grid");
 
+  // ═══════════════════════════════════════════════════════════
+  // READS — still direct via supabase; RLS restricts to SELECT only
+  // ═══════════════════════════════════════════════════════════
   const fetchCharts = async () => {
     setFetching(true);
     try {
@@ -94,6 +96,9 @@ const TopChartAdmin = () => {
     fetchReleases();
   }, []);
 
+  // ═══════════════════════════════════════════════════════════
+  // IMAGE SELECT (local preview only — actual upload happens on submit)
+  // ═══════════════════════════════════════════════════════════
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -123,6 +128,9 @@ const TopChartAdmin = () => {
     setSelectedSongs(selectedSongs.filter((s) => s.id !== id));
   };
 
+  // ═══════════════════════════════════════════════════════════
+  // SECURE SUBMIT — image upload + chart creation, both via backend API
+  // ═══════════════════════════════════════════════════════════
   const handleSubmit = async () => {
     if (!formData.title || !formData.image || selectedSongs.length === 0) {
       return Swal.fire(
@@ -133,46 +141,30 @@ const TopChartAdmin = () => {
     }
     setLoading(true);
     try {
-      // 1. Upload Image
-      const fileName = `topchartscover/${Date.now()}-${formData.image.name}`;
-      const { data: imgData, error: imgError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, formData.image);
-      if (imgError) throw imgError;
+      // 1. Upload Image — via secure backend (no direct anonymous storage writes)
+      const imageUrl = await uploadFileSecure(formData.image, "topchartscover");
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(BUCKET_NAME).getPublicUrl(imgData.path);
-
-      // 2. Insert Chart
-      const { data: newChart, error: chartError } = await supabase
-        .from("charts")
-        .insert({
-          title: formData.title,
-          type: formData.type,
-          language: formData.language,
-          image_url: publicUrl,
-        })
-        .select()
-        .single();
-      if (chartError) throw chartError;
-
-      // 3. Insert Chart Songs
+      // 2. Create Chart + Chart Songs — single secure backend call
       const chartSongsPayload = selectedSongs.map((song) => ({
-        chart_id: newChart.id,
+        release_id: song.id,
         title: song.title,
         artist: song.primary_artist,
         featuring_artists: song.featuring_artists || null,
         album_name: song.album_name || null,
         cover_url: song.cover_url || null,
         audio_url: song.audio_url,
-        release_id: song.id,
       }));
 
-      const { error: songsError } = await supabase
-        .from("chart_songs")
-        .insert(chartSongsPayload);
-      if (songsError) throw songsError;
+      await apiRequest("/charts", {
+        method: "POST",
+        body: {
+          title: formData.title,
+          type: formData.type,
+          language: formData.language,
+          image_url: imageUrl,
+          songs: chartSongsPayload,
+        },
+      });
 
       Swal.fire("Success", "Chart Created Successfully!", "success");
       resetForm();

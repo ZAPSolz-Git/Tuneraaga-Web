@@ -1,12 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from "@supabase/supabase-js";
 import { Trash2, Plus, Music, Loader2 } from "lucide-react";
 
 // --- ENV CONFIGURATION ---
-// .env file se variables load kar rahe hain
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// SECURE BACKEND API — list add/remove no longer write to Supabase
+// directly with the anon key. See backend/controllers/listController.js
+// and backend/routes/contentRoutes.js (/lists/:listName).
+const API_BASE = "http://localhost:5000/api/content";
+const LIST_NAME = "top10_india";
+
+const getAuthHeader = async () => {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 const Top10IndiaAdmin = () => {
   const [listItems, setListItems] = useState([]);
@@ -20,43 +31,75 @@ const Top10IndiaAdmin = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    // Note: Changed table to 'top10_india'
-    const { data: listData } = await supabase
-      .from('top10_india')
-      .select(`*, releases (id, title, cover_url)`);
-    
-    const { data: releasesData } = await supabase
-      .from('releases')
-      .select('id, title');
+    try {
+      const authHeader = await getAuthHeader();
 
-    if (listData) setListItems(listData);
-    if (releasesData) setAllReleases(releasesData);
-    setLoading(false);
+      // Current items in this list — via the secure backend endpoint
+      const listRes = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        headers: { ...authHeader },
+      });
+      const listData = await listRes.json();
+      if (!listRes.ok) {
+        throw new Error(listData.error || "Failed to load list.");
+      }
+
+      // All releases for the dropdown — read-only SELECT, kept on the
+      // anon client. Make sure RLS on "releases" only allows SELECT for
+      // the anon role.
+      const { data: releasesData, error: releasesError } = await supabase
+        .from("releases")
+        .select("id, title");
+      if (releasesError) throw releasesError;
+
+      setListItems(listData || []);
+      setAllReleases(releasesData || []);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      alert("Failed to load data: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!selectedReleaseId) return;
 
-    const { error } = await supabase
-      .from('top10_india')
-      .insert([{ release_id: selectedReleaseId }]);
+    try {
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ release_id: selectedReleaseId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add song.");
+      }
 
-    if (error) {
-      alert("Error adding: " + error.message);
-    } else {
       setSelectedReleaseId("");
-      fetchData();
+      await fetchData();
+    } catch (err) {
+      alert("Error adding: " + err.message);
     }
   };
 
   const handleDelete = async (id) => {
-    const { error } = await supabase
-      .from('top10_india')
-      .delete()
-      .eq('id', id);
+    try {
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}/${id}`, {
+        method: "DELETE",
+        headers: { ...authHeader },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete song.");
+      }
 
-    if (!error) fetchData();
+      await fetchData();
+    } catch (err) {
+      alert("Error deleting: " + err.message);
+    }
   };
 
   return (
@@ -69,26 +112,35 @@ const Top10IndiaAdmin = () => {
         </h3>
         <form onSubmit={handleAdd} className="flex gap-4 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Select Song</label>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              Select Song
+            </label>
             <select
               value={selectedReleaseId}
               onChange={(e) => setSelectedReleaseId(e.target.value)}
               className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               <option value="">-- Choose a song --</option>
-              {allReleases.map(rel => (
-                <option key={rel.id} value={rel.id}>{rel.title}</option>
+              {allReleases.map((rel) => (
+                <option key={rel.id} value={rel.id}>
+                  {rel.title}
+                </option>
               ))}
             </select>
           </div>
-          <button type="submit" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">
+          <button
+            type="submit"
+            className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium"
+          >
             Add to List
           </button>
         </form>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" /></div>
+        <div className="flex justify-center py-10">
+          <Loader2 className="animate-spin text-blue-600" />
+        </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-left border-collapse">
@@ -101,11 +153,17 @@ const Top10IndiaAdmin = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {listItems.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                <tr
+                  key={item.id}
+                  className="hover:bg-slate-50 transition-colors"
+                >
                   <td className="p-4">
-                    <img 
-                      src={item.releases?.cover_url || "https://via.placeholder.com/50"} 
-                      alt="cover" 
+                    <img
+                      src={
+                        item.releases?.cover_url ||
+                        "https://via.placeholder.com/50"
+                      }
+                      alt="cover"
                       className="w-12 h-12 rounded object-cover border border-slate-200"
                     />
                   </td>
@@ -113,7 +171,7 @@ const Top10IndiaAdmin = () => {
                     {item.releases?.title || "Unknown Title"}
                   </td>
                   <td className="p-4 text-right">
-                    <button 
+                    <button
                       onClick={() => handleDelete(item.id)}
                       className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-full transition-colors"
                       title="Remove"

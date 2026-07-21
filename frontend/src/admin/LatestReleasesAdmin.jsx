@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { supabase, handleSupabaseError } from "../lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
 import { Trash2, Plus, Loader2 } from "lucide-react";
+
+// SECURE BACKEND API — writes no longer go straight to Supabase with the
+// anon key. See backend/controllers/listController.js and
+// backend/routes/contentRoutes.js for the matching /lists/:listName routes.
+const API_BASE = "http://localhost:5000/api/content";
+const LIST_NAME = "latest_releases";
+
+const getAuthHeader = async () => {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 const LatestReleasesAdmin = () => {
   const [listItems, setListItems] = useState([]);
@@ -15,14 +27,22 @@ const LatestReleasesAdmin = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Get current items in this list (Join with releases table)
-      const { data: listData, error: listError } = await supabase
-        .from("latest_releases")
-        .select(`*, releases (id, title, cover_url)`);
+      const authHeader = await getAuthHeader();
 
-      if (listError) throw listError;
+      // 1. Get current items in this list — via the secure backend endpoint
+      // (joins to `releases` server-side using the service-role client).
+      const listRes = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        headers: { ...authHeader },
+      });
+      const listData = await listRes.json();
+      if (!listRes.ok) {
+        throw new Error(listData.error || "Failed to load list.");
+      }
 
-      // 2. Get ALL releases for the dropdown
+      // 2. Get ALL releases for the dropdown. This is a read-only SELECT,
+      // so it's left on the anon client — just make sure RLS on
+      // "releases" only permits SELECT (never INSERT/UPDATE/DELETE) for
+      // the anon role.
       const { data: releasesData, error: releasesError } = await supabase
         .from("releases")
         .select("id, title")
@@ -30,17 +50,11 @@ const LatestReleasesAdmin = () => {
 
       if (releasesError) throw releasesError;
 
-      if (listData) setListItems(listData);
-      if (releasesData) setAllReleases(releasesData);
+      setListItems(listData || []);
+      setAllReleases(releasesData || []);
     } catch (error) {
       console.error("Error fetching data:", error);
-      const { needsRefresh } = handleSupabaseError(error);
-      if (needsRefresh) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        await fetchData();
-      } else {
-        alert("Failed to load data");
-      }
+      alert("Failed to load data: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -51,11 +65,16 @@ const LatestReleasesAdmin = () => {
     if (!selectedReleaseId) return;
 
     try {
-      const { error } = await supabase
-        .from("latest_releases")
-        .insert([{ release_id: selectedReleaseId }]);
-
-      if (error) throw error;
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ release_id: selectedReleaseId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add song.");
+      }
 
       setSelectedReleaseId("");
       await fetchData();
@@ -68,12 +87,15 @@ const LatestReleasesAdmin = () => {
     if (!window.confirm("Are you sure you want to remove this song?")) return;
 
     try {
-      const { error } = await supabase
-        .from("latest_releases")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}/${id}`, {
+        method: "DELETE",
+        headers: { ...authHeader },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete song.");
+      }
 
       await fetchData();
     } catch (error) {

@@ -11,17 +11,27 @@ import {
   ChevronRight,
   ListMusic,
   AlertCircle,
-  TrendingUp, // <--- FIXED: Added this import
+  TrendingUp,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import Swal from "sweetalert2";
 
 // ─── CONFIGURATION ───
-// --- ENV CONFIGURATION ---
-// .env file se variables load kar rahe hain
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// SECURE BACKEND API — list add/remove no longer write to Supabase
+// directly with the anon key. See backend/controllers/listController.js
+// and backend/routes/contentRoutes.js (/lists/:listName).
+const API_BASE = "http://localhost:5000/api/content";
+const LIST_NAME = "trending_songs";
+
+const getAuthHeader = async () => {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 // --- CUSTOM SEARCHABLE SELECT COMPONENT ---
 const SearchableSelect = ({ options, value, onChange, placeholder }) => {
@@ -132,27 +142,20 @@ const TrendingSongsAdmin = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // --- EFFECTS ---
+  // --- DATA FETCHING ---
+  // ✅ SEC-01 FIX: was `supabase.from("trending_songs").select(...)` etc.
+  // directly with the anon key. Now via the admin-only backend endpoint.
   const fetchTrending = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("trending_songs")
-        .select(
-          `
-          *,
-          releases (
-            id, 
-            title, 
-            primary_artist, 
-            cover_url,
-            release_date
-          )
-        `,
-        )
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        headers: { ...authHeader },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load trending songs.");
+      }
       setTrendingList(data || []);
     } catch (err) {
       console.error("Error fetching trending:", err);
@@ -162,6 +165,8 @@ const TrendingSongsAdmin = () => {
     }
   };
 
+  // Read-only SELECT — kept on the anon client. Make sure RLS on
+  // "releases" only permits SELECT for the anon role.
   const fetchReleases = async () => {
     try {
       const { data, error } = await supabase
@@ -186,7 +191,7 @@ const TrendingSongsAdmin = () => {
     if (!selectedReleaseId)
       return Swal.fire("Required", "Please select a song.", "warning");
 
-    // Check duplicate
+    // Check duplicate (client-side, against the list we already fetched)
     const exists = trendingList.find((t) => t.release_id == selectedReleaseId);
     if (exists)
       return Swal.fire(
@@ -197,11 +202,16 @@ const TrendingSongsAdmin = () => {
 
     setSubmitting(true);
     try {
-      const { error } = await supabase
-        .from("trending_songs")
-        .insert({ release_id: selectedReleaseId });
-
-      if (error) throw error;
+      const authHeader = await getAuthHeader();
+      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ release_id: selectedReleaseId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add song.");
+      }
 
       await fetchTrending();
       setSelectedReleaseId("");
@@ -226,11 +236,15 @@ const TrendingSongsAdmin = () => {
 
     if (result.isConfirmed) {
       try {
-        const { error } = await supabase
-          .from("trending_songs")
-          .delete()
-          .eq("id", id);
-        if (error) throw error;
+        const authHeader = await getAuthHeader();
+        const response = await fetch(`${API_BASE}/lists/${LIST_NAME}/${id}`, {
+          method: "DELETE",
+          headers: { ...authHeader },
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to remove song.");
+        }
         await fetchTrending();
         Swal.fire("Removed!", "Song removed successfully.", "success");
       } catch (err) {

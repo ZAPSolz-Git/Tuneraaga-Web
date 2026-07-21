@@ -31,7 +31,9 @@ exports.uploadAsset = async (req, res) => {
       throw urlError;
     }
 
-    return res.status(201).json({ success: true, publicUrl: urlData.publicUrl, path: filename });
+    return res
+      .status(201)
+      .json({ success: true, publicUrl: urlData.publicUrl, path: filename });
   } catch (err) {
     console.error("uploadAsset error:", err.message);
     return res.status(500).json({ error: err.message });
@@ -107,6 +109,50 @@ exports.createRelease = async (req, res) => {
     return res.status(201).json({ success: true, release: data });
   } catch (err) {
     console.error("createRelease error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// --- PUBLISH ALBUM TRACKS (bulk update, admin-only) ---
+// ✅ NEW — fixes SEC-01 in AlbumReleaseForm's handlePublish, which used to
+// run `supabase.from("releases").update({...}).in("id", ids)` directly
+// from the browser with the anon key. Now it's one authenticated,
+// admin-only call: PUT /api/content/releases/publish
+exports.publishAlbumTracks = async (req, res) => {
+  try {
+    const { ids, lyrics, copyright_holder, copyright_year, publisher } =
+      req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "ids (array of release ids) is required." });
+    }
+    if (!copyright_holder || !copyright_year) {
+      return res
+        .status(400)
+        .json({ error: "copyright_holder and copyright_year are required." });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("releases")
+      .update({
+        lyrics: lyrics || null,
+        copyright_holder,
+        copyright_year,
+        publisher: publisher || null,
+        status: "Published",
+      })
+      .in("id", ids)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(200).json({ success: true, releases: data });
+  } catch (err) {
+    console.error("publishAlbumTracks error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 };

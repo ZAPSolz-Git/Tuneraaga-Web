@@ -30,18 +30,21 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const API_BASE = "http://localhost:5000/api/content"; // SECURE BACKEND API
 
+const getAuthHeader = async () => {
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token;
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+};
+
 const uploadAssetToBackend = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
 
-  const { data } = await supabase.auth.getSession();
-  const accessToken = data?.session?.access_token;
+  const authHeader = await getAuthHeader();
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: "POST",
-    headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
+    headers: { ...authHeader },
     body: formData,
   });
 
@@ -51,6 +54,63 @@ const uploadAssetToBackend = async (file) => {
   }
 
   return result.publicUrl;
+};
+
+// ✅ SECURE: creates one release row via the backend (admin-only route),
+// instead of writing to Supabase directly with the anon key.
+const createReleaseOnBackend = async (payload) => {
+  const authHeader = await getAuthHeader();
+  const response = await fetch(`${API_BASE}/releases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || result.message || "Release save failed.");
+  }
+  // NOTE: this assumes createRelease on the backend returns the created row
+  // as either `result.release`, `result.data`, or the row itself. Adjust
+  // this line to match your controller's actual response shape.
+  return result.release || result.data || result;
+};
+
+// ✅ SECURE: deletes a release via the backend (admin-only route).
+const deleteReleaseOnBackend = async (id) => {
+  const authHeader = await getAuthHeader();
+  const response = await fetch(`${API_BASE}/releases/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeader },
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || result.message || "Failed to delete.");
+  }
+  return result;
+};
+
+// ✅ SECURE: publishes a whole album's tracks in one call via the backend
+// (admin-only route). See backend/controllers/contentController.js →
+// publishAlbumTracks, and backend/routes/contentRoutes.js →
+// PUT /api/content/releases/publish
+const publishAlbumOnBackend = async ({ ids, lyrics, copyright }) => {
+  const authHeader = await getAuthHeader();
+  const response = await fetch(`${API_BASE}/releases/publish`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeader },
+    body: JSON.stringify({
+      ids,
+      lyrics: lyrics || null,
+      copyright_holder: copyright.holder,
+      copyright_year: copyright.year,
+      publisher: copyright.publisher || null,
+    }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || result.message || "Publish failed.");
+  }
+  return result;
 };
 
 const LANGUAGES = [
@@ -127,17 +187,10 @@ const ImageUpload = ({
     setPreview(localUrl);
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop().toLowerCase();
-      const filename = `covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      try {
-        const publicUrl = await uploadAssetToBackend(file);
-        onChange(publicUrl);
-      } catch (e) {
-        console.warn("Backend upload failed, using local preview:", e.message);
-        onChange(localUrl);
-      }
+      const publicUrl = await uploadAssetToBackend(file);
+      onChange(publicUrl);
     } catch (e) {
-      console.warn("Storage upload failed, using local URL:", e.message);
+      console.warn("Backend upload failed, using local preview:", e.message);
       onChange(localUrl);
     } finally {
       setUploading(false);
@@ -218,19 +271,6 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
   const [fileName, setFileName] = useState(value ? "Audio uploaded ✓" : "");
   const [uploadDone, setUploadDone] = useState(!!value);
 
-  const getMimeType = (ext) => {
-    const map = {
-      mp3: "audio/mpeg",
-      wav: "audio/wav",
-      flac: "audio/flac",
-      aac: "audio/aac",
-      ogg: "audio/ogg",
-      m4a: "audio/mp4",
-      opus: "audio/opus",
-    };
-    return map[ext.toLowerCase()] || "audio/mpeg";
-  };
-
   const handleFile = async (file) => {
     if (!file) return;
     setUploadError("");
@@ -244,8 +284,6 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
     setFileName(file.name);
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop().toLowerCase();
-      const uniqueName = `audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const publicUrl = await uploadAssetToBackend(file);
       onChange(publicUrl);
       setUploadDone(true);
@@ -487,20 +525,7 @@ const SingleReleaseForm = () => {
         play_count: 0,
         listeners_count: 0,
       };
-      const { data } = await supabase.auth.getSession();
-      const accessToken = data?.session?.access_token;
-      const response = await fetch(`${API_BASE}/releases`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.message || "Release failed.");
-      }
+      await createReleaseOnBackend(payload);
       setSubmitted(true);
     } catch (e) {
       alert("Release failed: " + e.message);
@@ -1082,6 +1107,9 @@ const AlbumReleaseForm = () => {
     audio_url: "",
   });
 
+  // ✅ SEC-01 FIX: was `supabase.from("releases").insert([payload])` using
+  // the anon key directly. Now routed through the same admin-only backend
+  // endpoint the Single Release form already uses.
   const handleSaveTrack = async () => {
     if (!isCurrentTrackValid()) {
       setTrackError(
@@ -1122,14 +1150,15 @@ const AlbumReleaseForm = () => {
         play_count: 0,
         listeners_count: 0,
       };
-      const { data, error } = await supabase
-        .from("releases")
-        .insert([payload])
-        .select("id")
-        .single();
-      if (error) throw error;
 
-      const savedWithId = { ...payload, id: data.id };
+      const created = await createReleaseOnBackend(payload);
+      if (!created?.id) {
+        throw new Error(
+          "Backend did not return the new track's id — check createRelease's response shape.",
+        );
+      }
+
+      const savedWithId = { ...payload, id: created.id };
       const newCount = savedTracks.length + 1;
 
       setSavedTracks((prev) => [...prev, savedWithId]);
@@ -1143,22 +1172,11 @@ const AlbumReleaseForm = () => {
     }
   };
 
-  // ╔══════════════════════════════════════════════════════════════╗
-  // ║  ✅ SECURE DELETE — Backend API ke through, not direct DB  ║
-  // ╚══════════════════════════════════════════════════════════════╝
+  // Already secure — kept as-is (goes through the backend DELETE route).
   const handleDeleteTrack = async (id) => {
     setDeletingId(id);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const response = await fetch(`${API_BASE}/releases/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      const res = await response.json();
-      if (!response.ok) throw new Error(res.error || "Failed to delete");
-
+      await deleteReleaseOnBackend(id);
       setSavedTracks((prev) => {
         const filtered = prev.filter((t) => t.id !== id);
         return filtered.map((t, i) => ({ ...t, track_number: i + 1 }));
@@ -1170,21 +1188,13 @@ const AlbumReleaseForm = () => {
     }
   };
 
+  // ✅ SEC-01 FIX: was `supabase.from("releases").update(...).in("id", ids)`
+  // using the anon key directly. Now a single admin-only backend call.
   const handlePublish = async () => {
     setSubmitting(true);
     try {
       const ids = savedTracks.map((t) => t.id);
-      const { error } = await supabase
-        .from("releases")
-        .update({
-          lyrics: lyrics || null,
-          copyright_holder: copyright.holder,
-          copyright_year: copyright.year,
-          publisher: copyright.publisher || null,
-          status: "Published",
-        })
-        .in("id", ids);
-      if (error) throw error;
+      await publishAlbumOnBackend({ ids, lyrics, copyright });
       setSubmitted(true);
     } catch (e) {
       alert("Publish failed: " + e.message);

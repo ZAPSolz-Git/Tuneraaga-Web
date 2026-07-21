@@ -15,13 +15,12 @@ import {
   List,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
-
-const BUCKET_NAME = "TuneRaaga";
 
 const LANGUAGES = [
   "Hindi",
@@ -51,6 +50,9 @@ const TopPlaylistAdmin = () => {
   const [playlists, setPlaylists] = useState([]);
   const [viewMode, setViewMode] = useState("grid");
 
+  // ═══════════════════════════════════════════════════════════
+  // READS — still direct via supabase; RLS restricts to SELECT only
+  // ═══════════════════════════════════════════════════════════
   const fetchPlaylists = async () => {
     setFetching(true);
     try {
@@ -87,6 +89,9 @@ const TopPlaylistAdmin = () => {
     fetchReleases();
   }, []);
 
+  // ═══════════════════════════════════════════════════════════
+  // IMAGE SELECT (local preview only — actual upload happens on submit)
+  // ═══════════════════════════════════════════════════════════
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -116,6 +121,9 @@ const TopPlaylistAdmin = () => {
     setSelectedSongs(selectedSongs.filter((s) => s.id !== id));
   };
 
+  // ═══════════════════════════════════════════════════════════
+  // SECURE SUBMIT — image upload + playlist creation, both via backend API
+  // ═══════════════════════════════════════════════════════════
   const handleSubmit = async () => {
     if (!formData.title || !formData.image || selectedSongs.length === 0) {
       return Swal.fire(
@@ -126,45 +134,32 @@ const TopPlaylistAdmin = () => {
     }
     setLoading(true);
     try {
-      // 1. Upload Image
-      const fileName = `topplaylistcover/${Date.now()}-${formData.image.name}`;
-      const { data: imgData, error: imgError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, formData.image);
-      if (imgError) throw imgError;
+      // 1. Upload Image — via secure backend (no direct anonymous storage writes)
+      const imageUrl = await uploadFileSecure(
+        formData.image,
+        "topplaylistcover",
+      );
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(BUCKET_NAME).getPublicUrl(imgData.path);
-
-      // 2. Insert Playlist
-      const { data: newPlaylist, error: playlistError } = await supabase
-        .from("playlists")
-        .insert({
-          title: formData.title,
-          language: formData.language,
-          image_url: publicUrl,
-        })
-        .select()
-        .single();
-      if (playlistError) throw playlistError;
-
-      // 3. Insert Playlist Songs
+      // 2. Create Playlist + Playlist Songs — single secure backend call
       const playlistSongsPayload = selectedSongs.map((song) => ({
-        playlist_id: newPlaylist.id,
+        release_id: song.id,
         title: song.title,
         artist: song.primary_artist,
         featuring_artists: song.featuring_artists || null,
         album_name: song.album_name || null,
         cover_url: song.cover_url || null,
         audio_url: song.audio_url,
-        release_id: song.id,
       }));
 
-      const { error: songsError } = await supabase
-        .from("playlist_songs")
-        .insert(playlistSongsPayload);
-      if (songsError) throw songsError;
+      await apiRequest("/playlists", {
+        method: "POST",
+        body: {
+          title: formData.title,
+          language: formData.language,
+          image_url: imageUrl,
+          songs: playlistSongsPayload,
+        },
+      });
 
       Swal.fire("Success", "Playlist Created Successfully!", "success");
       resetForm();

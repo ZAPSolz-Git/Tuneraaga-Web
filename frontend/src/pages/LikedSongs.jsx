@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "../components/AuthContext";
 import {
   Play,
   Pause,
@@ -25,11 +26,12 @@ const formatDuration = (val) => {
 };
 
 export default function LikedSongs() {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  // ✅ PERF-01 FIX: Consume cached user/role from global AuthContext
+  const { user, role: userRole, loading: authLoading } = useAuth();
+
   const [likedSongsData, setLikedSongsData] = useState([]);
   const [likedIds, setLikedIds] = useState(new Set());
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
 
@@ -59,49 +61,21 @@ export default function LikedSongs() {
     currentListRef.current = currentList;
   }, [currentList]);
 
-  // Check auth and fetch data
+  // ✅ PERF-01 FIX: Fetch data only when user from context changes
   useEffect(() => {
-    const initAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (session?.user) {
-        setUser(session.user);
-        userRef.current = session.user;
-        // FIX: Removed fetchUserRole DB call. Read from cache instead.
-        setUserRole(localStorage.getItem("userRole") || "user");
-        await fetchLikes(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    };
-    initAuth();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        setUser(session.user);
-        userRef.current = session.user;
-        // FIX: Removed fetchUserRole DB call. Read from cache instead.
-        setUserRole(localStorage.getItem("userRole") || "user");
-        await fetchLikes(session.user.id);
-      } else if (event === "SIGNED_OUT") {
-        setUser(null);
-        userRef.current = null;
-        setUserRole(null);
-        setLikedSongsData([]);
-        setLikedIds(new Set());
-        handleClosePlayer();
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    if (user?.id) {
+      fetchLikes(user.id);
+    } else {
+      // User signed out — clear local data
+      setLikedSongsData([]);
+      setLikedIds(new Set());
+      handleClosePlayer();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const fetchLikes = async (userId) => {
-    setLoading(true);
+    setDataLoading(true);
     const { data, error } = await supabase
       .from("likes")
       .select("id, created_at, releases(*)")
@@ -112,7 +86,7 @@ export default function LikedSongs() {
       setLikedSongsData(data.filter((h) => h.releases !== null));
       setLikedIds(new Set(data.map((h) => h.releases.id)));
     }
-    setLoading(false);
+    setDataLoading(false);
   };
 
   const saveToHistory = async (releaseId) => {
@@ -198,6 +172,7 @@ export default function LikedSongs() {
 
       if (song.id) saveToHistory(song.id);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [user],
   );
 
@@ -274,6 +249,9 @@ export default function LikedSongs() {
   };
 
   const mappedLikes = likedSongsData.map((h) => h.releases);
+
+  // Combined loading state: auth loading OR data loading
+  const loading = authLoading || dataLoading;
 
   // Show login required if not authenticated
   if (!user && !loading) {

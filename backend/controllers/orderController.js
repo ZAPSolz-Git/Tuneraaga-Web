@@ -255,7 +255,7 @@ const verifyPayment = async (req, res) => {
       return res.status(500).json({
         success: false,
         message:
-          "Payment hui, lekin order update fail hua: " + updateErr.message,
+          "Payment Done but order Failed: " + updateErr.message,
       });
     }
 
