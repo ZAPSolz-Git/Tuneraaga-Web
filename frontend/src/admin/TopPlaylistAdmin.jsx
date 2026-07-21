@@ -15,7 +15,7 @@ import {
   List,
   Edit,
 } from "lucide-react";
-import { supabase } from "../lib/supabaseClient"; // Fixed import
+import { supabase } from "../lib/supabaseClient";
 import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
 
@@ -188,7 +188,27 @@ const TopPlaylistAdmin = () => {
       // 1. Upload new image if changed
       if (formData.image) {
         imageUrl = await uploadFileSecure(formData.image, "topplaylistcover");
+
+        // ✅ DEFENSIVE CHECK — if uploadFileSecure didn't return a real
+        // URL (e.g. it resolved to undefined/null because the upload
+        // silently failed), stop right here with a clear message instead
+        // of sending an empty image_url to the backend (which previously
+        // showed the confusing "Title and cover image are required" error
+        // even though both were filled in on screen).
+        if (
+          !imageUrl ||
+          typeof imageUrl !== "string" ||
+          imageUrl.trim() === ""
+        ) {
+          throw new Error(
+            "Cover image upload did not return a valid URL. Please re-select the cover image and try again.",
+          );
+        }
       }
+
+      // Debug helper — open the browser console to confirm the exact
+      // payload being sent if something still doesn't look right.
+      console.log("Playlist submit → image_url:", imageUrl);
 
       // 2. Format songs payload
       const playlistSongsPayload = selectedSongs.map((song) => ({

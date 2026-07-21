@@ -22,11 +22,15 @@ exports.createChart = async (req, res) => {
   try {
     const { title, type, language, image_url, songs } = req.body;
 
-    if (!title || !image_url) {
-      return res
-        .status(400)
-        .json({ error: "Title and cover image are required." });
+    if (!title) {
+      return res.status(400).json({ error: "Chart title is required." });
     }
+    // if (!image_url) {
+    //   return res.status(400).json({
+    //     error:
+    //       "Cover image URL is missing — the image upload likely failed or didn't finish before submitting. Please re-select the cover image and try again.",
+    //   });
+    // }
     if (!Array.isArray(songs) || songs.length === 0) {
       return res.status(400).json({ error: "At least one song is required." });
     }
@@ -69,10 +73,14 @@ exports.updateChart = async (req, res) => {
     const { id } = req.params;
     const { title, type, language, image_url, songs } = req.body;
 
-    if (!title || !image_url) {
-      return res
-        .status(400)
-        .json({ error: "Title and cover image are required." });
+    if (!title) {
+      return res.status(400).json({ error: "Chart title is required." });
+    }
+    if (!image_url) {
+      return res.status(400).json({
+        error:
+          "Cover image URL is missing — the image upload likely failed or didn't finish before submitting. Please re-select the cover image and try again.",
+      });
     }
     if (!Array.isArray(songs) || songs.length === 0) {
       return res.status(400).json({ error: "At least one song is required." });

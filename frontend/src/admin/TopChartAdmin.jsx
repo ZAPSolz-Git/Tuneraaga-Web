@@ -17,8 +17,10 @@ import {
   List,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
+
+// Must match how your backend is mounted: app.use("/api/content", contentRoutes)
+const API_BASE = "http://localhost:5000/api/content";
 
 const CHART_TYPES = [
   "Top 50",
@@ -37,6 +39,95 @@ const LANGUAGES = [
   "Bhojpuri",
   "International",
 ];
+
+// ═══════════════════════════════════════════════════════════
+// SELF-CONTAINED API HELPERS — no external secureApi.js dependency.
+// Everything needed to talk to the backend lives right here so
+// it's easy to see exactly what is being sent/received.
+// ═══════════════════════════════════════════════════════════
+
+const getAuthHeader = async () => {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) {
+    throw new Error(
+      "You are not logged in (no active session). Please log in again.",
+    );
+  }
+  return { Authorization: `Bearer ${token}` };
+};
+
+// Uploads the actual image FILE to the backend, which stores it in
+// the Supabase Storage bucket (service-role, server-side) and
+// returns back the bucket's public URL.
+const uploadImageToBucket = async (file) => {
+  const authHeader = await getAuthHeader();
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE}/upload`, {
+    method: "POST",
+    headers: {
+      ...authHeader,
+      // Do NOT set Content-Type manually here — the browser must
+      // generate the multipart boundary itself for FormData uploads.
+    },
+    body: formData,
+  });
+
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (e) {
+    /* no JSON body */
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result?.error || `Image upload failed (status ${response.status}).`,
+    );
+  }
+  if (!result?.publicUrl) {
+    console.error("Unexpected /upload response:", result);
+    throw new Error(
+      "Upload request succeeded but the server didn't return a publicUrl.",
+    );
+  }
+
+  return result.publicUrl;
+};
+
+// Generic JSON request helper (create / update / delete)
+const apiRequest = async (endpoint, { method = "GET", body } = {}) => {
+  const authHeader = await getAuthHeader();
+
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (e) {
+    /* no JSON body, e.g. some DELETE responses */
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result?.error ||
+        result?.message ||
+        `Request failed (status ${response.status}).`,
+    );
+  }
+
+  return result;
+};
 
 const TopChartAdmin = () => {
   const [step, setStep] = useState(0);
@@ -58,7 +149,7 @@ const TopChartAdmin = () => {
   const [charts, setCharts] = useState([]);
 
   // ═══════════════════════════════════════════════════════════
-  // READS
+  // READS — direct via supabase (RLS restricts to SELECT only)
   // ═══════════════════════════════════════════════════════════
   const fetchCharts = async () => {
     setFetching(true);
@@ -196,9 +287,10 @@ const TopChartAdmin = () => {
     try {
       let imageUrl = formData.imagePreview;
 
-      // 1. Upload new image if changed
+      // 1. Upload new image (real file) to the Supabase bucket via backend
       if (formData.image) {
-        imageUrl = await uploadFileSecure(formData.image, "topchartscover");
+        imageUrl = await uploadImageToBucket(formData.image);
+        console.log("✅ Chart cover uploaded to bucket:", imageUrl);
       }
 
       // 2. Format songs payload
@@ -215,6 +307,14 @@ const TopChartAdmin = () => {
       // 3. Determine API call method and endpoint
       const method = editingChartId ? "PUT" : "POST";
       const endpoint = editingChartId ? `/charts/${editingChartId}` : "/charts";
+
+      console.log("📤 Sending chart payload:", {
+        title: formData.title,
+        type: formData.type,
+        language: formData.language,
+        image_url: imageUrl,
+        songsCount: chartSongsPayload.length,
+      });
 
       await apiRequest(endpoint, {
         method,
@@ -235,6 +335,7 @@ const TopChartAdmin = () => {
       resetForm();
       fetchCharts();
     } catch (err) {
+      console.error("Chart submit error:", err);
       Swal.fire("Error", err.message, "error");
     } finally {
       setLoading(false);
