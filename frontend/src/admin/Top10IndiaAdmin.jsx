@@ -1,51 +1,77 @@
 import React, { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { Trash2, Plus, Music, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Trash2, Plus, Loader2 } from "lucide-react";
+import { supabase, API_BASE_URL, getAuthHeader } from "../lib/supabaseClient";
+import Swal from "sweetalert2";
 
-// --- ENV CONFIGURATION ---
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// SECURE BACKEND API — list add/remove no longer write to Supabase
-// directly with the anon key. See backend/controllers/listController.js
-// and backend/routes/contentRoutes.js (/lists/:listName).
-const API_BASE = "http://localhost:5000/api/content";
 const LIST_NAME = "top10_india";
 
-const getAuthHeader = async () => {
-  const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
 const Top10IndiaAdmin = () => {
+  const navigate = useNavigate();
   const [listItems, setListItems] = useState([]);
   const [allReleases, setAllReleases] = useState([]);
   const [selectedReleaseId, setSelectedReleaseId] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // ─── HANDLE 401 ───
+  const handle401 = async () => {
+    Swal.fire("Session Expired", "Please log in again.", "warning");
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
+
+  // ─── CHECK AUTH ON MOUNT ───
   useEffect(() => {
-    fetchData();
-  }, []);
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        Swal.fire(
+          "Login Required",
+          "Please log in to access this page.",
+          "warning",
+        );
+        navigate("/login");
+        return;
+      }
+
+      console.log("✅ Top10India: Session found for", session.user.email);
+      fetchData();
+    };
+
+    checkAuth();
+  }, [navigate]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const authHeader = await getAuthHeader();
 
-      // Current items in this list — via the secure backend endpoint
-      const listRes = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
-        headers: { ...authHeader },
-      });
-      const listData = await listRes.json();
-      if (!listRes.ok) {
-        throw new Error(listData.error || "Failed to load list.");
+      if (!authHeader.Authorization) {
+        throw new Error("Not authenticated. Please log in again.");
       }
 
-      // All releases for the dropdown — read-only SELECT, kept on the
-      // anon client. Make sure RLS on "releases" only allows SELECT for
-      // the anon role.
+      const listRes = await fetch(
+        `${API_BASE_URL}/content/lists/${LIST_NAME}`,
+        {
+          headers: { ...authHeader },
+        },
+      );
+
+      if (listRes.status === 401) {
+        await handle401();
+        return;
+      }
+
+      const listData = await listRes.json();
+      if (!listRes.ok) {
+        throw new Error(
+          listData.error || listData.message || "Failed to load list.",
+        );
+      }
+
       const { data: releasesData, error: releasesError } = await supabase
         .from("releases")
         .select("id, title");
@@ -55,7 +81,7 @@ const Top10IndiaAdmin = () => {
       setAllReleases(releasesData || []);
     } catch (err) {
       console.error("Error fetching data:", err);
-      alert("Failed to load data: " + err.message);
+      Swal.fire("Error", "Failed to load data: " + err.message, "error");
     } finally {
       setLoading(false);
     }
@@ -63,42 +89,92 @@ const Top10IndiaAdmin = () => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    if (!selectedReleaseId) return;
+    if (!selectedReleaseId) {
+      return Swal.fire("Required", "Please select a song.", "warning");
+    }
 
     try {
       const authHeader = await getAuthHeader();
-      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ release_id: selectedReleaseId }),
-      });
+
+      if (!authHeader.Authorization) {
+        throw new Error("Not authenticated. Please log in again.");
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/content/lists/${LIST_NAME}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeader,
+          },
+          body: JSON.stringify({ release_id: selectedReleaseId }),
+        },
+      );
+
+      if (response.status === 401) {
+        await handle401();
+        return;
+      }
+
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Failed to add song.");
+        throw new Error(
+          result.error || result.message || "Failed to add song.",
+        );
       }
 
       setSelectedReleaseId("");
       await fetchData();
+      Swal.fire("Success", "Song added!", "success");
     } catch (err) {
-      alert("Error adding: " + err.message);
+      Swal.fire("Error", err.message, "error");
     }
   };
 
   const handleDelete = async (id) => {
+    const confirm = await Swal.fire({
+      title: "Are you sure?",
+      text: "Remove this song from the list?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      confirmButtonText: "Yes, remove it!",
+    });
+
+    if (!confirm.isConfirmed) return;
+
     try {
       const authHeader = await getAuthHeader();
-      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}/${id}`, {
-        method: "DELETE",
-        headers: { ...authHeader },
-      });
+
+      if (!authHeader.Authorization) {
+        throw new Error("Not authenticated. Please log in again.");
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/content/lists/${LIST_NAME}/${id}`,
+        {
+          method: "DELETE",
+          headers: { ...authHeader },
+        },
+      );
+
+      if (response.status === 401) {
+        await handle401();
+        return;
+      }
+
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Failed to delete song.");
+        throw new Error(
+          result.error || result.message || "Failed to delete song.",
+        );
       }
 
       await fetchData();
+      Swal.fire("Removed!", "Song removed successfully.", "success");
     } catch (err) {
-      alert("Error deleting: " + err.message);
+      Swal.fire("Error", err.message, "error");
     }
   };
 

@@ -1,39 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import {
   Plus,
   Trash2,
   Loader2,
   Search,
   ChevronDown,
-  Music,
   ChevronLeft,
   ChevronRight,
   ListMusic,
-  AlertCircle,
   TrendingUp,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase, API_BASE_URL, getAuthHeader } from "../lib/supabaseClient";
 import Swal from "sweetalert2";
 
 // ─── CONFIGURATION ───
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// SECURE BACKEND API — list add/remove no longer write to Supabase
-// directly with the anon key. See backend/controllers/listController.js
-// and backend/routes/contentRoutes.js (/lists/:listName).
-const API_BASE = "http://localhost:5000/api/content";
 const LIST_NAME = "trending_songs";
 
-const getAuthHeader = async () => {
-  const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
-// --- CUSTOM SEARCHABLE SELECT COMPONENT ---
+// ─── SEARCHABLE SELECT COMPONENT ───
 const SearchableSelect = ({ options, value, onChange, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -131,48 +115,91 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
 
 // ─── MAIN COMPONENT ───
 const TrendingSongsAdmin = () => {
-  // --- STATE ---
+  const navigate = useNavigate();
   const [trendingList, setTrendingList] = useState([]);
   const [allReleases, setAllReleases] = useState([]);
   const [selectedReleaseId, setSelectedReleaseId] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // --- DATA FETCHING ---
-  // ✅ SEC-01 FIX: was `supabase.from("trending_songs").select(...)` etc.
-  // directly with the anon key. Now via the admin-only backend endpoint.
+  // ─── HANDLE 401 — redirect to login ───
+  const handle401 = async () => {
+    Swal.fire("Session Expired", "Please log in again.", "warning");
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
+
+  // ─── CHECK AUTH ON MOUNT ───
+  useEffect(() => {
+    const checkAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        console.warn("⚠️ No session — redirecting to login");
+        Swal.fire(
+          "Login Required",
+          "Please log in to access this page.",
+          "warning",
+        );
+        navigate("/login");
+        return;
+      }
+
+      console.log("✅ Session found for:", session.user.email);
+      fetchTrending();
+      fetchReleases();
+    };
+
+    checkAuth();
+  }, [navigate]);
+
   const fetchTrending = async () => {
     setLoading(true);
     try {
       const authHeader = await getAuthHeader();
-      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
-        headers: { ...authHeader },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to load trending songs.");
+
+      if (!authHeader.Authorization) {
+        throw new Error("Not authenticated. Please log in again.");
       }
+
+      const response = await fetch(
+        `${API_BASE_URL}/content/lists/${LIST_NAME}`,
+        {
+          headers: { ...authHeader },
+        },
+      );
+      const data = await response.json();
+
+      if (response.status === 401) {
+        await handle401();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || data.message || "Failed to load trending songs.",
+        );
+      }
+
       setTrendingList(data || []);
     } catch (err) {
       console.error("Error fetching trending:", err);
-      Swal.fire("Error", "Failed to load trending songs", "error");
+      Swal.fire("Error", err.message, "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // Read-only SELECT — kept on the anon client. Make sure RLS on
-  // "releases" only permits SELECT for the anon role.
   const fetchReleases = async () => {
     try {
       const { data, error } = await supabase
         .from("releases")
         .select("id, title, primary_artist, cover_url")
-        .eq("status", "Published"); // Sirf published songs dikhao
+        .eq("status", "Published");
       if (error) throw error;
       setAllReleases(data || []);
     } catch (err) {
@@ -180,18 +207,11 @@ const TrendingSongsAdmin = () => {
     }
   };
 
-  useEffect(() => {
-    fetchTrending();
-    fetchReleases();
-  }, []);
-
-  // --- HANDLERS ---
   const handleAddSong = async (e) => {
     e.preventDefault();
     if (!selectedReleaseId)
       return Swal.fire("Required", "Please select a song.", "warning");
 
-    // Check duplicate (client-side, against the list we already fetched)
     const exists = trendingList.find((t) => t.release_id == selectedReleaseId);
     if (exists)
       return Swal.fire(
@@ -203,14 +223,33 @@ const TrendingSongsAdmin = () => {
     setSubmitting(true);
     try {
       const authHeader = await getAuthHeader();
-      const response = await fetch(`${API_BASE}/lists/${LIST_NAME}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ release_id: selectedReleaseId }),
-      });
+
+      if (!authHeader.Authorization) {
+        throw new Error("Not authenticated. Please log in again.");
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/content/lists/${LIST_NAME}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeader,
+          },
+          body: JSON.stringify({ release_id: selectedReleaseId }),
+        },
+      );
       const result = await response.json();
+
+      if (response.status === 401) {
+        await handle401();
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error(result.error || "Failed to add song.");
+        throw new Error(
+          result.error || result.message || "Failed to add song.",
+        );
       }
 
       await fetchTrending();
@@ -237,14 +276,31 @@ const TrendingSongsAdmin = () => {
     if (result.isConfirmed) {
       try {
         const authHeader = await getAuthHeader();
-        const response = await fetch(`${API_BASE}/lists/${LIST_NAME}/${id}`, {
-          method: "DELETE",
-          headers: { ...authHeader },
-        });
+
+        if (!authHeader.Authorization) {
+          throw new Error("Not authenticated. Please log in again.");
+        }
+
+        const response = await fetch(
+          `${API_BASE_URL}/content/lists/${LIST_NAME}/${id}`,
+          {
+            method: "DELETE",
+            headers: { ...authHeader },
+          },
+        );
+
+        if (response.status === 401) {
+          await handle401();
+          return;
+        }
+
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || "Failed to remove song.");
+          throw new Error(
+            data.error || data.message || "Failed to remove song.",
+          );
         }
+
         await fetchTrending();
         Swal.fire("Removed!", "Song removed successfully.", "success");
       } catch (err) {
@@ -254,13 +310,10 @@ const TrendingSongsAdmin = () => {
     }
   };
 
-  // --- PAGINATION LOGIC ---
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = trendingList.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(trendingList.length / itemsPerPage);
-
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   return (
     <div className="p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -274,7 +327,6 @@ const TrendingSongsAdmin = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* --- LEFT COLUMN: ADD FORM --- */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sticky top-24">
             <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -292,7 +344,6 @@ const TrendingSongsAdmin = () => {
                   placeholder="Search title or artist..."
                 />
               </div>
-
               <button
                 type="submit"
                 disabled={submitting}
@@ -309,7 +360,6 @@ const TrendingSongsAdmin = () => {
           </div>
         </div>
 
-        {/* --- RIGHT COLUMN: LIST --- */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
             <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -399,7 +449,6 @@ const TrendingSongsAdmin = () => {
                   </table>
                 </div>
 
-                {/* --- PAGINATION --- */}
                 {totalPages > 1 && (
                   <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-t border-slate-200">
                     <div className="text-sm text-slate-700">
@@ -415,7 +464,7 @@ const TrendingSongsAdmin = () => {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => paginate(currentPage - 1)}
+                        onClick={() => setCurrentPage((p) => p - 1)}
                         disabled={currentPage === 1}
                         className="px-3 py-1 border border-slate-300 rounded bg-white text-sm hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -425,7 +474,7 @@ const TrendingSongsAdmin = () => {
                         Page {currentPage} of {totalPages}
                       </span>
                       <button
-                        onClick={() => paginate(currentPage + 1)}
+                        onClick={() => setCurrentPage((p) => p + 1)}
                         disabled={currentPage === totalPages}
                         className="px-3 py-1 border border-slate-300 rounded bg-white text-sm hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       >

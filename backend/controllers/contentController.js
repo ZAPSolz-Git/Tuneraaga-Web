@@ -113,11 +113,7 @@ exports.createRelease = async (req, res) => {
   }
 };
 
-// --- PUBLISH ALBUM TRACKS (bulk update, admin-only) ---
-// ✅ NEW — fixes SEC-01 in AlbumReleaseForm's handlePublish, which used to
-// run `supabase.from("releases").update({...}).in("id", ids)` directly
-// from the browser with the anon key. Now it's one authenticated,
-// admin-only call: PUT /api/content/releases/publish
+
 exports.publishAlbumTracks = async (req, res) => {
   try {
     const { ids, lyrics, copyright_holder, copyright_year, publisher } =

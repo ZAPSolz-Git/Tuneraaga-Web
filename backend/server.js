@@ -17,7 +17,20 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // --- Middleware ---
-app.use(cors());
+// ✅ Explicit CORS config to allow Authorization header + credentials
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "http://localhost:5174",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+
 app.use(
   express.json({
     limit: "50mb",
@@ -36,7 +49,7 @@ app.use(
   }),
 );
 
-// 🔍 TEMP DEBUG LOGGER — remove once confirmed working
+// 🔍 DEBUG LOGGER
 app.use((req, res, next) => {
   console.log(`➡️  ${req.method} ${req.originalUrl}`);
   next();
@@ -47,13 +60,23 @@ app.get("/", (req, res) => {
   res.send("Server Running! 🚀");
 });
 
+// ✅ DEBUG: Test auth endpoint — hit this to check if token works
+app.get("/api/debug/auth", authenticateUser, (req, res) => {
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      role: req.user.role,
+      app_metadata: req.user.app_metadata,
+    },
+  });
+});
+
 // Content Routes
 app.use("/api/content", contentRoutes);
 
-// ✅ SAFETY-NET ROUTE — defined directly here so it registers
-// no matter what is happening inside artistRoutes.js.
-// If THIS works but the one inside artistRoutes.js doesn't,
-// we've proven the bug is inside that file / how it's required.
+// Safety-net artist request route
 app.post(
   "/api/artists/request",
   authenticateUser,
@@ -66,7 +89,7 @@ app.use("/api/artists", artistRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api", orderRoutes);
 
-// 🔍 TEMP: catch-all 404 logger — returns JSON instead of HTML
+// 🔍 404 catch-all
 app.use((req, res) => {
   console.log(`❌ No route matched: ${req.method} ${req.originalUrl}`);
   res

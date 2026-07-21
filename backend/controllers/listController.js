@@ -2,25 +2,14 @@ const { supabaseAdmin } = require("../config/supabaseClient");
 
 // ─────────────────────────────────────────────────────────────
 // Generic controller for admin "list" tables that just reference
-// a release (id, release_id, joined releases row). Used to fix
-// SEC-01 for pages like LatestReleasesAdmin, Top10IndiaAdmin, and
-// TrendingSongsAdmin, which previously wrote to Supabase directly
-// with the anon key.
+// a release (id, release_id, joined releases row).
 //
 // The table name is NEVER taken as a raw string from the request —
-// it must match a key in ALLOWED_LISTS below. This prevents a
-// malicious :listName param from being used to target an arbitrary
-// table. Add a new entry here whenever you wire up another list-style
-// admin page (e.g. top10_india, trending_songs) — do NOT loosen this
-// into a free-form table lookup.
+// it must match a key in ALLOWED_LISTS below.
 // ─────────────────────────────────────────────────────────────
 const ALLOWED_LISTS = {
   latest_releases: "latest_releases",
-  // ✅ Verified schema: id (bigint identity), release_id (bigint, FK →
-  // releases.id), created_at (timestamptz).
   top10_india: "top10_india",
-  // ✅ Verified schema: id (bigint identity), release_id (bigint NOT
-  // NULL, FK → releases.id, ON DELETE CASCADE), created_at (timestamptz).
   trending_songs: "trending_songs",
 };
 

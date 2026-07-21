@@ -13,14 +13,11 @@ import {
   ListMusic,
   Grid3x3,
   List,
+  Edit,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabaseClient"; // Fixed import
 import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 import Swal from "sweetalert2";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const LANGUAGES = [
   "Hindi",
@@ -36,6 +33,7 @@ const TopPlaylistAdmin = () => {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [editingPlaylistId, setEditingPlaylistId] = useState(null);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -48,17 +46,18 @@ const TopPlaylistAdmin = () => {
   const [selectedSongs, setSelectedSongs] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [playlists, setPlaylists] = useState([]);
-  const [viewMode, setViewMode] = useState("grid");
 
   // ═══════════════════════════════════════════════════════════
-  // READS — still direct via supabase; RLS restricts to SELECT only
+  // READS
   // ═══════════════════════════════════════════════════════════
   const fetchPlaylists = async () => {
     setFetching(true);
     try {
       const { data, error } = await supabase
         .from("playlists")
-        .select("*, playlist_songs(id)")
+        .select(
+          "*, playlist_songs(id, release_id, title, artist, featuring_artists, album_name, cover_url, audio_url)",
+        )
         .order("created_at", { ascending: false });
       if (error) throw error;
       setPlaylists(data || []);
@@ -90,7 +89,53 @@ const TopPlaylistAdmin = () => {
   }, []);
 
   // ═══════════════════════════════════════════════════════════
-  // IMAGE SELECT (local preview only — actual upload happens on submit)
+  // EDIT & DELETE HANDLERS
+  // ═══════════════════════════════════════════════════════════
+  const handleEdit = (playlist) => {
+    setEditingPlaylistId(playlist.id);
+    setFormData({
+      title: playlist.title,
+      language: playlist.language,
+      image: null,
+      imagePreview: playlist.image_url,
+    });
+    setSelectedSongs(
+      (playlist.playlist_songs || []).map((s) => ({
+        id: s.release_id,
+        title: s.title,
+        primary_artist: s.artist,
+        featuring_artists: s.featuring_artists,
+        album_name: s.album_name,
+        cover_url: s.cover_url,
+        audio_url: s.audio_url,
+      })),
+    );
+    setStep(1);
+  };
+
+  const handleDelete = async (id) => {
+    const confirm = await Swal.fire({
+      title: "Are you sure?",
+      text: "This playlist and all its songs will be permanently deleted!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      confirmButtonText: "Yes, delete it!",
+    });
+
+    if (confirm.isConfirmed) {
+      try {
+        await apiRequest(`/playlists/${id}`, { method: "DELETE" });
+        Swal.fire("Deleted!", "Playlist has been removed.", "success");
+        fetchPlaylists();
+      } catch (err) {
+        Swal.fire("Error", err.message, "error");
+      }
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  // IMAGE SELECT & SONG MANAGEMENT
   // ═══════════════════════════════════════════════════════════
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -122,10 +167,14 @@ const TopPlaylistAdmin = () => {
   };
 
   // ═══════════════════════════════════════════════════════════
-  // SECURE SUBMIT — image upload + playlist creation, both via backend API
+  // SECURE SUBMIT (CREATE & UPDATE)
   // ═══════════════════════════════════════════════════════════
   const handleSubmit = async () => {
-    if (!formData.title || !formData.image || selectedSongs.length === 0) {
+    if (
+      !formData.title ||
+      !formData.imagePreview ||
+      selectedSongs.length === 0
+    ) {
       return Swal.fire(
         "Error",
         "Please provide Title, Cover, and at least 1 song.",
@@ -134,13 +183,14 @@ const TopPlaylistAdmin = () => {
     }
     setLoading(true);
     try {
-      // 1. Upload Image — via secure backend (no direct anonymous storage writes)
-      const imageUrl = await uploadFileSecure(
-        formData.image,
-        "topplaylistcover",
-      );
+      let imageUrl = formData.imagePreview;
 
-      // 2. Create Playlist + Playlist Songs — single secure backend call
+      // 1. Upload new image if changed
+      if (formData.image) {
+        imageUrl = await uploadFileSecure(formData.image, "topplaylistcover");
+      }
+
+      // 2. Format songs payload
       const playlistSongsPayload = selectedSongs.map((song) => ({
         release_id: song.id,
         title: song.title,
@@ -151,8 +201,14 @@ const TopPlaylistAdmin = () => {
         audio_url: song.audio_url,
       }));
 
-      await apiRequest("/playlists", {
-        method: "POST",
+      // 3. Determine API call method and endpoint
+      const method = editingPlaylistId ? "PUT" : "POST";
+      const endpoint = editingPlaylistId
+        ? `/playlists/${editingPlaylistId}`
+        : "/playlists";
+
+      await apiRequest(endpoint, {
+        method,
         body: {
           title: formData.title,
           language: formData.language,
@@ -161,7 +217,11 @@ const TopPlaylistAdmin = () => {
         },
       });
 
-      Swal.fire("Success", "Playlist Created Successfully!", "success");
+      Swal.fire(
+        "Success",
+        `Playlist ${editingPlaylistId ? "Updated" : "Created"} Successfully!`,
+        "success",
+      );
       resetForm();
       fetchPlaylists();
     } catch (err) {
@@ -173,6 +233,7 @@ const TopPlaylistAdmin = () => {
 
   const resetForm = () => {
     setStep(0);
+    setEditingPlaylistId(null);
     setFormData({
       title: "",
       language: "Hindi",
@@ -180,6 +241,7 @@ const TopPlaylistAdmin = () => {
       imagePreview: null,
     });
     setSelectedSongs([]);
+    setSearchTerm("");
   };
 
   const filteredReleases = allReleases.filter(
@@ -196,12 +258,16 @@ const TopPlaylistAdmin = () => {
             Manage <span className="text-blue-600">Top Playlists</span>
           </h2>
           <p className="text-slate-500 text-sm">
-            Create playlists using your released songs.
+            Create and manage playlists using your released songs.
           </p>
         </div>
         {step === 0 && (
           <button
-            onClick={() => setStep(1)}
+            onClick={() => {
+              setEditingPlaylistId(null);
+              resetForm();
+              setStep(1);
+            }}
             className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold shadow hover:bg-blue-700 transition flex items-center gap-2"
           >
             <Plus size={18} /> Create New Playlist
@@ -220,8 +286,8 @@ const TopPlaylistAdmin = () => {
             <div className="bg-slate-50 border-b border-slate-200 px-8 py-4 flex items-center justify-center gap-8">
               {[
                 { id: 1, label: "Playlist Details" },
-                { id: 2, label: "Add Songs" },
-                { id: 3, label: "Publish" },
+                { id: 2, label: "Manage Songs" },
+                { id: 3, label: editingPlaylistId ? "Update" : "Publish" },
               ].map((s) => (
                 <div key={s.id} className="flex items-center gap-2">
                   <div
@@ -249,7 +315,7 @@ const TopPlaylistAdmin = () => {
                       onClick={() =>
                         document.getElementById("playlistCoverInput").click()
                       }
-                      className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${formData.image ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 bg-gray-50"}`}
+                      className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${formData.imagePreview ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 bg-gray-50"}`}
                     >
                       <input
                         type="file"
@@ -321,7 +387,7 @@ const TopPlaylistAdmin = () => {
                 <div className="max-w-5xl mx-auto">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-gray-900">
-                      Select Released Songs
+                      Manage Songs
                     </h3>
                     <span
                       className={`px-3 py-1 rounded-full text-sm font-bold ${selectedSongs.length === 20 ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}
@@ -329,7 +395,6 @@ const TopPlaylistAdmin = () => {
                       {selectedSongs.length} / 20 Selected
                     </span>
                   </div>
-
                   <div className="relative mb-6">
                     <Search
                       className="absolute left-4 top-3 text-gray-400"
@@ -343,7 +408,6 @@ const TopPlaylistAdmin = () => {
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
                   </div>
-
                   <div className="grid lg:grid-cols-2 gap-8">
                     <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[400px] overflow-y-auto">
                       <div className="bg-slate-50 p-3 border-b font-bold text-sm text-gray-700 sticky top-0">
@@ -381,7 +445,6 @@ const TopPlaylistAdmin = () => {
                         </div>
                       ))}
                     </div>
-
                     <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[400px] overflow-y-auto">
                       <div className="bg-slate-50 p-3 border-b font-bold text-sm text-gray-700 sticky top-0">
                         Selected Tracks
@@ -434,7 +497,9 @@ const TopPlaylistAdmin = () => {
                   <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
                     <CheckCircle2 size={40} />
                   </div>
-                  <h3 className="text-2xl font-bold mb-2">Ready to Publish</h3>
+                  <h3 className="text-2xl font-bold mb-2">
+                    Ready to {editingPlaylistId ? "Update" : "Publish"}
+                  </h3>
                   <p className="text-slate-500 mb-2">
                     Playlist: "<strong>{formData.title}</strong>"
                   </p>
@@ -451,7 +516,7 @@ const TopPlaylistAdmin = () => {
                     ) : (
                       <CheckCircle2 />
                     )}
-                    Publish Playlist
+                    {editingPlaylistId ? "Update Playlist" : "Publish Playlist"}
                   </button>
                 </div>
               )}
@@ -467,7 +532,10 @@ const TopPlaylistAdmin = () => {
               {step < 3 && (
                 <button
                   onClick={() => {
-                    if (step === 1 && (!formData.title || !formData.image))
+                    if (
+                      step === 1 &&
+                      (!formData.title || !formData.imagePreview)
+                    )
                       return Swal.fire(
                         "Required",
                         "Title and Cover are required.",
@@ -491,6 +559,7 @@ const TopPlaylistAdmin = () => {
         )}
       </AnimatePresence>
 
+      {/* Dashboard List */}
       {step === 0 && (
         <div>
           {fetching ? (
@@ -509,27 +578,45 @@ const TopPlaylistAdmin = () => {
               {playlists.map((playlist) => (
                 <div
                   key={playlist.id}
-                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex gap-4 hover:shadow-md transition-all"
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition-all flex flex-col"
                 >
-                  <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100">
-                    <img
-                      src={
-                        playlist.image_url || "https://via.placeholder.com/100"
-                      }
-                      alt={playlist.title}
-                      className="w-full h-full object-cover"
-                    />
+                  <div className="flex gap-4">
+                    <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100">
+                      <img
+                        src={
+                          playlist.image_url ||
+                          "https://via.placeholder.com/100"
+                        }
+                        alt={playlist.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex flex-col justify-center flex-grow min-w-0">
+                      <h3 className="font-bold text-slate-900 line-clamp-1">
+                        {playlist.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 mb-1">
+                        {playlist.language}
+                      </p>
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold w-fit">
+                        {playlist.playlist_songs?.length || 0} Tracks
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col justify-center flex-grow min-w-0">
-                    <h3 className="font-bold text-slate-900 line-clamp-1">
-                      {playlist.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 mb-1">
-                      {playlist.language}
-                    </p>
-                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold w-fit">
-                      {playlist.playlist_songs?.length || 0} Tracks
-                    </span>
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 mt-4 border-t border-slate-100 pt-3">
+                    <button
+                      onClick={() => handleEdit(playlist)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 py-2 rounded-lg transition"
+                    >
+                      <Edit size={14} /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(playlist.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 py-2 rounded-lg transition"
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
                   </div>
                 </div>
               ))}

@@ -42,7 +42,42 @@ export const handleSupabaseError = (error) => {
   return { error, needsRefresh: false };
 };
 
-// API helper for backend calls
+// ─── ROBUST AUTH HEADER HELPER ───
+// Gets session, refreshes if expired, returns Authorization header
+export const getAuthHeader = async () => {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      console.warn("⚠️ getAuthHeader: No session found");
+      return {};
+    }
+
+    // Check if token is about to expire (60s buffer)
+    const expiresAt = session.expires_at;
+    const now = Math.floor(Date.now() / 1000);
+
+    if (expiresAt && expiresAt < now + 60) {
+      console.log("🔄 Token expiring — refreshing...");
+      const { data: refreshData, error: refreshError } =
+        await supabase.auth.refreshSession();
+      if (refreshError || !refreshData.session) {
+        console.error("❌ Token refresh failed:", refreshError?.message);
+        return {};
+      }
+      return { Authorization: `Bearer ${refreshData.session.access_token}` };
+    }
+
+    return { Authorization: `Bearer ${session.access_token}` };
+  } catch (err) {
+    console.error("❌ getAuthHeader error:", err);
+    return {};
+  }
+};
+
+// API helper for backend calls — enhanced with status in errors
 export const apiCall = async (endpoint, options = {}) => {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
@@ -56,12 +91,22 @@ export const apiCall = async (endpoint, options = {}) => {
     ...options,
   };
 
-  // This will now correctly become: http://localhost:5000/api/auth/signup
+  // Remove Content-Type for FormData (file uploads)
+  if (config.body instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
   const result = await response.json();
 
   if (!response.ok) {
-    throw new Error(result.message || "API request failed");
+    // ✅ Include status code in the error so callers can handle 401 etc.
+    const err = new Error(
+      result.message || result.error || "API request failed",
+    );
+    err.status = response.status;
+    err.data = result;
+    throw err;
   }
 
   return result;
