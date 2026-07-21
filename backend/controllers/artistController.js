@@ -5,12 +5,7 @@ const { supabase, supabaseAdmin, bucket } = require("../config/supabaseClient");
 
 const saltRounds = 10;
 
-// ✅ FIXED: works whether multer gives you a memory buffer (file.buffer)
-// or a disk-stored file (file.path) — previously this only worked with
-// memory storage; if your multer middleware uses diskStorage, file.buffer
-// was undefined and this threw, which crashed the whole updateArtist
-// request (no try/catch there) before the DB update even ran — so status
-// changes (approve) silently failed together with the image upload.
+
 const uploadImageToSupabase = async (file) => {
   if (!file) return null;
 
