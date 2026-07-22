@@ -59,5 +59,14 @@ export async function uploadFileSecure(file, folder) {
   if (!response.ok) {
     throw new Error(result.error || "Upload failed");
   }
-  return result.url;
+
+
+  if (!result.publicUrl && !result.url) {
+    console.error("Unexpected upload response shape:", result);
+    throw new Error(
+      "Upload succeeded but the server response did not include a publicUrl.",
+    );
+  }
+
+  return result.publicUrl || result.url;
 }
