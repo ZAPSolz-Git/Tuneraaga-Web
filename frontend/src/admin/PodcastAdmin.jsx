@@ -16,8 +16,9 @@ import {
   List,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { apiRequest, uploadFileSecure } from "../lib/secureApi";
+
 import Swal from "sweetalert2";
+import { apiRequest, uploadFileSecure } from "@/lib/secureApi";
 
 const PODCAST_TYPES = [
   "Interview",
