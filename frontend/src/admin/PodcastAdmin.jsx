@@ -18,7 +18,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 
 import Swal from "sweetalert2";
-import { apiRequest, uploadFileSecure } from "@/lib/secureApi";
+import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 
 const PODCAST_TYPES = [
   "Interview",
