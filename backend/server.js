@@ -17,7 +17,17 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // --- Middleware ---
-// ✅ Explicit CORS config to allow Authorization header + credentials
+// FIX: Added the production Vercel domain to the CORS whitelist. Previously
+// only localhost origins were allowed, so any request from the deployed
+// app (https://tuneraagaweb.vercel.app) failed the CORS preflight check —
+// the browser got no Access-Control-Allow-Origin header back and blocked
+// the request before it ever reached your route handlers.
+//
+// If you also use Vercel preview deployments (URLs like
+// https://tuneraagaweb-git-<branch>-<user>.vercel.app or
+// https://tuneraagaweb-<hash>.vercel.app), a static list won't cover those.
+// The commented-out origin function below handles ANY *.vercel.app preview
+// URL automatically — swap it in if you need that.
 app.use(
   cors({
     origin: [
@@ -25,7 +35,25 @@ app.use(
       "http://localhost:3000",
       "http://localhost:5174",
       "http://localhost:8081",
+      "https://tuneraagaweb.vercel.app",
     ],
+    // origin: (incomingOrigin, callback) => {
+    //   const allowedExact = [
+    //     "http://localhost:5173",
+    //     "http://localhost:3000",
+    //     "http://localhost:5174",
+    //     "http://localhost:8081",
+    //     "https://tuneraagaweb.vercel.app",
+    //   ];
+    //   if (
+    //     !incomingOrigin ||
+    //     allowedExact.includes(incomingOrigin) ||
+    //     /^https:\/\/tuneraagaweb.*\.vercel\.app$/.test(incomingOrigin)
+    //   ) {
+    //     return callback(null, true);
+    //   }
+    //   return callback(new Error("Not allowed by CORS"));
+    // },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -43,11 +71,10 @@ app.use(
   }),
 );
 
-// FIX: Helmet's default Cross-Origin-Resource-Policy: same-origin blocks
+// Helmet's default Cross-Origin-Resource-Policy: same-origin blocks
 // cross-origin fetch() calls at the browser level, independent of CORS.
-// Since your frontend (localhost:8081) and backend (Render) are different
-// origins, this must be relaxed or your API calls get silently blocked
-// even though the CORS middleware above is configured correctly.
+// Since your frontend and backend are on different domains, this must be
+// relaxed or your API calls get silently blocked even with correct CORS.
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
