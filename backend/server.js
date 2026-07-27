@@ -42,7 +42,18 @@ app.use(
     },
   }),
 );
-app.use(helmet());
+
+// FIX: Helmet's default Cross-Origin-Resource-Policy: same-origin blocks
+// cross-origin fetch() calls at the browser level, independent of CORS.
+// Since your frontend (localhost:8081) and backend (Render) are different
+// origins, this must be relaxed or your API calls get silently blocked
+// even though the CORS middleware above is configured correctly.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
