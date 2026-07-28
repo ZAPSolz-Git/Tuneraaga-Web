@@ -12,6 +12,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { toastEvents } from "../utils/toastEvents";
+import { supabaseAuth } from "@/lib/supabaseAuth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -80,9 +81,11 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
 
     try {
       if (mode === "login") {
-        const { data, error: loginError } =
-          await supabase.auth.signInWithPassword({ email, password });
+      
 
+
+          const { data, error: loginError } =
+  await supabaseAuth.auth.signInWithPassword({ email, password }); 
         if (loginError) {
           console.error("Login error:", loginError.message);
           if (
@@ -116,10 +119,8 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
           return;
         }
 
-        const { data, error: signupError } = await supabase.auth.signUp({
-          email,
-          password,
-        });
+        const { data, error: signupError } =
+  await supabaseAuth.auth.signUp({ email, password }); 
 
         if (signupError) {
           console.error("Signup error:", signupError.message);

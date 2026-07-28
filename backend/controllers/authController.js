@@ -1,7 +1,8 @@
 // backend/controllers/authController.js — FULL UPDATED FILE
 
 const crypto = require("crypto"); // ✅ NEW
-const { supabase, supabaseAdmin } = require("../config/supabaseClient");
+const { supabase, supabaseAdmin, distributionAuth } = require("../config/supabaseClient"); // ✅ add distributionAuth
+
 const { sendResetEmail } = require("../utils/sendEmail"); // ✅ NEW
 
 // --- 1. LOGIN ---
@@ -16,11 +17,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const { data: authData, error: authError } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { data: authData, error: authError } = await distributionAuth.auth.signInWithPassword({ email, password });
 
     if (authError) {
       console.error("Login auth error:", authError.message);
