@@ -5,7 +5,6 @@ const { supabase, supabaseAdmin, bucket } = require("../config/supabaseClient");
 
 const saltRounds = 10;
 
-
 const uploadImageToSupabase = async (file) => {
   if (!file) return null;
 
@@ -328,9 +327,22 @@ exports.createArtistRequest = async (req, res) => {
 };
 
 // ─── ADMIN APPROVES A PENDING REQUEST ───
+// ✅ FIXED: now accepts an optional `password` in the request body. Before,
+// approving a request only flipped status/verified — the artist had no way
+// to actually log in with an email+password afterwards, since nothing set
+// or updated their Supabase Auth password. Now, if the admin provides a
+// password while approving:
+//   1. It's set on the artist's existing Supabase Auth account
+//      (supabaseAdmin.auth.admin.updateUserById), so email+password login
+//      via supabase.auth.signInWithPassword works immediately.
+//   2. Its bcrypt hash is also stored in artists.password_hash, consistent
+//      with how createArtist/updateArtist already store it.
+// If no password is provided, approval still works exactly as before
+// (status/verified only) — nothing breaks for that case.
 exports.approveArtistRequest = async (req, res) => {
   try {
     const { id } = req.params;
+    const { password } = req.body || {};
 
     const { data: existingArtist, error: checkError } = await supabaseAdmin
       .from("artists")
@@ -346,9 +358,36 @@ exports.approveArtistRequest = async (req, res) => {
       return res.status(409).json({ error: "Artist is already verified." });
     }
 
+    let passwordHash;
+    if (password && password.trim() !== "") {
+      const trimmedPassword = password.trim();
+      if (trimmedPassword.length < 8) {
+        return res
+          .status(400)
+          .json({ error: "Password must be at least 8 characters." });
+      }
+
+      try {
+        await supabaseAdmin.auth.admin.updateUserById(id, {
+          password: trimmedPassword,
+        });
+      } catch (authErr) {
+        console.error("Approve Artist Auth Password Update Error:", authErr);
+        return res.status(500).json({
+          error: "Failed to set the artist's login password.",
+          details: authErr.message,
+        });
+      }
+
+      passwordHash = await bcrypt.hash(trimmedPassword, saltRounds);
+    }
+
+    const updatePayload = { status: "Verified", verified: true };
+    if (passwordHash) updatePayload.password_hash = passwordHash;
+
     const { data: updatedArtist, error: updateError } = await supabaseAdmin
       .from("artists")
-      .update({ status: "Verified", verified: true })
+      .update(updatePayload)
       .eq("id", id)
       .select();
 
@@ -360,10 +399,9 @@ exports.approveArtistRequest = async (req, res) => {
       });
     }
 
-    // ✅ FIXED: upsert instead of update — if this artist has no matching
-    // row yet in "users" table (e.g. they never logged in via the normal
-    // login flow before submitting their artist request), a plain
-    // .update() silently affects 0 rows and their role never gets synced.
+    // ✅ upsert instead of update — if this artist has no matching row yet
+    // in "users" table, a plain .update() silently affects 0 rows and
+    // their role never gets synced, which would block login afterwards.
     const { error: roleError } = await supabaseAdmin
       .from("users")
       .upsert(
