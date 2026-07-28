@@ -9,6 +9,7 @@ const artistRoutes = require("./routes/artistRoutes");
 const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const contentRoutes = require("./routes/contentRoutes");
+const internalRoutes = require("./routes/internalReleases");
 const { authenticateUser } = require("./middleware/authMiddleware");
 const upload = require("./middleware/uploadMiddleware");
 const { createArtistRequest } = require("./controllers/artistController");
@@ -127,7 +128,7 @@ app.post(
 app.use("/api/artists", artistRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api", orderRoutes);
-
+app.use("/api/internal", internalRoutes);
 // 🔍 404 catch-all
 app.use((req, res) => {
   console.log(`❌ No route matched: ${req.method} ${req.originalUrl}`);
