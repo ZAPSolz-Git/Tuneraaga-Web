@@ -100,7 +100,7 @@ app.post(
 app.use("/api/artists", artistRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api", orderRoutes);
-
+app.use("/api/internal", require("./routes/internalReleases"));
 // 🔍 404 catch-all
 app.use((req, res) => {
   console.log(`❌ No route matched: ${req.method} ${req.originalUrl}`);
