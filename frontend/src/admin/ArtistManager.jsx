@@ -31,7 +31,13 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
-const API_BASE = "http://localhost:5000/api/artists";
+// ✅ FIXED: was hardcoded to "http://localhost:5000/api/artists", which only
+// works when the frontend runs on the same machine as the backend. On the
+// live site this pointed to the visitor's own (nonexistent) localhost
+// server, causing every artist-management request to fail. Now it reads
+// from Vite's VITE_API_URL env var — same fix already applied to the
+// release-upload form.
+const API_BASE = `${import.meta.env.VITE_API_URL}/api/artists`;
 
 // --- Helper: get the current admin's Supabase access token
 const getAuthHeaders = async () => {
@@ -1022,14 +1028,32 @@ const ArtistManager = () => {
     }
   };
 
-  // ✅ NEW: Approve a pending "Become an Artist" request
+  // ✅ FIXED: Approving a pending "Become an Artist" request now also asks
+  // the admin for a login password and sends it to the backend as a JSON
+  // body. Previously nothing was sent besides the auth headers, so the
+  // backend only flipped status/verified and the artist had no password
+  // to actually log in with afterwards.
   const handleApprove = async (id) => {
+    const password = window.prompt(
+      "Set a login password for this artist (min 8 characters).\nLeave blank to approve without changing their password.",
+      "",
+    );
+    // user clicked "Cancel" on the prompt
+    if (password === null) return;
+
+    const trimmedPassword = password.trim();
+    if (trimmedPassword !== "" && trimmedPassword.length < 8) {
+      alert("Password must be at least 8 characters.");
+      return;
+    }
+
     setLoading(true);
     try {
       const authHeaders = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/${id}/approve`, {
         method: "PUT",
-        headers: authHeaders,
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: trimmedPassword }),
       });
       const result = await response.json();
       if (!response.ok)
@@ -1044,7 +1068,7 @@ const ArtistManager = () => {
     }
   };
 
-  // ✅ NEW: Reject a pending "Become an Artist" request
+  // ✅ Reject a pending "Become an Artist" request
   const handleReject = async (id) => {
     const reason = window.prompt(
       "Optional: reason for rejecting this request (leave blank to skip)",
@@ -1161,7 +1185,7 @@ const ArtistManager = () => {
         </div>
       </header>
 
-      {/* ✅ NEW: Status filter tabs */}
+      {/* Status filter tabs */}
       <div className="container mx-auto px-4 pt-6">
         <div className="flex gap-2 flex-wrap">
           {["All", "Pending", "Verified", "Rejected"].map((s) => (

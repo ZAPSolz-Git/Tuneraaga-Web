@@ -1,8 +1,7 @@
 // const { createClient } = require("@supabase/supabase-js");
 // require("dotenv").config();
 
-// // ── Anon key client — for server-side auth verification ──
-// // MUST have persistSession:false on the server
+
 // const supabase = createClient(
 //   process.env.SUPABASE_URL,
 //   process.env.SUPABASE_ANON_KEY,
@@ -14,7 +13,7 @@
 //   },
 // );
 
-// // ── Admin client with SERVICE ROLE KEY — bypasses RLS ──
+
 // const supabaseAdmin = createClient(
 //   process.env.SUPABASE_URL,
 //   process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -49,7 +48,6 @@
 //   bucket,
 // };
 
-
 const { createClient } = require("@supabase/supabase-js");
 require("dotenv").config();
 
@@ -76,3 +74,4 @@ const distributionAuth = createClient(
 const bucket = process.env.SUPABASE_BUCKET || "TuneRaaga";
 
 module.exports = { supabase, supabaseAdmin, distributionAuth, bucket };
+
