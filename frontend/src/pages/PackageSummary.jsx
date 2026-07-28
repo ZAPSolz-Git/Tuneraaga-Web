@@ -6,6 +6,27 @@ import { usePlayer } from "../components/PlayerContext";
 import { supabase } from "../lib/supabaseClient";
 import { startRazorpayPayment } from "../utils/razorpayPayment";
 
+// FIX: If VITE_API_URL (or VITE_API_BASE_URL) has a trailing slash in .env
+// (e.g. "https://example.com/"), then doing `${API_BASE}/api/...` produces
+// a double slash ("https://example.com//api/..."). On Render this malformed
+// URL can get rejected at the proxy/edge level before it ever reaches your
+// Express app, so the response comes back with NO CORS headers at all —
+// which shows up in the browser as "blocked by CORS policy" even though
+// your backend's CORS config is completely correct. Stripping any trailing
+// slash here makes this class of bug impossible regardless of what's in .env.
+const getApiBase = () => {
+  const apiBase =
+    import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
+
+  if (!apiBase) {
+    throw new Error(
+      "VITE_API_URL / VITE_API_BASE_URL is not defined. Please configure it in your .env file.",
+    );
+  }
+
+  return apiBase.replace(/\/+$/, "");
+};
+
 const PackageSummary = () => {
   const { id: planId } = useParams();
   const navigate = useNavigate();
@@ -37,6 +58,7 @@ const PackageSummary = () => {
         .single();
 
       if (planErr || !planData) {
+        console.error("fetchPlanDetail: pro_plans error:", planErr);
         setError("Yeh plan available nahi hai.");
         setLoading(false);
         return;
@@ -49,6 +71,7 @@ const PackageSummary = () => {
         .order("sort_order", { ascending: true });
 
       if (priceErr) {
+        console.error("fetchPlanDetail: pro_plan_prices error:", priceErr);
         setError("Pricing load nahi ho paayi.");
         setLoading(false);
         return;
@@ -74,14 +97,21 @@ const PackageSummary = () => {
     setSubmitting(true);
     setError("");
 
+    let API_BASE;
+    try {
+      API_BASE = getApiBase();
+    } catch (err) {
+      setSubmitting(false);
+      setError(err.message);
+      return;
+    }
+
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
       const accessToken = session?.access_token;
-      const API_BASE =
-        import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
 
       const res = await fetch(`${API_BASE}/api/ordersummarypay`, {
         method: "POST",
@@ -101,6 +131,7 @@ const PackageSummary = () => {
       try {
         data = await res.json();
       } catch {
+        console.error("ordersummarypay: non-JSON response, status", res.status);
         setError(
           `Server se sahi response nahi mila (status ${res.status}). Backend chal raha hai kya, aur API URL sahi hai kya, check karo.`,
         );
@@ -109,6 +140,7 @@ const PackageSummary = () => {
       }
 
       if (!res.ok || !data.success) {
+        console.error("ordersummarypay failed:", res.status, data);
         setError(data.message || "Order create nahi ho paaya.");
         setSubmitting(false);
         return;
@@ -127,9 +159,23 @@ const PackageSummary = () => {
         },
       });
     } catch (err) {
-      console.error(err);
-      setError("Kuch galat ho gaya. Dobara try karein.");
+      console.error("handleContinue error:", err);
       setSubmitting(false);
+
+      const msg = String(err?.message || err || "");
+      const isNetworkError =
+        msg === "Failed to fetch" ||
+        err?.name === "TypeError" ||
+        msg.includes("fetch failed") ||
+        msg.includes("Network request failed");
+
+      if (isNetworkError) {
+        setError(
+          `Backend (${API_BASE}) tak request nahi pahunch paayi — CORS ya URL check karo. Console (Network + Console tab, not just this stack trace) mein exact error dekho.`,
+        );
+      } else {
+        setError("Kuch galat ho gaya. Dobara try karein.");
+      }
     }
   };
 
