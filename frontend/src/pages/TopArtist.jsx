@@ -48,6 +48,8 @@ import { supabase } from "../lib/supabaseClient";
 import { genres } from "../lib/subgener";
 import { toastEvents } from "../utils/toastEvents"; // ✅ ADDED Toast Import
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 const LANGUAGES = [
   "For You",
   "Hindi",
@@ -910,13 +912,21 @@ const TopArtist = () => {
     if (audioRef.current) audioRef.current.pause();
   };
 
-  // ✅ FIXED: Replaced standard alerts with Custom Toast Events
   const handleArtistRequest = async (formData) => {
     setRequestLoading(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      let session = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        session = data?.session || null;
+      } catch (sessionErr) {
+        console.warn(
+          "getSession threw (no active session):",
+          sessionErr.message,
+        );
+        session = null;
+      }
+
       const token = session?.access_token;
 
       if (!token) {
@@ -944,14 +954,11 @@ const TopArtist = () => {
         data.append("image", formData.image);
       }
 
-      const response = await fetch(
-        "http://localhost:5000/api/artists/request",
-        {
-          method: "POST",
-          body: data,
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const response = await fetch(`${API_BASE}/api/artists/request`, {
+        method: "POST",
+        body: data,
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
@@ -971,7 +978,6 @@ const TopArtist = () => {
         throw new Error(errMsg);
       }
 
-      // ✅ SUCCESS TOAST
       toastEvents.show(
         "Request sent successfully! The admin will review your profile.",
         "success",
@@ -979,7 +985,6 @@ const TopArtist = () => {
       setIsRequestModalOpen(false);
     } catch (error) {
       console.error("Error submitting request:", error);
-      // ✅ ERROR TOAST
       toastEvents.show("Error: " + error.message, "error");
     } finally {
       setRequestLoading(false);
