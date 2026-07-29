@@ -9,9 +9,11 @@ import {
   Sparkles,
   Music2,
   Loader2,
+  Crown,
 } from "lucide-react";
 import { usePlayer } from "../components/PlayerContext";
 import { supabase } from "../lib/supabaseClient";
+import { fetchMySubscription } from "../utils/subscription";
 
 const THEME_STYLES = {
   blue: {
@@ -31,11 +33,8 @@ const THEME_STYLES = {
   },
 };
 
-const PlanCard = ({ plan, index, onSelect }) => {
+const PlanCard = ({ plan, index, isCurrent, onSelect }) => {
   const theme = THEME_STYLES[plan.theme] || THEME_STYLES.blue;
-
-  // Cheapest / most-relevant price to headline on the card.
-  // Full duration picker lives on the plan-detail page.
   const prices = plan.prices || [];
   const headlinePrice =
     prices.find((p) => p.is_popular) ||
@@ -46,8 +45,16 @@ const PlanCard = ({ plan, index, onSelect }) => {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className={`relative rounded-2xl overflow-hidden shadow-lg ${theme.card} p-5 flex flex-col text-white`}
+      className={`relative rounded-2xl overflow-hidden shadow-lg ${theme.card} p-5 flex flex-col text-white ${
+        isCurrent ? "ring-2 ring-white" : ""
+      }`}
     >
+      {isCurrent && (
+        <span className="absolute top-0 left-0 flex items-center gap-1 bg-white text-emerald-700 text-[11px] font-bold px-3 py-1 rounded-br-lg z-10">
+          <Crown size={12} /> Current Plan
+        </span>
+      )}
+
       {plan.ribbon && (
         <span
           className={`absolute top-0 right-0 ${theme.ribbon} text-white text-[11px] font-bold px-3 py-1 rounded-bl-lg`}
@@ -56,7 +63,9 @@ const PlanCard = ({ plan, index, onSelect }) => {
         </span>
       )}
 
-      <div className="flex items-center gap-2 mb-3">
+      <div
+        className={`flex items-center gap-2 mb-3 ${isCurrent ? "mt-5" : ""}`}
+      >
         <h3 className="text-lg font-extrabold">{plan.name}</h3>
         {plan.badge && (
           <span className="text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full">
@@ -86,7 +95,14 @@ const PlanCard = ({ plan, index, onSelect }) => {
       )}
 
       <div className="mt-auto">
-        {headlinePrice ? (
+        {isCurrent ? (
+          <button
+            disabled
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm bg-white/25 text-white cursor-not-allowed"
+          >
+            <Crown size={14} /> Active — Your Current Plan
+          </button>
+        ) : headlinePrice ? (
           <button
             onClick={() => onSelect(plan)}
             className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg font-bold text-sm transition-colors ${theme.button}`}
@@ -97,7 +113,9 @@ const PlanCard = ({ plan, index, onSelect }) => {
                   ₹{headlinePrice.strike_price}
                 </span>
               )}
-              ₹{headlinePrice.price}
+              {Number(headlinePrice.price) === 0
+                ? "FREE"
+                : `₹${headlinePrice.price}`}
               <span className="text-[11px] font-medium opacity-70">
                 / {headlinePrice.duration_label.toLowerCase()}
               </span>
@@ -113,7 +131,7 @@ const PlanCard = ({ plan, index, onSelect }) => {
             <ChevronRight size={16} />
           </button>
         )}
-        {prices.length > 1 && (
+        {prices.length > 1 && !isCurrent && (
           <p className="text-[11px] text-white/70 mt-2">
             {prices.length} pricing options available
           </p>
@@ -129,6 +147,8 @@ const ProPlans = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeCategory, setActiveCategory] = useState("All");
   const [plans, setPlans] = useState([]);
+  const [currentPlanId, setCurrentPlanId] = useState(null);
+  const [currentPlanName, setCurrentPlanName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -172,6 +192,24 @@ const ProPlans = () => {
     fetchPlans();
   }, []);
 
+  // ✅ current active plan backend se (RLS-safe)
+  useEffect(() => {
+    if (!user) {
+      setCurrentPlanId(null);
+      setCurrentPlanName(null);
+      return;
+    }
+    fetchMySubscription().then(({ subscription }) => {
+      if (subscription?.plan_status === "active") {
+        setCurrentPlanId(subscription.current_plan_id);
+        setCurrentPlanName(subscription.current_plan_name);
+      } else {
+        setCurrentPlanId(null);
+        setCurrentPlanName(null);
+      }
+    });
+  }, [user]);
+
   const categories = [
     "All",
     ...Array.from(new Set(plans.map((p) => p.category))).filter(Boolean),
@@ -182,9 +220,9 @@ const ProPlans = () => {
       ? plans
       : plans.filter((p) => p.category === activeCategory);
 
-  // ✅ Real Supabase UUID now, not a hardcoded string — /pro/plan/:id
-  // will always find a matching row.
   const handleSelectPlan = (plan) => {
+    if (currentPlanId && plan.id === currentPlanId) return; // same active plan block
+
     if (!user) {
       navigate(`/pro/login?plan=${plan.id}`);
       return;
@@ -192,43 +230,24 @@ const ProPlans = () => {
     navigate(`/pro/plan/${plan.id}`);
   };
 
-  // 🔧 FIX: pehle yeh navigate("/pro") kar raha tha — jo current page hi hai,
-  // isliye button click karne par kuch nahi hota tha (same route par navigate
-  // ka koi effect nahi hota). Ab yeh ek actual plan (jisme free-trial/popular
-  // price hai, warna sabse pehla plan) ke Package Summary page par le jaata hai.
   const handleStartTrial = () => {
-    if (loading) return; // plans abhi load ho rahe hain, thoda ruko
-
-    // free-trial/popular price wala plan dhoondo, warna list ka pehla plan lo
+    if (loading) return;
     const trialPlan =
       plans.find((p) => p.prices?.some((pr) => pr.is_popular)) || plans[0];
-
     if (!trialPlan) {
       setError("Abhi koi plan available nahi hai.");
       return;
     }
-
     if (!user) {
       navigate(`/pro/login?plan=${trialPlan.id}`);
       return;
     }
-
     navigate(`/pro/plan/${trialPlan.id}`);
   };
 
-  // ✅ AUTO-TRIGGER: the top "Start 30-day free trial" banner (rendered
-  // globally from PlayerContext, visible only to logged-out users) can't
-  // run handleStartTrial() itself — it doesn't have this page's `plans`
-  // state. So instead it links here with `?startTrial=1`, and once our
-  // plans have finished loading, we run the EXACT same handleStartTrial()
-  // logic automatically — landing the user on the login page (or plan
-  // page, if already logged in) exactly like clicking the button here
-  // would. We then strip the query param so a back-navigation or refresh
-  // doesn't re-trigger it.
   useEffect(() => {
-    if (loading) return; // wait until plans are actually loaded
+    if (loading) return;
     if (searchParams.get("startTrial") !== "1") return;
-
     handleStartTrial();
     setSearchParams(
       (prev) => {
@@ -244,6 +263,24 @@ const ProPlans = () => {
   return (
     <div className="w-full min-h-screen -mx-4 md:-mx-8 -mt-4">
       <div className="bg-slate-900 rounded-2xl mx-4 md:mx-8 mt-4 p-4 md:p-8 shadow-xl">
+        {/* ── CURRENT PLAN STRIP ── */}
+        {user && currentPlanName && (
+          <div className="flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-400/30 rounded-2xl px-5 py-3 mb-6">
+            <div className="flex items-center gap-2 text-emerald-300">
+              <Crown size={18} />
+              <span className="text-sm font-bold">
+                Your current plan: {currentPlanName}
+              </span>
+            </div>
+            <button
+              onClick={() => navigate("/pro/my-plan")}
+              className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-full transition-colors"
+            >
+              View / Manage
+            </button>
+          </div>
+        )}
+
         {/* ── TOP BANNER ── */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -294,14 +331,24 @@ const ProPlans = () => {
             </h1>
             <p className="text-white/50 text-xs">Filter By Category</p>
           </div>
-          <button
-            onClick={() =>
-              alert("Coupon redemption payment gateway ke saath aayega.")
-            }
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors self-start md:self-auto"
-          >
-            <Gift size={15} /> Redeem Your Coupon
-          </button>
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            {user && (
+              <button
+                onClick={() => navigate("/pro/my-plan")}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors"
+              >
+                <Crown size={15} /> My Plan
+              </button>
+            )}
+            <button
+              onClick={() =>
+                alert("Coupon redemption payment gateway ke saath aayega.")
+              }
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded-full transition-colors"
+            >
+              <Gift size={15} /> Redeem Your Coupon
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-1 scrollbar-hide">
@@ -338,6 +385,7 @@ const ProPlans = () => {
                 key={plan.id}
                 plan={plan}
                 index={idx}
+                isCurrent={plan.id === currentPlanId}
                 onSelect={handleSelectPlan}
               />
             ))}

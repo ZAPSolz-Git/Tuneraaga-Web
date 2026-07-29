@@ -39,6 +39,9 @@ import ResetPassword from "./pages/ResetPassword";
 // Aniinspect
 // import useAntiInspect from "./hooks/useAntiInspect";
 
+import AdminOrders from "./pages/AdminOrders";
+import MyPlan from "./pages/MyPlan";
+
 import AlbumDetail from "./pages/AlbumDetail";
 import ArtistProfile from "./pages/ArtistProfile";
 import AdminDash from "./admin/AdminDash.jsx";
@@ -94,6 +97,9 @@ function App() {
               <Route path="my-artists" element={<MyArtists />} />
               <Route path="my-podcasts" element={<MyPodcasts />} />
               <Route path="playlist/new" element={<NewPlaylist />} />
+
+              <Route path="/admin/orders" element={<AdminOrders />} />
+              <Route path="/pro/my-plan" element={<MyPlan />} />
               <Route
                 path="playlist/:playlistId/edit"
                 element={<NewPlaylist />}

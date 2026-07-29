@@ -3,19 +3,53 @@ const razorpayInstance = require("../config/razorpay");
 const crypto = require("crypto");
 const generateReceiptPDF = require("../utils/generateReceiptPDF");
 
-/**
- * POST /api/ordersummarypay
+// UPSERT: row na ho to bana de, warna update kar de. Isse current plan
+// hamesha store hota hai (email NOT NULL isliye email zaroori pass karo).
+const activateUserPlan = async (userId, info) => {
+  if (!userId) return;
+  const payload = {
+    id: userId,
+    email: info.email, // NOT NULL — insert case ke liye zaroori
+    role: "premium",
+    current_plan_id: info.planId,
+    current_plan_name: info.planName,
+    current_plan_price_id: info.planPriceId || null,
+    current_duration_label: info.durationLabel || null,
+    plan_status: "active",
+    plan_payment_type: info.paymentType,
+    plan_activated_at: new Date().toISOString(),
+    last_transaction_id:
+      info.transactionId || (info.paymentType === "free" ? "FREE" : null),
+  };
+  const { error } = await supabaseAdmin
+    .from("users")
+    .upsert(payload, { onConflict: "id" });
+  if (error) console.warn("activateUserPlan error:", error.message);
+};
+
+/** POST /api/ordersummarypay
+ *  🔒 authMiddleware already ran before this — req.user is guaranteed
+ *  to exist and be trustworthy. We now use req.user.id / req.user.email
+ *  as the SOURCE OF TRUTH instead of trusting whatever the client sent
+ *  in the body. This closes the loophole where someone could fake a
+ *  different email/userId in the request to bypass the same-plan block.
  */
 const createOrderSummaryPay = async (req, res) => {
   try {
-    const { email, userId, plan, amount } = req.body;
-
-    if (req.user && req.user.id !== userId) {
-      return res.status(403).json({
+    if (!req.user) {
+      // Defensive check — should never trigger since authMiddleware
+      // already blocks unauthenticated requests, but kept as a safety net.
+      return res.status(401).json({
         success: false,
-        message: "userId logged-in user not match.",
+        message: "Login required before payment.",
       });
     }
+
+    const { plan, amount, fullName, phone } = req.body;
+
+    // ✅ Trust the authenticated session, not the request body.
+    const userId = req.user.id;
+    const email = req.user.email;
 
     const { data: planRow, error: planErr } = await supabaseAdmin
       .from("pro_plans")
@@ -25,10 +59,9 @@ const createOrderSummaryPay = async (req, res) => {
       .single();
 
     if (planErr || !planRow) {
-      return res.status(404).json({
-        success: false,
-        message: "Plan not found or inactive.",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Plan not found or inactive." });
     }
 
     const { data: priceRow, error: priceErr } = await supabaseAdmin
@@ -45,16 +78,87 @@ const createOrderSummaryPay = async (req, res) => {
       });
     }
 
+    // ── CHECK #1: same account (by userId) already has this exact plan active ──
+    const { data: userRow } = await supabaseAdmin
+      .from("users")
+      .select(
+        "full_name, phone, current_plan_id, current_plan_name, plan_status",
+      )
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (
+      userRow &&
+      userRow.plan_status === "active" &&
+      userRow.current_plan_id === plan
+    ) {
+      return res.status(409).json({
+        success: false,
+        code: "SAME_PLAN_ACTIVE",
+        message: `Aapka "${userRow.current_plan_name || planRow.name}" plan already active hai. Same plan dobara nahi le sakte — kisi doosre plan par upgrade/change karein.`,
+      });
+    }
+
+    // ── CHECK #2: same EMAIL (possibly a different account/userId) already
+    // has this exact plan active. This blocks someone from creating a second
+    // account with the same email to pay again for the same plan. ──
+    const { data: emailActiveRow } = await supabaseAdmin
+      .from("users")
+      .select("id, current_plan_id, current_plan_name, plan_status")
+      .eq("email", email)
+      .eq("plan_status", "active")
+      .neq("id", userId)
+      .maybeSingle();
+
+    if (emailActiveRow && emailActiveRow.current_plan_id === plan) {
+      return res.status(409).json({
+        success: false,
+        code: "SAME_EMAIL_PLAN_ACTIVE",
+        message: `Is email (${email}) par already "${emailActiveRow.current_plan_name || planRow.name}" plan active hai. Same email se dobara same plan nahi khareed sakte.`,
+      });
+    }
+
+    // ── CHECK #3: an unpaid/pending order already exists for this exact
+    // user + plan + amount — reuse it instead of creating a duplicate row. ──
+    const { data: pendingOrder } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("plan_id", plan)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .maybeSingle();
+
+    if (pendingOrder) {
+      return res.status(200).json({
+        success: true,
+        message: "Pending order already exists — resuming it.",
+        order: pendingOrder,
+      });
+    }
+
+    const finalName = fullName || userRow?.full_name || null;
+    const finalPhone = phone || userRow?.phone || null;
+
+    const isFree = Number(amount) === 0;
+    const nowIso = new Date().toISOString();
+
     const { data: order, error: insertErr } = await supabaseAdmin
       .from("orders")
       .insert([
         {
           user_id: userId,
           email,
+          full_name: finalName,
+          phone: finalPhone,
           plan_id: plan,
+          plan_name: planRow.name,
           plan_price_id: priceRow.id,
+          duration_label: priceRow.duration_label,
           amount,
-          status: "pending",
+          payment_type: isFree ? "free" : "paid",
+          status: isFree ? "paid" : "pending",
+          paid_at: isFree ? nowIso : null,
         },
       ])
       .select()
@@ -62,15 +166,26 @@ const createOrderSummaryPay = async (req, res) => {
 
     if (insertErr) {
       console.error("Order insert error:", insertErr.message);
-      return res.status(500).json({
-        success: false,
-        message: "Order create failed.",
+      return res
+        .status(500)
+        .json({ success: false, message: "Order create failed." });
+    }
+
+    if (isFree) {
+      await activateUserPlan(userId, {
+        email,
+        planId: plan,
+        planName: planRow.name,
+        planPriceId: priceRow.id,
+        durationLabel: priceRow.duration_label,
+        paymentType: "free",
+        transactionId: "FREE",
       });
     }
 
     return res.status(201).json({
       success: true,
-      message: "Order successfully created.",
+      message: isFree ? "Free plan activated." : "Order successfully created.",
       order,
     });
   } catch (err) {
@@ -82,14 +197,12 @@ const createOrderSummaryPay = async (req, res) => {
   }
 };
 
+/** POST /api/orders/:orderId/create-razorpay-order */
 const createRazorpayOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error(
-        "❌ RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET .env mein missing hain",
-      );
       return res.status(500).json({
         success: false,
         message: "Server config error: Razorpay keys missing.",
@@ -103,28 +216,77 @@ const createRazorpayOrder = async (req, res) => {
       .single();
 
     if (fetchErr || !order) {
-      console.error("Order fetch error:", fetchErr?.message);
       return res
         .status(404)
         .json({ success: false, message: "Order not found." });
     }
 
-    if (req.user && order.user_id !== req.user.id) {
+    // 🔒 req.user is guaranteed now (authMiddleware) — strict ownership check.
+    if (order.user_id !== req.user.id) {
       return res.status(403).json({ success: false, message: "Unauthorized." });
     }
-
     if (order.status === "paid") {
       return res
         .status(400)
         .json({ success: false, message: "Order is already paid." });
     }
 
+    // 🔒 LAST-LINE-OF-DEFENSE CHECK — runs no matter which code path
+    // created this order row. This is the true choke point: Razorpay
+    // checkout can ONLY open through this endpoint, so blocking here
+    // guarantees no duplicate charge for an already-active plan,
+    // regardless of any bypass earlier in the flow.
+    const { data: userRow } = await supabaseAdmin
+      .from("users")
+      .select("current_plan_id, current_plan_name, plan_status")
+      .eq("id", order.user_id)
+      .maybeSingle();
+
+    if (
+      userRow &&
+      userRow.plan_status === "active" &&
+      userRow.current_plan_id === order.plan_id
+    ) {
+      // Mark this stray order as cancelled so it doesn't sit as "pending" forever.
+      await supabaseAdmin
+        .from("orders")
+        .update({ status: "cancelled" })
+        .eq("id", orderId);
+
+      return res.status(409).json({
+        success: false,
+        code: "SAME_PLAN_ACTIVE",
+        message: `Aapka "${userRow.current_plan_name || order.plan_name}" plan already active hai. Same plan dobara nahi khareed sakte.`,
+      });
+    }
+
+    // 🔒 Same check across email (covers duplicate accounts with same email).
+    const { data: emailActiveRow } = await supabaseAdmin
+      .from("users")
+      .select("id, current_plan_id, current_plan_name, plan_status")
+      .eq("email", order.email)
+      .eq("plan_status", "active")
+      .neq("id", order.user_id)
+      .maybeSingle();
+
+    if (emailActiveRow && emailActiveRow.current_plan_id === order.plan_id) {
+      await supabaseAdmin
+        .from("orders")
+        .update({ status: "cancelled" })
+        .eq("id", orderId);
+
+      return res.status(409).json({
+        success: false,
+        code: "SAME_EMAIL_PLAN_ACTIVE",
+        message: `Is email (${order.email}) par already yeh plan active hai. Same email se dobara same plan nahi khareed sakte.`,
+      });
+    }
+
     const amountNum = Number(order.amount);
     if (!amountNum || amountNum <= 0) {
-      console.error("❌ Invalid order.amount:", order.amount);
       return res.status(400).json({
         success: false,
-        message: "Order amount is invalid.",
+        message: "Order amount is invalid (free plan?).",
       });
     }
 
@@ -140,35 +302,19 @@ const createRazorpayOrder = async (req, res) => {
 
     const shortReceipt = `ord_${String(order.id).replace(/-/g, "").slice(0, 30)}`;
 
-    console.log(
-      "➡️ Creating Razorpay order for:",
-      order.id,
-      "amount(paise):",
-      Math.round(amountNum * 100),
-      "receipt:",
-      shortReceipt,
-    );
-
     const razorpayOrder = await razorpayInstance.orders.create({
       amount: Math.round(amountNum * 100),
       currency: "INR",
       receipt: shortReceipt,
-      notes: {
-        order_id: String(order.id),
-        user_id: String(order.user_id),
-      },
+      notes: { order_id: String(order.id), user_id: String(order.user_id) },
     });
-
-    console.log("✅ Razorpay order created:", razorpayOrder.id);
 
     const { error: updateErr } = await supabaseAdmin
       .from("orders")
       .update({ razorpay_order_id: razorpayOrder.id })
       .eq("id", orderId);
-
-    if (updateErr) {
+    if (updateErr)
       console.error("Razorpay order id save error:", updateErr.message);
-    }
 
     return res.status(200).json({
       success: true,
@@ -179,11 +325,7 @@ const createRazorpayOrder = async (req, res) => {
     });
   } catch (err) {
     const rzpError = err?.error || err?.response?.data?.error;
-    console.error(
-      "❌ createRazorpayOrder FULL ERROR:",
-      rzpError || err.message,
-    );
-
+    console.error("createRazorpayOrder FULL ERROR:", rzpError || err.message);
     return res.status(500).json({
       success: false,
       message: rzpError?.description || "Razorpay order create failed.",
@@ -191,6 +333,7 @@ const createRazorpayOrder = async (req, res) => {
   }
 };
 
+/** POST /api/orders/:orderId/verify-payment */
 const verifyPayment = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -215,6 +358,32 @@ const verifyPayment = async (req, res) => {
         .json({ success: false, message: "Order not found." });
     }
 
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Unauthorized." });
+    }
+
+    // 🔒 Already paid? Don't re-process — prevents double activation
+    // if verify-payment is somehow called twice for the same order.
+    if (order.status === "paid") {
+      return res.status(200).json({
+        success: true,
+        message: "Order already verified & paid.",
+        receipt: {
+          orderId: order.id,
+          paymentId: order.razorpay_payment_id,
+          email: order.email,
+          fullName: order.full_name,
+          phone: order.phone,
+          planName: order.plan_name || "Pro Plan",
+          planId: order.plan_id,
+          durationLabel: order.duration_label || "1 Month",
+          amount: order.amount,
+          paymentType: "paid",
+          paidAt: order.paid_at,
+        },
+      });
+    }
+
     if (order.razorpay_order_id !== razorpay_order_id) {
       return res
         .status(400)
@@ -227,7 +396,6 @@ const verifyPayment = async (req, res) => {
       .digest("hex");
 
     if (generatedSignature !== razorpay_signature) {
-      console.error("❌ Signature mismatch for order:", orderId);
       return res.status(400).json({
         success: false,
         message: "Payment verify failed (invalid signature).",
@@ -236,50 +404,32 @@ const verifyPayment = async (req, res) => {
 
     const paidAt = new Date().toISOString();
 
-    // ✅ FIXED: removed the double-update retry logic. The "orders" table
-    // schema already has a "paid_at" column, so the fallback that retried
-    // without it was dead code — it only added an extra query and could
-    // silently mask a real DB error instead of surfacing it. Now this is
-    // a single, clean update; if it fails, the real error is returned.
     const { error: updateErr } = await supabaseAdmin
       .from("orders")
       .update({
         status: "paid",
+        payment_type: "paid",
         razorpay_payment_id,
         paid_at: paidAt,
       })
       .eq("id", orderId);
 
     if (updateErr) {
-      console.error("❌ Order status update FULL ERROR:", updateErr.message);
       return res.status(500).json({
         success: false,
-        message:
-          "Payment Done but order Failed: " + updateErr.message,
+        message: "Payment Done but order Failed: " + updateErr.message,
       });
     }
 
-    if (order.user_id) {
-      const { error: roleErr } = await supabaseAdmin
-        .from("users")
-        .update({ role: "premium" })
-        .eq("id", order.user_id);
-      if (roleErr) {
-        console.warn("Unable to update user role to premium:", roleErr.message);
-      }
-    }
-
-    const { data: planRow } = await supabaseAdmin
-      .from("pro_plans")
-      .select("name")
-      .eq("id", order.plan_id)
-      .single();
-
-    const { data: priceRow } = await supabaseAdmin
-      .from("pro_plan_prices")
-      .select("duration_label")
-      .eq("id", order.plan_price_id)
-      .maybeSingle();
+    await activateUserPlan(order.user_id, {
+      email: order.email,
+      planId: order.plan_id,
+      planName: order.plan_name,
+      planPriceId: order.plan_price_id,
+      durationLabel: order.duration_label,
+      paymentType: "paid",
+      transactionId: razorpay_payment_id,
+    });
 
     return res.status(200).json({
       success: true,
@@ -288,14 +438,18 @@ const verifyPayment = async (req, res) => {
         orderId: order.id,
         paymentId: razorpay_payment_id,
         email: order.email,
-        planName: planRow?.name || "Pro Plan",
-        durationLabel: priceRow?.duration_label || "1 Month",
+        fullName: order.full_name,
+        phone: order.phone,
+        planName: order.plan_name || "Pro Plan",
+        planId: order.plan_id,
+        durationLabel: order.duration_label || "1 Month",
         amount: order.amount,
+        paymentType: "paid",
         paidAt,
       },
     });
   } catch (err) {
-    console.error("❌ verifyPayment FULL ERROR:", err.message);
+    console.error("verifyPayment FULL ERROR:", err.message);
     return res.status(500).json({
       success: false,
       message: "Verification fail hua: " + err.message,
@@ -303,18 +457,19 @@ const verifyPayment = async (req, res) => {
   }
 };
 
+/** POST /api/orders/razorpay-webhook
+ *  NOTE: no authMiddleware here on purpose — Razorpay calls this directly.
+ *  Security comes from the signature check below. */
 const handleRazorpayWebhook = async (req, res) => {
   try {
     const rawBody = req.rawBody || JSON.stringify(req.body);
     const signature = req.headers["x-razorpay-signature"];
 
     if (!process.env.RAZORPAY_KEY_SECRET) {
-      console.error("Missing Razorpay secret for webhook verification.");
       return res
         .status(500)
         .json({ success: false, message: "Server config error." });
     }
-
     if (!signature) {
       return res
         .status(400)
@@ -327,7 +482,6 @@ const handleRazorpayWebhook = async (req, res) => {
       .digest("hex");
 
     if (expectedSignature !== signature) {
-      console.error("Razorpay webhook signature mismatch.");
       return res
         .status(400)
         .json({ success: false, message: "Invalid signature." });
@@ -335,46 +489,43 @@ const handleRazorpayWebhook = async (req, res) => {
 
     const event = req.body?.event;
     const payment = req.body?.payload?.payment?.entity;
-
     if (!payment) {
       return res
         .status(400)
         .json({ success: false, message: "Missing payment payload." });
     }
 
-    const razorpayOrderId = payment.order_id;
-    const razorpayPaymentId = payment.id;
-    const paymentStatus = payment.status;
-
     const { data: order, error: orderErr } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .eq("razorpay_order_id", razorpayOrderId)
+      .eq("razorpay_order_id", payment.order_id)
       .maybeSingle();
 
-    if (orderErr) {
-      throw orderErr;
-    }
-
+    if (orderErr) throw orderErr;
     if (!order) {
       return res
         .status(404)
         .json({ success: false, message: "Order not found." });
     }
 
-    let status = order.status;
-    if (event === "payment.captured" || paymentStatus === "captured") {
-      status = "paid";
-    } else if (event === "payment.failed" || paymentStatus === "failed") {
-      status = "failed";
+    // Already processed — avoid double-activating the plan.
+    if (order.status === "paid") {
+      return res.status(200).json({
+        success: true,
+        message: "Already processed.",
+        orderId: order.id,
+      });
     }
 
-    const updates = {
-      status,
-      razorpay_payment_id: razorpayPaymentId,
-    };
+    let status = order.status;
+    if (event === "payment.captured" || payment.status === "captured")
+      status = "paid";
+    else if (event === "payment.failed" || payment.status === "failed")
+      status = "failed";
 
+    const updates = { status, razorpay_payment_id: payment.id };
     if (status === "paid") {
+      updates.payment_type = "paid";
       updates.paid_at = new Date().toISOString();
     }
 
@@ -382,19 +533,18 @@ const handleRazorpayWebhook = async (req, res) => {
       .from("orders")
       .update(updates)
       .eq("id", order.id);
+    if (updateErr) throw updateErr;
 
-    if (updateErr) {
-      throw updateErr;
-    }
-
-    if (status === "paid" && order.user_id) {
-      const { error: roleErr } = await supabaseAdmin
-        .from("users")
-        .update({ role: "premium" })
-        .eq("id", order.user_id);
-      if (roleErr) {
-        console.warn("Unable to update user role to premium:", roleErr.message);
-      }
+    if (status === "paid") {
+      await activateUserPlan(order.user_id, {
+        email: order.email,
+        planId: order.plan_id,
+        planName: order.plan_name,
+        planPriceId: order.plan_price_id,
+        durationLabel: order.duration_label,
+        paymentType: "paid",
+        transactionId: payment.id,
+      });
     }
 
     return res.status(200).json({
@@ -409,83 +559,113 @@ const handleRazorpayWebhook = async (req, res) => {
   }
 };
 
-/**
- * GET /api/orders/:orderId/status
- */
+/** GET /api/orders/:orderId/status */
 const checkOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
-
     const { data: order, error } = await supabaseAdmin
       .from("orders")
-      .select("id, status")
+      .select("id, user_id, status, payment_type")
       .eq("id", orderId)
       .single();
-
     if (error || !order) {
       return res
         .status(404)
         .json({ success: false, message: "Order not found." });
     }
-
-    return res.status(200).json({ success: true, status: order.status });
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: "Unauthorized." });
+    }
+    return res.status(200).json({
+      success: true,
+      status: order.status,
+      paymentType: order.payment_type,
+    });
   } catch (err) {
-    console.error("checkOrderStatus error:", err.message);
     return res
       .status(500)
       .json({ success: false, message: "Status check failed." });
   }
 };
 
-/**
- * GET /api/orders/:orderId/receipt
- * pdf receipt generate
- */
+/** GET /api/me/subscription  (current plan + apni history) */
+const getMySubscription = async (req, res) => {
+  try {
+    const { data: sub } = await supabaseAdmin
+      .from("users")
+      .select(
+        "full_name, phone, email, role, current_plan_id, current_plan_name, current_duration_label, plan_status, plan_payment_type, plan_activated_at, last_transaction_id",
+      )
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    const { data: orders } = await supabaseAdmin
+      .from("orders")
+      .select(
+        "id, created_at, paid_at, status, payment_type, amount, plan_id, plan_name, duration_label, razorpay_payment_id",
+      )
+      .eq("user_id", req.user.id)
+      .order("created_at", { ascending: false });
+
+    return res
+      .status(200)
+      .json({ success: true, subscription: sub || null, orders: orders || [] });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/** GET /api/orders  (ADMIN — sab transactions)
+ *  NOTE: role check ab requireAdmin middleware mein already ho chuka hai,
+ *  isliye yahan dobara check karne ki zaroorat nahi. */
+const getAllOrders = async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .select(
+        "id, created_at, paid_at, status, payment_type, amount, email, full_name, phone, user_id, plan_id, plan_name, plan_price_id, duration_label, razorpay_order_id, razorpay_payment_id",
+      )
+      .order("created_at", { ascending: false });
+
+    if (error)
+      return res.status(500).json({ success: false, message: error.message });
+
+    return res.status(200).json({ success: true, orders: data || [] });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/** GET /api/orders/:orderId/receipt */
 const downloadReceipt = async (req, res) => {
   try {
     const { orderId } = req.params;
-
     const { data: order, error: fetchErr } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("id", orderId)
       .single();
 
-    if (fetchErr || !order) {
+    if (fetchErr || !order)
       return res
         .status(404)
         .json({ success: false, message: "Order not found." });
-    }
-
-    if (req.user && order.user_id !== req.user.id) {
+    if (order.user_id !== req.user.id)
       return res.status(403).json({ success: false, message: "Unauthorized." });
-    }
-
-    if (order.status !== "paid") {
+    if (order.status !== "paid")
       return res.status(400).json({
         success: false,
-        message: "this order for not receipt available (payment pending).",
+        message: "Receipt available nahi (payment pending).",
       });
-    }
-
-    const { data: planRow } = await supabaseAdmin
-      .from("pro_plans")
-      .select("name")
-      .eq("id", order.plan_id)
-      .single();
-
-    const { data: priceRow } = await supabaseAdmin
-      .from("pro_plan_prices")
-      .select("duration_label")
-      .eq("id", order.plan_price_id)
-      .maybeSingle();
 
     const pdfBuffer = await generateReceiptPDF({
       orderId: order.id,
-      paymentId: order.razorpay_payment_id || "N/A",
+      paymentId:
+        order.razorpay_payment_id ||
+        (order.payment_type === "free" ? "FREE" : "N/A"),
       email: order.email,
-      planName: planRow?.name || "Pro Plan",
-      durationLabel: priceRow?.duration_label || "1 Month",
+      planName: order.plan_name || "Pro Plan",
+      durationLabel: order.duration_label || "1 Month",
       amount: order.amount,
       paidAt: order.paid_at || order.created_at || new Date().toISOString(),
     });
@@ -495,14 +675,11 @@ const downloadReceipt = async (req, res) => {
       "Content-Disposition": `attachment; filename="TuneRaaga_Receipt_${order.id}.pdf"`,
       "Content-Length": pdfBuffer.length,
     });
-
     return res.send(pdfBuffer);
   } catch (err) {
-    console.error("❌ downloadReceipt FULL ERROR:", err.message);
-    return res.status(500).json({
-      success: false,
-      message: "Receipt generation failed.",
-    });
+    return res
+      .status(500)
+      .json({ success: false, message: "Receipt generation failed." });
   }
 };
 
@@ -512,5 +689,7 @@ module.exports = {
   verifyPayment,
   handleRazorpayWebhook,
   checkOrderStatus,
+  getMySubscription,
+  getAllOrders,
   downloadReceipt,
 };

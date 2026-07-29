@@ -23,12 +23,36 @@ const OrderSummaryPay = () => {
   const [payError, setPayError] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending"); // pending | paid
 
+  // 🔒 Hard guard against double-clicks / double payment triggers.
+  // Ref updates synchronously (unlike state), so even rapid clicks
+  // before a re-render can't slip through.
+  const isProcessingRef = useRef(false);
   const pollRef = useRef(null);
 
   const getAuthHeaders = async () => {
     const { data } = await supabase.auth.getSession();
     const token = data?.session?.access_token;
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  // Backend ka /status endpoint hit karke fresh status laata hai
+  // (webhook se already paid ho chuka ho sakta hai, isliye sirf
+  // pehli load ke supabase read par bharosa nahi karna).
+  const refreshOrderStatus = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/api/orders/${orderId}/status`, {
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPaymentStatus(data.status);
+        return data.status;
+      }
+    } catch (e) {
+      console.error("refreshOrderStatus error:", e);
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -58,21 +82,48 @@ const OrderSummaryPay = () => {
       setPlan(planData);
       setPaymentStatus(orderData.status || "pending");
       setLoading(false);
+
+      // Fresh status backend se bhi confirm kar lo (webhook race-condition safe)
+      refreshOrderStatus();
     };
 
     fetchOrder();
+
+    // Har 5 second mein status poll karo jab tak paid na ho jaaye.
+    // Isse agar webhook background mein order ko paid mark kar de,
+    // toh UI turant "Pay Now" button hide kar dega — dobara click
+    // karke naya Razorpay order banne ka chance hi nahi rahega.
+    pollRef.current = setInterval(async () => {
+      const status = await refreshOrderStatus();
+      if (status === "paid" && pollRef.current) {
+        clearInterval(pollRef.current);
+      }
+    }, 5000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [orderId]);
 
-  // Razorpay checkout popup khol kar payment lo — isme UPI (QR + intent) aur Card dono already honge
   const handlePayNow = async (preferredMethod) => {
+    // 🔒 Already paid? Toh bilkul allow mat karo (extra safety-net,
+    // buttons already conditionally hidden hain, lekin defense-in-depth).
+    if (paymentStatus === "paid") {
+      setPayError("Yeh order already paid hai.");
+      return;
+    }
+
+    // 🔒 Ek payment already process ho rahi hai? Naya click ignore karo.
+    if (isProcessingRef.current) {
+      return;
+    }
+    isProcessingRef.current = true;
+
     setPayError("");
 
     if (!window.Razorpay) {
       setPayError("Payment script load nahi hui. Page reload karke try karo.");
+      isProcessingRef.current = false;
       return;
     }
 
@@ -96,10 +147,10 @@ const OrderSummaryPay = () => {
       if (!res.ok || !data.success) {
         setPayError(data.message || "Payment shuru nahi ho paaya.");
         setPayLoading(false);
+        isProcessingRef.current = false;
         return;
       }
 
-      // preferredMethod ke hisaab se checkout ka display config
       const displayConfig =
         preferredMethod === "card"
           ? {
@@ -155,6 +206,7 @@ const OrderSummaryPay = () => {
 
             if (verifyRes.ok && verifyData.success) {
               setPaymentStatus("paid");
+              if (pollRef.current) clearInterval(pollRef.current);
             } else {
               setPayError(
                 verifyData.message || "Payment verify nahi ho paayi.",
@@ -165,11 +217,17 @@ const OrderSummaryPay = () => {
             setPayError(
               "Payment hui lekin verify karte waqt error aaya. Support se contact karein.",
             );
+          } finally {
+            // Modal band ho gaya (success ya fail), ab dobara try allow karo
+            setPayLoading(false);
+            isProcessingRef.current = false;
           }
         },
         modal: {
           ondismiss: function () {
+            // User ne popup khud band kiya — tabhi button phir se enable karo
             setPayLoading(false);
+            isProcessingRef.current = false;
           },
         },
       };
@@ -180,14 +238,18 @@ const OrderSummaryPay = () => {
         console.error("Razorpay payment failed:", response.error);
         setPayError(response.error?.description || "Payment fail ho gayi.");
         setPayLoading(false);
+        isProcessingRef.current = false;
       });
 
       rzp.open();
-      setPayLoading(false);
+      // ⚠️ Yahan setPayLoading(false) NAHI karna — jab tak modal
+      // dismiss/success/fail na ho, button disabled hi rehna chahiye,
+      // warna user dobara click karke naya Razorpay order bana sakta hai.
     } catch (err) {
       console.error("handlePayNow error:", err);
       setPayError("Network error — backend chal raha hai check karo.");
       setPayLoading(false);
+      isProcessingRef.current = false;
     }
   };
 

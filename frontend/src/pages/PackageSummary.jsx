@@ -1,29 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Check, Loader2, Gift, Info } from "lucide-react";
+import { Check, Loader2, Info, Crown } from "lucide-react";
 import { usePlayer } from "../components/PlayerContext";
 import { supabase } from "../lib/supabaseClient";
 import { startRazorpayPayment } from "../utils/razorpayPayment";
+import { fetchMySubscription } from "../utils/subscription";
 
-// FIX: If VITE_API_URL (or VITE_API_BASE_URL) has a trailing slash in .env
-// (e.g. "https://example.com/"), then doing `${API_BASE}/api/...` produces
-// a double slash ("https://example.com//api/..."). On Render this malformed
-// URL can get rejected at the proxy/edge level before it ever reaches your
-// Express app, so the response comes back with NO CORS headers at all —
-// which shows up in the browser as "blocked by CORS policy" even though
-// your backend's CORS config is completely correct. Stripping any trailing
-// slash here makes this class of bug impossible regardless of what's in .env.
 const getApiBase = () => {
   const apiBase =
     import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "";
-
   if (!apiBase) {
     throw new Error(
       "VITE_API_URL / VITE_API_BASE_URL is not defined. Please configure it in your .env file.",
     );
   }
-
   return apiBase.replace(/\/+$/, "");
 };
 
@@ -34,6 +25,9 @@ const PackageSummary = () => {
 
   const [plan, setPlan] = useState(null);
   const [prices, setPrices] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [currentPlanId, setCurrentPlanId] = useState(null);
+  const [planStatus, setPlanStatus] = useState("none");
   const [selectedPriceId, setSelectedPriceId] = useState(null);
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -58,7 +52,6 @@ const PackageSummary = () => {
         .single();
 
       if (planErr || !planData) {
-        console.error("fetchPlanDetail: pro_plans error:", planErr);
         setError("Yeh plan available nahi hai.");
         setLoading(false);
         return;
@@ -71,14 +64,19 @@ const PackageSummary = () => {
         .order("sort_order", { ascending: true });
 
       if (priceErr) {
-        console.error("fetchPlanDetail: pro_plan_prices error:", priceErr);
         setError("Pricing load nahi ho paayi.");
         setLoading(false);
         return;
       }
 
+      // ✅ current plan + name/phone backend se (RLS-safe)
+      const { subscription } = await fetchMySubscription();
+
       setPlan(planData);
       setPrices(priceData || []);
+      setProfile(subscription || null);
+      setCurrentPlanId(subscription?.current_plan_id || null);
+      setPlanStatus(subscription?.plan_status || "none");
 
       const defaultPrice =
         (priceData || []).find((p) => p.is_popular) || (priceData || [])[0];
@@ -91,9 +89,19 @@ const PackageSummary = () => {
   }, [planId, user, navigate]);
 
   const selectedPrice = prices.find((p) => p.id === selectedPriceId);
+  const isCurrentActivePlan =
+    planStatus === "active" && currentPlanId === planId;
 
   const handleContinue = async () => {
     if (!selectedPrice) return;
+
+    if (isCurrentActivePlan) {
+      setError(
+        "Ye plan already aapke account par active hai. Same plan dobara nahi le sakte — doosra plan choose karke upgrade karein.",
+      );
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
@@ -110,7 +118,6 @@ const PackageSummary = () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
       const accessToken = session?.access_token;
 
       const res = await fetch(`${API_BASE}/api/ordersummarypay`, {
@@ -124,6 +131,8 @@ const PackageSummary = () => {
           userId: user.id,
           plan: planId,
           amount: selectedPrice.price,
+          fullName: profile?.full_name || user.user_metadata?.full_name || "",
+          phone: profile?.phone || user.user_metadata?.phone || "",
         }),
       });
 
@@ -131,18 +140,48 @@ const PackageSummary = () => {
       try {
         data = await res.json();
       } catch {
-        console.error("ordersummarypay: non-JSON response, status", res.status);
         setError(
-          `Server se sahi response nahi mila (status ${res.status}). Backend chal raha hai kya, aur API URL sahi hai kya, check karo.`,
+          `Server se sahi response nahi mila (status ${res.status}). Backend aur API URL check karo.`,
         );
         setSubmitting(false);
         return;
       }
 
       if (!res.ok || !data.success) {
-        console.error("ordersummarypay failed:", res.status, data);
-        setError(data.message || "Order create nahi ho paaya.");
+        // backend 409 (SAME_PLAN_ACTIVE) ka message seedha dikhao
+        setError(
+          data.code === "SAME_PLAN_ACTIVE"
+            ? data.message
+            : data.message || "Order create nahi ho paaya.",
+        );
         setSubmitting(false);
+        return;
+      }
+
+      const isFree =
+        Number(selectedPrice.price) === 0 ||
+        data.order?.payment_type === "free";
+
+      if (isFree) {
+        setSubmitting(false);
+        navigate("/pro/receipt", {
+          state: {
+            receipt: {
+              orderId: data.order.id,
+              paymentId: "FREE",
+              email: data.order.email,
+              fullName: data.order.full_name,
+              phone: data.order.phone,
+              planName: data.order.plan_name || plan?.name,
+              planId: data.order.plan_id,
+              durationLabel:
+                data.order.duration_label || selectedPrice.duration_label,
+              amount: data.order.amount,
+              paymentType: "free",
+              paidAt: data.order.paid_at || new Date().toISOString(),
+            },
+          },
+        });
         return;
       }
 
@@ -161,21 +200,17 @@ const PackageSummary = () => {
     } catch (err) {
       console.error("handleContinue error:", err);
       setSubmitting(false);
-
       const msg = String(err?.message || err || "");
       const isNetworkError =
         msg === "Failed to fetch" ||
         err?.name === "TypeError" ||
         msg.includes("fetch failed") ||
         msg.includes("Network request failed");
-
-      if (isNetworkError) {
-        setError(
-          `Backend (${API_BASE}) tak request nahi pahunch paayi — CORS ya URL check karo. Console (Network + Console tab, not just this stack trace) mein exact error dekho.`,
-        );
-      } else {
-        setError("Kuch galat ho gaya. Dobara try karein.");
-      }
+      setError(
+        isNetworkError
+          ? `Backend (${API_BASE}) tak request nahi pahunchi — CORS ya URL check karo.`
+          : "Kuch galat ho gaya. Dobara try karein.",
+      );
     }
   };
 
@@ -213,6 +248,11 @@ const PackageSummary = () => {
                   {plan.badge}
                 </span>
               )}
+              {isCurrentActivePlan && (
+                <span className="flex items-center gap-1 text-[10px] font-bold bg-white text-emerald-700 px-2 py-0.5 rounded-full">
+                  <Crown size={11} /> Current
+                </span>
+              )}
             </div>
             {Array.isArray(plan.features) && plan.features.length > 0 && (
               <div className="grid grid-cols-2 gap-y-2 gap-x-3">
@@ -235,6 +275,7 @@ const PackageSummary = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
               {prices.map((p) => {
                 const isSelected = p.id === selectedPriceId;
+                const isFreePrice = Number(p.price) === 0;
                 return (
                   <button
                     key={p.id}
@@ -264,7 +305,11 @@ const PackageSummary = () => {
                               ₹{p.strike_price}
                             </span>
                           )}
-                          ₹{p.price}{" "}
+                          {isFreePrice ? (
+                            <span className="text-emerald-600">FREE</span>
+                          ) : (
+                            <>₹{p.price}</>
+                          )}{" "}
                           <span className="text-xs font-medium text-slate-500">
                             for {p.duration_label}
                           </span>
@@ -286,6 +331,20 @@ const PackageSummary = () => {
               <p className="text-sm text-slate-700">{user?.email}</p>
             </div>
 
+            {(profile?.full_name || profile?.phone) && (
+              <div className="border border-slate-200 rounded-xl p-3 mb-4">
+                <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">
+                  Account
+                </p>
+                {profile?.full_name && (
+                  <p className="text-sm text-slate-700">{profile.full_name}</p>
+                )}
+                {profile?.phone && (
+                  <p className="text-sm text-slate-700">{profile.phone}</p>
+                )}
+              </div>
+            )}
+
             <div className="border border-slate-200 rounded-xl p-4 mb-5">
               <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">
                 Details
@@ -294,23 +353,42 @@ const PackageSummary = () => {
                 <span>
                   {plan.name} - ({selectedPrice?.duration_label})
                 </span>
-                <span>₹{selectedPrice?.price}</span>
+                <span>
+                  {Number(selectedPrice?.price) === 0
+                    ? "FREE"
+                    : `₹${selectedPrice?.price}`}
+                </span>
               </div>
               <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-100 mt-2">
                 <span>Grand Total</span>
-                <span>₹{selectedPrice?.price}</span>
+                <span>
+                  {Number(selectedPrice?.price) === 0
+                    ? "FREE"
+                    : `₹${selectedPrice?.price}`}
+                </span>
               </div>
             </div>
+
+            {isCurrentActivePlan && (
+              <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-3">
+                ✅ Ye plan already active hai. Same plan dobara nahi le sakte —
+                doosra plan choose karke upgrade karein.
+              </div>
+            )}
 
             {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
 
             <button
               onClick={handleContinue}
-              disabled={!selectedPrice || submitting}
+              disabled={!selectedPrice || submitting || isCurrentActivePlan}
               className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}
-              Continue with ₹{selectedPrice?.price ?? 0}
+              {isCurrentActivePlan
+                ? "Already Active Plan"
+                : Number(selectedPrice?.price) === 0
+                  ? "Activate Free Plan"
+                  : `Continue with ₹${selectedPrice?.price ?? 0}`}
             </button>
           </div>
         </motion.div>
