@@ -371,8 +371,8 @@ const PackageSummary = () => {
 
             {isCurrentActivePlan && (
               <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-3">
-                ✅ Ye plan already active hai. Same plan dobara nahi le sakte —
-                doosra plan choose karke upgrade karein.
+                ✅ You already have this plan. The same plan cannot be purchased
+                again. Please choose another plan to upgrade.
               </div>
             )}
 

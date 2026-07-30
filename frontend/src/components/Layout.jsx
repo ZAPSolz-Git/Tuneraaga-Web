@@ -30,6 +30,7 @@ import {
   ChevronRight as ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { fetchMySubscription } from "../utils/subscription";
 import Footer from "./Footer";
 import Auth from "./Auth";
 import GlobalToast from "./GlobalToast";
@@ -134,8 +135,9 @@ const SearchDropdown = ({ results, visible, onNavigate, onClose }) => {
   );
 };
 
-const UserMenu = ({ user, onOpenAuth }) => {
+const UserMenu = ({ user, subscription, onOpenAuth }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
   const ref = useRef(null);
 
   useEffect(() => {
@@ -159,6 +161,11 @@ const UserMenu = ({ user, onOpenAuth }) => {
       </div>
     );
   }
+
+  const planName =
+    subscription?.plan_status === "active"
+      ? subscription.current_plan_name
+      : null;
 
   return (
     <div className="relative" ref={ref}>
@@ -187,12 +194,27 @@ const UserMenu = ({ user, onOpenAuth }) => {
               <p className="text-[13px] font-semibold text-slate-900 truncate mt-0.5">
                 {user.email}
               </p>
+              {planName && (
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <Crown size={11} /> {planName}
+                </p>
+              )}
             </div>
+
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                navigate("/pro/my-plan");
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Crown size={15} /> My Plan
+            </button>
+
             <button
               onClick={async () => {
                 setMenuOpen(false);
                 await supabase.auth.signOut();
-                // ✅ Center toast on logout — same as login/signup
                 centerToastEvents.show("Logged out successfully", "success");
               }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-colors"
@@ -333,6 +355,7 @@ const Layout = () => {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
   const [user, setUser] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState("login");
 
@@ -355,6 +378,21 @@ const Layout = () => {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ✅ current plan fetch — payment/receipt ke baad ya route change par auto update
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setSubscription(null);
+      return;
+    }
+    fetchMySubscription().then(({ subscription }) => {
+      if (active) setSubscription(subscription);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user, location.pathname]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -414,6 +452,12 @@ const Layout = () => {
     setShowSearchDropdown(false);
   };
 
+  // ✅ active plan name — Go Pro / Pro button isse decide hota hai
+  const activePlanName =
+    subscription?.plan_status === "active"
+      ? subscription.current_plan_name
+      : null;
+
   const mobileMenuItems = [
     { path: "/", label: "Home", icon: Home },
     { path: "/pro", label: "Go Pro", icon: Crown },
@@ -471,13 +515,14 @@ const Layout = () => {
               />
             </Link>
             <div className="flex items-center gap-2">
-              {/* ✅ GO PRO — mobile top bar left area */}
+              {/* ✅ Plan hai to "Upgrade", warna "Pro" */}
               <button
                 onClick={() => navigate("/pro")}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-full text-white text-xs font-bold"
                 style={{ background: GOLD_GRADIENT }}
+                title={activePlanName ? `Current: ${activePlanName}` : "Go Pro"}
               >
-                <Crown size={13} /> Pro
+                <Crown size={13} /> {activePlanName ? "Upgrade" : "Pro"}
               </button>
               <button
                 onClick={() => navigate("/login")}
@@ -493,6 +538,15 @@ const Layout = () => {
               </button>
             </div>
           </div>
+
+          {/* ✅ current plan chip (mobile) */}
+          {activePlanName && (
+            <div className="px-4 pb-2">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+                <Crown size={11} /> Your plan: {activePlanName}
+              </span>
+            </div>
+          )}
 
           <div className="px-4 pb-3 relative">
             <div className="relative">
@@ -546,7 +600,9 @@ const Layout = () => {
                     }`}
                   >
                     <item.icon className="w-4 h-4" />
-                    {item.label}
+                    {item.path === "/pro" && activePlanName
+                      ? "Upgrade Plan"
+                      : item.label}
                   </Link>
                 ))}
               </div>
@@ -727,7 +783,7 @@ const Layout = () => {
       </motion.aside>
 
       <div className="flex-1 h-full flex flex-col overflow-hidden relative">
-        {/* ✅ TOP NAVBAR — Go Pro on LEFT side, before search bar */}
+        {/* ✅ TOP NAVBAR — LEFT: plan hai to "<Plan> · Upgrade", warna "Go Pro" */}
         <div className="sticky top-0 z-30 pointer-events-none bg-gradient-to-b from-slate-50 via-slate-50 to-transparent pb-2 pt-4">
           <div className="grid grid-cols-3 items-center px-4 md:px-8 pointer-events-auto">
             {/* LEFT */}
@@ -740,9 +796,14 @@ const Layout = () => {
              shadow-sm hover:shadow-md
              hover:from-cyan-500 hover:via-sky-500 hover:to-blue-600
              transition-all duration-200 hover:scale-105"
+                  title={
+                    activePlanName ? `Current: ${activePlanName}` : "Go Pro"
+                  }
                 >
                   <Crown size={14} className="fill-white text-white" />
-                  <span>Go Pro</span>
+                  <span>
+                    {activePlanName ? `${activePlanName} · Upgrade` : "Go Pro"}
+                  </span>
                 </button>
               </Link>
             </div>
@@ -786,6 +847,13 @@ const Layout = () => {
             {/* RIGHT */}
             <div className="flex justify-end">
               <div className="hidden md:flex items-center gap-3 bg-white p-1.5 pl-4 rounded-full border border-slate-200 shadow-sm">
+                {/* ✅ current plan pill */}
+                {activePlanName && (
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 whitespace-nowrap">
+                    <Crown size={12} /> {activePlanName}
+                  </span>
+                )}
+
                 <Bell className="w-4 h-4 text-slate-500 hover:text-blue-600 cursor-pointer transition-colors relative">
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-600 rounded-full" />
                 </Bell>
@@ -793,6 +861,7 @@ const Layout = () => {
                 {user ? (
                   <UserMenu
                     user={user}
+                    subscription={subscription}
                     onOpenAuth={() => setShowAuthModal(true)}
                   />
                 ) : (

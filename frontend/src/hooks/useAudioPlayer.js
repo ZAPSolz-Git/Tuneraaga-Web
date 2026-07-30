@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { useIsPro } from "./useIsPro";
 
 export const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -37,6 +38,12 @@ export const useAudioPlayer = () => {
   const [isShuffle, setIsShuffle] = useState(false);
   const [currentList, setCurrentList] = useState([]);
 
+  // 🔊 AD STATE
+  const [isPlayingAd, setIsPlayingAd] = useState(false);
+  const [adInfo, setAdInfo] = useState(null); // { title }
+
+  const { isPro, checking } = useIsPro();
+
   const audioRef = useRef(null);
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
@@ -44,11 +51,23 @@ export const useAudioPlayer = () => {
   const isShuffleRef = useRef(false);
   const isPlayingRef = useRef(false);
 
-  // ✅ AUTH / USER TRACKING (needed for history saving)
   const userRef = useRef(null);
-  // Keep track of release_id we already pushed to history this "play action"
-  // to avoid duplicate inserts for the exact same trigger.
   const lastHistorySavedIdRef = useRef(null);
+
+  // 🔊 AD REFS — live values callbacks ke andar bhi sahi rahein
+  const isProRef = useRef(false);
+  const checkingRef = useRef(true);
+  const isPlayingAdRef = useRef(false);
+  // jab ad khatam ho to ye asli song chalane ke liye call hota hai
+  const pendingPlayRef = useRef(null);
+  const adAudioRef = useRef(null);
+
+  useEffect(() => {
+    isProRef.current = isPro;
+  }, [isPro]);
+  useEffect(() => {
+    checkingRef.current = checking;
+  }, [checking]);
 
   useEffect(() => {
     currentSongRef.current = currentSong;
@@ -66,9 +85,6 @@ export const useAudioPlayer = () => {
     isPlayingRef.current = playing;
   }, [playing]);
 
-  // ✅ Keep a live reference to the logged-in user (session) so that
-  // saveToHistory always has the latest auth state, even inside callbacks
-  // created before the session resolved.
   useEffect(() => {
     const getSession = async () => {
       const {
@@ -85,12 +101,10 @@ export const useAudioPlayer = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ✅ SAVE TO HISTORY DB (check then update/insert to prevent duplicates & silent fails)
   const saveToHistory = useCallback(async (releaseId) => {
     const currentUser = userRef.current;
     if (!currentUser || !releaseId) return;
     try {
-      // 1. Check if this song already exists in history
       const { data: existing, error: selectError } = await supabase
         .from("history")
         .select("id")
@@ -99,19 +113,15 @@ export const useAudioPlayer = () => {
         .limit(1)
         .maybeSingle();
 
-      if (selectError) {
-        console.error("History select error:", selectError);
-      }
+      if (selectError) console.error("History select error:", selectError);
 
       if (existing) {
-        // 2. If exists, just update the timestamp to move it to top
         const { error: updateError } = await supabase
           .from("history")
           .update({ played_at: new Date().toISOString() })
           .eq("id", existing.id);
         if (updateError) console.error("History update error:", updateError);
       } else {
-        // 3. If new, insert it
         const { error: insertError } = await supabase
           .from("history")
           .insert({ user_id: currentUser.id, release_id: releaseId });
@@ -122,8 +132,69 @@ export const useAudioPlayer = () => {
     }
   }, []);
 
-  // Core: load and play a song at index
-  const _playSongAtIndex = useCallback(
+  // 🔊 AD: ek random active ad laao (non-pro ke liye)
+  const fetchRandomAd = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("ads")
+        .select("*")
+        .eq("active", true);
+      if (error || !data || data.length === 0) return null;
+      return data[Math.floor(Math.random() * data.length)];
+    } catch (e) {
+      console.error("fetchRandomAd error:", e);
+      return null;
+    }
+  }, []);
+
+  // 🔊 AD: ad chalao, khatam hone par `onDone` call karo (jo asli song bajayega)
+  const playAd = useCallback(
+    async (onDone) => {
+      const ad = await fetchRandomAd();
+      const adAudio = adAudioRef.current;
+
+      // ad nahi mila / audio nahi -> seedha song
+      if (!ad || !ad.audio_url || !adAudio) {
+        onDone?.();
+        return;
+      }
+
+      // asli music pause
+      const music = audioRef.current;
+      if (music) music.pause();
+
+      setIsPlayingAd(true);
+      isPlayingAdRef.current = true;
+      setAdInfo({ title: ad.title || "Advertisement" });
+      setPlaying(true);
+
+      const finish = () => {
+        adAudio.removeEventListener("ended", finish);
+        adAudio.removeEventListener("error", finish);
+        setIsPlayingAd(false);
+        isPlayingAdRef.current = false;
+        setAdInfo(null);
+        onDone?.();
+      };
+
+      adAudio.addEventListener("ended", finish, { once: true });
+      adAudio.addEventListener("error", finish, { once: true });
+
+      try {
+        adAudio.src = ad.audio_url;
+        adAudio.load();
+        adAudio.volume = isMuted ? 0 : volume;
+        await adAudio.play();
+      } catch (e) {
+        console.error("Ad play error:", e);
+        finish();
+      }
+    },
+    [fetchRandomAd, isMuted, volume],
+  );
+
+  // Core: index par song load + play (raw — bina ad ke)
+  const _loadAndPlay = useCallback(
     (index, list) => {
       const song = list[index];
       if (!song || !song.audioUrl) return;
@@ -131,7 +202,6 @@ export const useAudioPlayer = () => {
       const audio = audioRef.current;
       if (!audio) return;
 
-      // Pause current before loading new
       audio.pause();
 
       setCurrentSong(song);
@@ -146,13 +216,7 @@ export const useAudioPlayer = () => {
       audio.src = song.audioUrl;
       audio.load();
 
-      // ✅ SAVE TO HISTORY — every time a (new) song actually starts loading.
-      // song.id works for both regular tracks/playlist items and podcast
-      // episodes/radio station songs since they all carry the underlying
-      // release id as `id` by the time they reach this hook.
-      if (song.id) {
-        saveToHistory(song.id);
-      }
+      if (song.id) saveToHistory(song.id);
 
       const tryPlay = () => {
         const p = audio.play();
@@ -176,11 +240,33 @@ export const useAudioPlayer = () => {
     [saveToHistory],
   );
 
-  // Init audio element once
+  // 🔊 GATE: non-pro -> pehle ad, phir song. pro -> seedha song.
+  const _playSongAtIndex = useCallback(
+    (index, list) => {
+      const startSong = () => _loadAndPlay(index, list);
+
+      // status pata nahi (checking) ya PAID -> koi ad nahi
+      if (checkingRef.current || isProRef.current) {
+        startSong();
+        return;
+      }
+
+      // NON-PAID (sirf login ya logged-out) -> song se pehle ad
+      playAd(startSong);
+    },
+    [_loadAndPlay, playAd],
+  );
+
+  // Init MUSIC audio element
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
+
+    // 🔊 separate audio element sirf ads ke liye
+    const adAudio = new Audio();
+    adAudio.preload = "auto";
+    adAudioRef.current = adAudio;
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onLoadedMetadata = () => {
@@ -188,12 +274,18 @@ export const useAudioPlayer = () => {
         setDuration(audio.duration);
     };
     const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPause = () => {
+      // ad chal raha ho to music-pause se global "playing" false mat karo
+      if (!isPlayingAdRef.current) setPlaying(false);
+    };
     const onError = () => setPlaying(false);
+
+    // 🔊 song khatam -> non-pro ko ad, phir agla song (pro ko seedha agla)
     const onEnded = () => {
       const list = currentListRef.current;
       const idx = currentIndexRef.current;
       if (!list || list.length === 0 || idx === null) return;
+
       let next;
       if (isShuffleRef.current) {
         do {
@@ -202,7 +294,14 @@ export const useAudioPlayer = () => {
       } else {
         next = (idx + 1) % list.length;
       }
-      _playSongAtIndex(next, list);
+
+      const goNext = () => _loadAndPlay(next, list);
+
+      if (checkingRef.current || isProRef.current) {
+        goNext(); // paid -> koi ad nahi, seedha agla
+      } else {
+        playAd(goNext); // non-paid -> har song ke baad ad
+      }
     };
 
     audio.addEventListener("timeupdate", onTimeUpdate);
@@ -222,17 +321,25 @@ export const useAudioPlayer = () => {
       audio.removeEventListener("ended", onEnded);
       audio.removeAttribute("src");
       audio.load();
+
+      adAudio.pause();
+      adAudio.removeAttribute("src");
+      adAudio.load();
     };
-  }, [_playSongAtIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_loadAndPlay, playAd]);
 
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
       audioRef.current.muted = isMuted;
     }
+    if (adAudioRef.current) {
+      adAudioRef.current.volume = volume;
+      adAudioRef.current.muted = isMuted;
+    }
   }, [volume, isMuted]);
 
-  // Public: play radio station → plays first song from list
   const playRadioStation = useCallback(
     (station, songs) => {
       if (!songs || songs.length === 0) return;
@@ -242,12 +349,13 @@ export const useAudioPlayer = () => {
     [_playSongAtIndex],
   );
 
-  // Public: play a specific song with list context
   const handleSongClick = useCallback(
     (index, song, list) => {
+      // 🔊 ad chal raha ho to click ignore (ad skip nahi kar sakte)
+      if (isPlayingAdRef.current) return;
+
       const audio = audioRef.current;
       if (currentSongRef.current?.id === song.id && audio) {
-        // Toggle play/pause for same song
         if (audio.paused) {
           audio
             .play()
@@ -264,8 +372,10 @@ export const useAudioPlayer = () => {
     [_playSongAtIndex],
   );
 
-  // Public: global play/pause toggle
   const handlePlayPause = useCallback(() => {
+    // 🔊 ad ke dauraan play/pause disabled
+    if (isPlayingAdRef.current) return;
+
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
@@ -280,6 +390,7 @@ export const useAudioPlayer = () => {
   }, []);
 
   const handleNext = useCallback(() => {
+    if (isPlayingAdRef.current) return; // 🔊 ad ke dauraan skip nahi
     const list = currentListRef.current;
     const idx = currentIndexRef.current;
     if (!list || list.length === 0 || idx === null) return;
@@ -295,6 +406,7 @@ export const useAudioPlayer = () => {
   }, [_playSongAtIndex]);
 
   const handlePrev = useCallback(() => {
+    if (isPlayingAdRef.current) return; // 🔊
     const list = currentListRef.current;
     const idx = currentIndexRef.current;
     if (!list || list.length === 0 || idx === null) return;
@@ -303,6 +415,7 @@ export const useAudioPlayer = () => {
   }, [_playSongAtIndex]);
 
   const handleSeek = useCallback((time) => {
+    if (isPlayingAdRef.current) return; // 🔊 ad seek nahi hota
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
@@ -316,6 +429,15 @@ export const useAudioPlayer = () => {
       audio.removeAttribute("src");
       audio.load();
     }
+    const adAudio = adAudioRef.current;
+    if (adAudio) {
+      adAudio.pause();
+      adAudio.removeAttribute("src");
+      adAudio.load();
+    }
+    setIsPlayingAd(false);
+    isPlayingAdRef.current = false;
+    setAdInfo(null);
     setPlaying(false);
     setCurrentSong(null);
     currentSongRef.current = null;
@@ -348,6 +470,10 @@ export const useAudioPlayer = () => {
     isShuffle,
     currentList,
     currentIndex,
+    // 🔊 ad state — StickyPlayer mein use kar sakte ho ("Ad playing…" dikhane ke liye)
+    isPlayingAd,
+    adInfo,
+    isPro,
     playRadioStation,
     handleSongClick,
     handlePlayPause,

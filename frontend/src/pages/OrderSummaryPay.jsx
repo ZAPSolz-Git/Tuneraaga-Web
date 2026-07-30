@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
-import { Loader2, QrCode, CreditCard, Tag } from "lucide-react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  Loader2,
+  QrCode,
+  CreditCard,
+  Tag,
+  CheckCircle2,
+  Crown,
+} from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -13,6 +20,7 @@ const TABS = [
 
 const OrderSummaryPay = () => {
   const { orderId } = useParams(); // /pro/pay/:orderId
+  const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
   const [plan, setPlan] = useState(null);
@@ -23,9 +31,6 @@ const OrderSummaryPay = () => {
   const [payError, setPayError] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending"); // pending | paid
 
-  // 🔒 Hard guard against double-clicks / double payment triggers.
-  // Ref updates synchronously (unlike state), so even rapid clicks
-  // before a re-render can't slip through.
   const isProcessingRef = useRef(false);
   const pollRef = useRef(null);
 
@@ -35,9 +40,6 @@ const OrderSummaryPay = () => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
-  // Backend ka /status endpoint hit karke fresh status laata hai
-  // (webhook se already paid ho chuka ho sakta hai, isliye sirf
-  // pehli load ke supabase read par bharosa nahi karna).
   const refreshOrderStatus = async () => {
     try {
       const headers = await getAuthHeaders();
@@ -72,27 +74,28 @@ const OrderSummaryPay = () => {
         return;
       }
 
-      const { data: planData } = await supabase
-        .from("pro_plans")
-        .select("name")
-        .eq("id", orderData.plan_id)
-        .single();
+      // plan name: pehle order.plan_name (jo ab DB trigger fill karta hai),
+      // warna pro_plans se laao — fixed "1 MONTH" nahi.
+      let planName = orderData.plan_name || null;
+      if (!planName) {
+        const { data: planData } = await supabase
+          .from("pro_plans")
+          .select("name")
+          .eq("id", orderData.plan_id)
+          .single();
+        planName = planData?.name || null;
+      }
 
       setOrder(orderData);
-      setPlan(planData);
+      setPlan({ name: planName });
       setPaymentStatus(orderData.status || "pending");
       setLoading(false);
 
-      // Fresh status backend se bhi confirm kar lo (webhook race-condition safe)
       refreshOrderStatus();
     };
 
     fetchOrder();
 
-    // Har 5 second mein status poll karo jab tak paid na ho jaaye.
-    // Isse agar webhook background mein order ko paid mark kar de,
-    // toh UI turant "Pay Now" button hide kar dega — dobara click
-    // karke naya Razorpay order banne ka chance hi nahi rahega.
     pollRef.current = setInterval(async () => {
       const status = await refreshOrderStatus();
       if (status === "paid" && pollRef.current) {
@@ -106,17 +109,11 @@ const OrderSummaryPay = () => {
   }, [orderId]);
 
   const handlePayNow = async (preferredMethod) => {
-    // 🔒 Already paid? Toh bilkul allow mat karo (extra safety-net,
-    // buttons already conditionally hidden hain, lekin defense-in-depth).
     if (paymentStatus === "paid") {
       setPayError("Yeh order already paid hai.");
       return;
     }
-
-    // 🔒 Ek payment already process ho rahi hai? Naya click ignore karo.
-    if (isProcessingRef.current) {
-      return;
-    }
+    if (isProcessingRef.current) return;
     isProcessingRef.current = true;
 
     setPayError("");
@@ -145,6 +142,7 @@ const OrderSummaryPay = () => {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
+        // same-plan already active (409) ya koi aur error
         setPayError(data.message || "Payment shuru nahi ho paaya.");
         setPayLoading(false);
         isProcessingRef.current = false;
@@ -207,6 +205,26 @@ const OrderSummaryPay = () => {
             if (verifyRes.ok && verifyData.success) {
               setPaymentStatus("paid");
               if (pollRef.current) clearInterval(pollRef.current);
+
+              // receipt page pe bhej do (plan name + txn id ke saath)
+              const r = verifyData.receipt || {};
+              navigate("/pro/receipt", {
+                state: {
+                  receipt: {
+                    orderId: r.orderId || order.id,
+                    paymentId: r.paymentId || response.razorpay_payment_id,
+                    email: r.email || order.email,
+                    fullName: r.fullName || order.full_name,
+                    phone: r.phone || order.phone,
+                    planName: r.planName || plan?.name,
+                    planId: r.planId || order.plan_id,
+                    durationLabel: r.durationLabel || order.duration_label,
+                    amount: r.amount ?? order.amount,
+                    paymentType: "paid",
+                    paidAt: r.paidAt || new Date().toISOString(),
+                  },
+                },
+              });
             } else {
               setPayError(
                 verifyData.message || "Payment verify nahi ho paayi.",
@@ -218,14 +236,12 @@ const OrderSummaryPay = () => {
               "Payment hui lekin verify karte waqt error aaya. Support se contact karein.",
             );
           } finally {
-            // Modal band ho gaya (success ya fail), ab dobara try allow karo
             setPayLoading(false);
             isProcessingRef.current = false;
           }
         },
         modal: {
           ondismiss: function () {
-            // User ne popup khud band kiya — tabhi button phir se enable karo
             setPayLoading(false);
             isProcessingRef.current = false;
           },
@@ -242,9 +258,6 @@ const OrderSummaryPay = () => {
       });
 
       rzp.open();
-      // ⚠️ Yahan setPayLoading(false) NAHI karna — jab tak modal
-      // dismiss/success/fail na ho, button disabled hi rehna chahiye,
-      // warna user dobara click karke naya Razorpay order bana sakta hai.
     } catch (err) {
       console.error("handlePayNow error:", err);
       setPayError("Network error — backend chal raha hai check karo.");
@@ -267,6 +280,8 @@ const OrderSummaryPay = () => {
     );
   }
 
+  const isPaid = paymentStatus === "paid";
+
   return (
     <div className="w-full min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="flex flex-col lg:flex-row gap-6 max-w-5xl mx-auto">
@@ -284,117 +299,132 @@ const OrderSummaryPay = () => {
             </div>
           </div>
 
-          <div className="flex">
-            {/* tabs */}
-            <div className="w-40 border-r border-slate-100 py-3">
-              {TABS.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`w-full flex items-center gap-2 px-4 py-3 text-xs font-medium text-left border-l-2 transition-colors ${
-                      isActive
-                        ? "border-emerald-500 text-emerald-600 bg-emerald-50"
-                        : "border-transparent text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    <Icon size={14} />
-                    {tab.label}
-                  </button>
-                );
-              })}
+          {/* paid hone par ek clean success banner */}
+          {isPaid ? (
+            <div className="p-8 flex flex-col items-center text-center gap-3">
+              <CheckCircle2 size={44} className="text-emerald-500" />
+              <p className="text-lg font-extrabold text-slate-800">
+                Payment Successful!
+              </p>
+              <p className="text-sm text-slate-500">
+                Aapka{" "}
+                <span className="font-bold text-emerald-600">
+                  {plan?.name || "Pro"}
+                </span>{" "}
+                plan activate ho gaya hai.
+              </p>
+              <div className="flex gap-3 mt-2">
+                <button
+                  onClick={() => navigate("/pro/my-plan")}
+                  className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-colors"
+                >
+                  <Crown size={14} /> View My Plan
+                </button>
+                <button
+                  onClick={() => navigate("/")}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-lg transition-colors"
+                >
+                  Go Home
+                </button>
+              </div>
             </div>
+          ) : (
+            <div className="flex">
+              {/* tabs */}
+              <div className="w-40 border-r border-slate-100 py-3">
+                {TABS.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`w-full flex items-center gap-2 px-4 py-3 text-xs font-medium text-left border-l-2 transition-colors ${
+                        isActive
+                          ? "border-emerald-500 text-emerald-600 bg-emerald-50"
+                          : "border-transparent text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* tab content */}
-            <div className="flex-1 p-6">
-              {activeTab === "upi" && (
-                <div>
-                  {paymentStatus === "paid" ? (
-                    <div className="text-emerald-600 text-sm font-bold">
-                      ✅ Payment successful! Aapka plan activate ho gaya hai.
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm font-semibold text-slate-700 mb-1">
-                        Pay by any UPI app
-                      </p>
-                      <p className="text-xs text-slate-400 mb-4">
-                        "Pay Now" click karke Razorpay ka secure checkout
-                        khulega jisme QR scan ya UPI app se pay kar sakte ho.
-                      </p>
+              {/* tab content */}
+              <div className="flex-1 p-6">
+                {activeTab === "upi" && (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 mb-1">
+                      Pay by any UPI app
+                    </p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      "Pay Now" click karke Razorpay ka secure checkout khulega
+                      jisme QR scan ya UPI app se pay kar sakte ho.
+                    </p>
 
-                      <button
-                        onClick={() => handlePayNow("upi")}
-                        disabled={payLoading}
-                        className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
-                      >
-                        {payLoading && (
-                          <Loader2 size={14} className="animate-spin" />
-                        )}
-                        Pay Now via UPI
-                      </button>
-
-                      {payError && (
-                        <p className="text-[11px] text-red-500 mt-3 max-w-sm">
-                          ⚠️ {payError}
-                        </p>
+                    <button
+                      onClick={() => handlePayNow("upi")}
+                      disabled={payLoading}
+                      className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                    >
+                      {payLoading && (
+                        <Loader2 size={14} className="animate-spin" />
                       )}
-                    </>
-                  )}
-                </div>
-              )}
+                      Pay Now via UPI
+                    </button>
 
-              {activeTab === "card" && (
-                <div>
-                  {paymentStatus === "paid" ? (
-                    <div className="text-emerald-600 text-sm font-bold">
-                      ✅ Payment successful! Aapka plan activate ho gaya hai.
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm font-semibold text-slate-700 mb-1">
-                        Pay with Debit / Credit Card
+                    {payError && (
+                      <p className="text-[11px] text-red-500 mt-3 max-w-sm">
+                        ⚠️ {payError}
                       </p>
-                      <p className="text-xs text-slate-400 mb-4">
-                        "Pay Now" click karke Razorpay ka secure checkout
-                        khulega jisme card details daal kar pay kar sakte ho.
-                      </p>
+                    )}
+                  </div>
+                )}
 
-                      <button
-                        onClick={() => handlePayNow("card")}
-                        disabled={payLoading}
-                        className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
-                      >
-                        {payLoading && (
-                          <Loader2 size={14} className="animate-spin" />
-                        )}
-                        Pay Now via Card
-                      </button>
+                {activeTab === "card" && (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 mb-1">
+                      Pay with Debit / Credit Card
+                    </p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      "Pay Now" click karke Razorpay ka secure checkout khulega
+                      jisme card details daal kar pay kar sakte ho.
+                    </p>
 
-                      {payError && (
-                        <p className="text-[11px] text-red-500 mt-3 max-w-sm">
-                          ⚠️ {payError}
-                        </p>
+                    <button
+                      onClick={() => handlePayNow("card")}
+                      disabled={payLoading}
+                      className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                    >
+                      {payLoading && (
+                        <Loader2 size={14} className="animate-spin" />
                       )}
-                    </>
-                  )}
-                </div>
-              )}
+                      Pay Now via Card
+                    </button>
 
-              {activeTab === "offers" && (
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 mb-1">
-                    Offers
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Is order ke liye abhi koi offer available nahi hai.
-                  </p>
-                </div>
-              )}
+                    {payError && (
+                      <p className="text-[11px] text-red-500 mt-3 max-w-sm">
+                        ⚠️ {payError}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "offers" && (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 mb-1">
+                      Offers
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Is order ke liye abhi koi offer available nahi hai.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* ── RIGHT: ORDER SUMMARY ── */}
@@ -402,12 +432,27 @@ const OrderSummaryPay = () => {
           <h3 className="text-sm font-bold text-slate-800 mb-4">
             Package Summary
           </h3>
+
           <div className="text-xs text-slate-500 mb-1">Email</div>
-          <div className="text-sm text-slate-800 mb-4">{order.email}</div>
+          <div className="text-sm text-slate-800 mb-4 break-all">
+            {order.email}
+          </div>
+
+          {order.full_name && (
+            <>
+              <div className="text-xs text-slate-500 mb-1">Name</div>
+              <div className="text-sm text-slate-800 mb-4">
+                {order.full_name}
+              </div>
+            </>
+          )}
 
           <div className="text-xs text-slate-500 mb-1">Details</div>
           <div className="flex justify-between text-sm text-slate-800 mb-2">
-            <span>{plan?.name} - (1 MONTH)</span>
+            <span>
+              {plan?.name || "Pro Plan"}
+              {order.duration_label ? ` - (${order.duration_label})` : ""}
+            </span>
             <span>₹{order.amount}</span>
           </div>
 
@@ -415,6 +460,20 @@ const OrderSummaryPay = () => {
             <span>Grand Total</span>
             <span>₹{order.amount}</span>
           </div>
+
+          {/* paid hone par plan + txn dikhega */}
+          {isPaid && (
+            <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
+              <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-bold">
+                <Crown size={13} /> {plan?.name || "Pro"} — Active
+              </div>
+              {order.razorpay_payment_id && (
+                <div className="text-[11px] text-slate-400 font-mono break-all">
+                  Txn: {order.razorpay_payment_id}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

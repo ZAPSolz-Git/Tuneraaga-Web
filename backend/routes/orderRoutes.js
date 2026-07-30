@@ -14,14 +14,16 @@ const {
 
 const { validateOrderPayload } = require("../middleware/validateOrderPayload");
 
-// ⚠️ CONFIRM FILENAME: agar aapki file "auth.js" ya kisi aur naam se
-// saved hai, toh yahan "authMiddleware" ki jagah woh naam likho.
+// ⚠️ CONFIRM: ye do naam (authenticateUser, requireAdmin) aur file ka path
+// tumhare actual middleware se exactly match karne chahiye. Warna server
+// start hote hi "undefined is not a function" / "cannot read properties of
+// undefined" crash aayega.
 const {
   authenticateUser,
   requireAdmin,
 } = require("../middleware/authMiddleware");
 
-// 🔒 Auth required BEFORE payment can start — login first, then pay.
+// ── PROTECTED: login zaroori (req.user set hota hai) ──
 router.post(
   "/ordersummarypay",
   authenticateUser,
@@ -35,18 +37,16 @@ router.post(
 );
 router.post("/orders/:orderId/verify-payment", authenticateUser, verifyPayment);
 
-// Webhook is called by Razorpay's servers directly (no user token) —
-// must NOT have authenticateUser. Protected by signature verification
-// inside handleRazorpayWebhook itself.
+// ── PUBLIC: Razorpay servers se aata hai (koi user token nahi) ──
+// authenticateUser MAT lagao — signature verification handler ke andar hai.
 router.post("/orders/razorpay-webhook", handleRazorpayWebhook);
 
+// ── PROTECTED reads ──
 router.get("/orders/:orderId/status", authenticateUser, checkOrderStatus);
 router.get("/orders/:orderId/receipt", authenticateUser, downloadReceipt);
-
 router.get("/me/subscription", authenticateUser, getMySubscription);
 
-// 👇 requireAdmin already checks login + admin role both, isliye
-// authenticateUser dobara lagane ki zaroorat nahi.
+// ── ADMIN: requireAdmin already login + admin role dono check karta hai ──
 router.get("/orders", requireAdmin, getAllOrders);
 
 module.exports = router;

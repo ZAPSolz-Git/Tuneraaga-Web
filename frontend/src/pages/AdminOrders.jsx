@@ -50,69 +50,102 @@ const AdminOrders = () => {
     );
 
   return (
-    <div className="p-4 md:p-8 overflow-x-auto">
-      <h1 className="text-xl font-extrabold mb-4">All Transactions</h1>
-      <table className="min-w-full text-xs border border-slate-200">
-        <thead className="bg-slate-100 text-slate-600">
-          <tr>
-            {[
-              "Date",
-              "Name",
-              "Email",
-              "Phone",
-              "Plan",
-              "Plan ID",
-              "Amount",
-              "Type",
-              "Status",
-              "Transaction ID",
-              "Order ID",
-              "User ID",
-            ].map((h) => (
-              <th
-                key={h}
-                className="px-3 py-2 text-left border-b whitespace-nowrap"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.id} className="border-b hover:bg-slate-50">
-              <td className="px-3 py-2 whitespace-nowrap">
-                {new Date(o.created_at).toLocaleString("en-IN")}
-              </td>
-              <td className="px-3 py-2">{o.full_name || "—"}</td>
-              <td className="px-3 py-2">{o.email}</td>
-              <td className="px-3 py-2">{o.phone || "—"}</td>
-              <td className="px-3 py-2">{o.plan_name || "—"}</td>
-              <td className="px-3 py-2 font-mono">{o.plan_id}</td>
-              <td className="px-3 py-2">₹{o.amount}</td>
-              <td className="px-3 py-2">
-                <span
-                  className={
-                    Number(o.amount) === 0 || o.payment_type === "free"
-                      ? "text-blue-600 font-bold"
-                      : "text-emerald-600 font-bold"
-                  }
+    <div className="p-4 md:p-8">
+      <h1 className="text-xl font-extrabold mb-1">All Transactions</h1>
+      <p className="text-slate-500 text-xs mb-4">
+        {orders.length} orders · konse user ne konsa plan liya
+      </p>
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+        <table className="min-w-full text-xs bg-white">
+          <thead className="bg-slate-100 text-slate-600">
+            <tr>
+              {[
+                "Date",
+                "Name",
+                "Email",
+                "Phone",
+                "Plan",
+                "Plan ID",
+                "Amount",
+                "Type",
+                "Status",
+                "Transaction ID",
+                "Order ID",
+              ].map((h) => (
+                <th
+                  key={h}
+                  className="px-3 py-2 text-left border-b whitespace-nowrap"
                 >
-                  {Number(o.amount) === 0 || o.payment_type === "free"
-                    ? "FREE"
-                    : "PAID"}
-                </span>
-              </td>
-              <td className="px-3 py-2">{o.status}</td>
-              <td className="px-3 py-2 font-mono">
-                {o.razorpay_payment_id || "—"}
-              </td>
-              <td className="px-3 py-2 font-mono">{o.id}</td>
-              <td className="px-3 py-2 font-mono">{o.user_id}</td>
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {orders.length === 0 && (
+              <tr>
+                <td
+                  colSpan={11}
+                  className="px-3 py-6 text-center text-slate-400"
+                >
+                  Koi transaction nahi mila.
+                </td>
+              </tr>
+            )}
+            {orders.map((o) => {
+              const free = Number(o.amount) === 0 || o.payment_type === "free";
+              return (
+                <tr key={o.id} className="border-b hover:bg-slate-50">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {new Date(o.created_at).toLocaleString("en-IN")}
+                  </td>
+                  <td className="px-3 py-2">{o.full_name || "—"}</td>
+                  <td className="px-3 py-2">{o.email}</td>
+                  <td className="px-3 py-2">{o.phone || "—"}</td>
+                  <td className="px-3 py-2 font-semibold">
+                    {o.plan_name || "—"}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[10px]">
+                    {o.plan_id}
+                  </td>
+                  <td className="px-3 py-2">
+                    {free ? "FREE" : `₹${o.amount}`}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={
+                        free
+                          ? "text-blue-600 font-bold"
+                          : "text-emerald-600 font-bold"
+                      }
+                    >
+                      {free ? "FREE" : "PAID"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={
+                        o.status === "paid"
+                          ? "text-emerald-600 font-semibold"
+                          : o.status === "failed"
+                            ? "text-red-500 font-semibold"
+                            : "text-amber-500 font-semibold"
+                      }
+                    >
+                      {o.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[10px]">
+                    {o.razorpay_payment_id || (free ? "FREE" : "—")}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-[10px]">{o.id}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
