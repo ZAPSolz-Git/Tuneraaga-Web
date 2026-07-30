@@ -62,6 +62,9 @@ import ArtistLayout from "./artist/ArtistLayout1";
 import AdminLayout from "./admin/AdminLayout1";
 import LoginPage from "./pages/LoginPage";
 
+// Incoming Songs
+import IncomingSongs from "./admin/IncomingSongs";
+
 // ✅ Center Toast
 import CenterToast from "./components/CenterToast";
 
@@ -160,6 +163,7 @@ function App() {
               <Route path="top-charts" element={<TopChartAdmin />} />
               <Route path="top-playlists" element={<TopPlaylistAdmin />} />
               <Route path="new-release" element={<AdminNewRelease />} />
+              <Route path="/admin/incoming-songs" element={<IncomingSongs />} />
               <Route path="song-edit" element={<SongEditAdmin />} />
               <Route path="podcasts" element={<PodcastAdmin />} />
               <Route path="radio" element={<RadioAdmin />} />

@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 
-// isPro = TRUE sirf tab jab user ka koi PAID order ho.
-// Login ya role='premium' pe bharosa nahi — paid order hi asli proof hai.
 export function useIsPro() {
   const [isPro, setIsPro] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -16,7 +14,9 @@ export function useIsPro() {
       const email = session?.user?.email?.toLowerCase();
 
       if (!email) {
-        setIsPro(false); // logged out -> ad aayega
+        console.log("[useIsPro] logged out -> isPro=false (ad aayega)");
+        setIsPro(false);
+        setChecking(false);
         return;
       }
 
@@ -27,12 +27,19 @@ export function useIsPro() {
         .eq("status", "paid")
         .limit(1);
 
-      if (error) {
-        console.error("useIsPro error:", error.message);
-        setIsPro(false);
-        return;
-      }
-      setIsPro((data || []).length > 0);
+      const pro = !error && (data || []).length > 0;
+      console.log(
+        "[useIsPro] email:",
+        email,
+        "paid orders:",
+        data?.length ?? 0,
+        "=> isPro:",
+        pro,
+      );
+      setIsPro(pro);
+    } catch (e) {
+      console.error("[useIsPro] error:", e);
+      setIsPro(false); // fail -> ad aayega (safe)
     } finally {
       setChecking(false);
     }

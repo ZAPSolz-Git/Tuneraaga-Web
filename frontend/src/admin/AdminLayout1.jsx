@@ -18,6 +18,7 @@ import {
   Users,
   LogOut,
   Upload,
+  Inbox,
   ListMusic,
   Sparkles,
   Award,
@@ -199,6 +200,13 @@ const AdminLayout = () => {
                     to="/admin/new-release"
                     icon={Upload}
                     label="Release Song"
+                    sidebarOpen={sidebarOpen}
+                  />
+
+                  <NavItem
+                    to="/admin/incoming-songs"
+                    icon={Inbox}
+                    label="Incoming Songs"
                     sidebarOpen={sidebarOpen}
                   />
 

@@ -73,6 +73,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [topBannerDismissed, setTopBannerDismissed] = useState(false);
+  const [isPaid, setIsPaid] = useState(false); // 🔊 paid user?
 
   const [expandHandler, setExpandHandlerState] = useState(null);
   const [profileOpen, setProfileOpenState] = useState(false);
@@ -87,6 +88,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const isShuffleRef = useRef(false);
   const countedSongIds = useRef(new Set());
   const userRef = useRef(null);
+  const isPaidRef = useRef(false); // 🔊 live paid flag (ad decision isi se)
 
   const isAdPlayingRef = useRef(false);
   const pendingSongRef = useRef(null);
@@ -110,29 +112,56 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     isShuffleRef.current = isShuffle;
   }, [isShuffle]);
 
-  // ✅ AUTH & SESSION
+  // 🔊 email ka koi PAID order hai? -> isPaid true (tabhi ad-free)
+  const checkPaid = useCallback(async (email) => {
+    if (!email) {
+      isPaidRef.current = false;
+      setIsPaid(false);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id")
+        .ilike("email", email.toLowerCase())
+        .eq("status", "paid")
+        .limit(1);
+      const paid = !error && (data || []).length > 0;
+      isPaidRef.current = paid;
+      setIsPaid(paid);
+      console.log("[Player] email:", email, "=> isPaid:", paid);
+    } catch (e) {
+      console.error("checkPaid error:", e);
+      isPaidRef.current = false;
+      setIsPaid(false);
+    }
+  }, []);
+
+  // ✅ AUTH & SESSION (+ paid check)
   useEffect(() => {
     const getSession = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
+      const u = session?.user ?? null;
+      setUser(u);
+      userRef.current = u;
       setAuthChecked(true);
+      checkPaid(u?.email);
     };
     getSession();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      userRef.current = session?.user ?? null;
+      const u = session?.user ?? null;
+      setUser(u);
+      userRef.current = u;
       setAuthChecked(true);
-      if (session?.user) {
-        setTopBannerDismissed(false);
-      }
+      if (u) setTopBannerDismissed(false);
+      checkPaid(u?.email);
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [checkPaid]);
 
   const fetchAds = useCallback(async () => {
     if (adsFetchedRef.current) return adsListRef.current;
@@ -327,6 +356,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       if (playTokenRef.current !== token) return;
 
       if (!ad || !ad.audio_url) {
+        // koi ad configured nahi -> user ko block mat karo, song chalao
         isAdPlayingRef.current = false;
         setIsAdPlaying(false);
         startActualSong(song);
@@ -361,7 +391,8 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         return;
       }
 
-      if (userRef.current) {
+      // 🔊 SIRF PAID -> koi ad nahi. Non-paid (login ya logout) -> ad chalega.
+      if (isPaidRef.current) {
         startActualSong(song);
       } else {
         playAd(song);
@@ -451,7 +482,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     finishAdAndPlayPending();
   }, [currentTime, finishAdAndPlayPending]);
 
-  // ✅ FIX: Keep refs in sync with latest callbacks (no re-render, no infinite loop)
   const handleNextRef = useRef(handleNext);
   const finishAdPlayAndPlayPendingRef = useRef(finishAdAndPlayPending);
   useEffect(() => {
@@ -459,7 +489,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     finishAdPlayAndPlayPendingRef.current = finishAdAndPlayPending;
   });
 
-  // ✅ FIX: Audio setup runs ONCE — uses refs for callbacks, not direct dependencies
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
@@ -474,7 +503,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     const onPause = () => setPlaying(false);
     const onError = () => {
       if (isAdPlayingRef.current) {
-        finishAdAndPlayPendingRef.current();
+        finishAdPlayAndPlayPendingRef.current();
       } else {
         setPlaying(false);
       }
@@ -504,7 +533,6 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       audio.removeAttribute("src");
       audio.load();
     };
-    // ✅ Empty dependency array — runs ONCE on mount, never re-runs
   }, []);
 
   useEffect(() => {
@@ -550,7 +578,8 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const toggleShuffle = useCallback(() => setIsShuffle((s) => !s), []);
 
   const canSkipAd = isAdPlaying && currentTime >= AD_SKIP_AFTER_SECONDS;
-  const showTopBanner = authChecked && !user && !topBannerDismissed;
+  // banner sirf un logged-in users ko bhi jo paid NAHI hain + logged-out
+  const showTopBanner = authChecked && !isPaid && !topBannerDismissed;
 
   const dismissTopBanner = useCallback(() => {
     setTopBannerDismissed(true);
@@ -570,6 +599,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     canSkipAd,
     adSkipAfterSeconds: AD_SKIP_AFTER_SECONDS,
     user,
+    isPaid,
     profileOpen,
     setProfileOpen: setProfileOpenState,
     showTopBanner,
