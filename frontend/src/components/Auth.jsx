@@ -212,7 +212,7 @@ const handleCancelLink = async () => {
             setNeedsConfirm(true);
           } else if (msg.includes("invalid login")) {
             setError(
-              "Galat email ya password — ya email abhi confirm nahi hui. (Neeche Resend try karo, ya Supabase mein 'Confirm email' OFF karo.)",
+              "Incorrect email or password — or the email has not been confirmed yet. (Try Resend below, or turn OFF 'Confirm email' in Supabase.)",
             );
             setNeedsConfirm(true);
           } else {
