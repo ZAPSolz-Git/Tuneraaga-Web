@@ -13,6 +13,7 @@ router.post("/signup", authController.signup);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
 
+router.post("/verify-distribution", authController.verifyDistribution);
 // ─── Protected Routes ───
 
 router.get("/profile", authenticateUser, authController.getProfile);

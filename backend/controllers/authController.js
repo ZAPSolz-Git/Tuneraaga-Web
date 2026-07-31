@@ -89,6 +89,7 @@ exports.login = async (req, res) => {
   }
 };
 
+
 // --- 2. SIGNUP ---
 exports.signup = async (req, res) => {
   try {
@@ -643,5 +644,100 @@ exports.resetPassword = async (req, res) => {
       success: false,
       message: "Something went wrong. Please try again.",
     });
+  }
+};
+
+
+// controllers/authController.js
+exports.verifyDistribution = async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: "Email and password are required." });
+  }
+
+  try {
+    // 1. Server-to-server call — Distribution verifies its own credentials
+    const distRes = await fetch(`${process.env.DISTRIBUTION_API_URL}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const distData = await distRes.json();
+
+    if (!distRes.ok) {
+      return res.status(401).json({ success: false, message: "Invalid Movement Creations email or password." });
+    }
+
+    const { id: distributionUserId, role, full_name, phone } = distData.user;
+    if (role !== "user") {
+      return res.status(403).json({ success: false, message: "Only listener accounts can be used on this app." });
+    }
+
+    // 2. Already linked before? Match on the canonical distribution id OR email —
+    //    email is unique on this table, so any row already sitting on this email
+    //    (self-healed by getProfile, an earlier native signup, a prior partial
+    //    attempt, etc.) counts as "already there" and must not be re-inserted.
+    const { data: existing, error: existingErr } = await supabaseAdmin
+      .from("users")
+      .select("id, email")
+      .or(`id.eq.${distributionUserId},email.eq.${email}`)
+      .maybeSingle();
+
+    if (existingErr) {
+      console.error("verifyDistribution lookup error:", existingErr.message);
+      return res.status(500).json({ success: false, message: existingErr.message });
+    }
+
+    if (existing) {
+      return res.status(200).json({ success: true, linked: true, email: existing.email });
+    }
+
+    // 3. First time — create a real local Streaming auth account, same password,
+    //    so the frontend can sign in locally right after this call.
+    let localAuthId;
+    const { data: newAuth, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email, password, email_confirm: true,
+    });
+    if (createErr) {
+      // A prior attempt may have already created this local auth account without
+      // ever getting to the profile insert below — reuse it instead of failing.
+      if (!/registered|exists/i.test(createErr.message || "")) {
+        return res.status(500).json({ success: false, message: createErr.message });
+      }
+      const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 10000 });
+      const found = !listError && listData.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+      if (!found) {
+        return res.status(500).json({ success: false, message: createErr.message });
+      }
+      localAuthId = found.id;
+    } else {
+      localAuthId = newAuth.user.id;
+    }
+
+    // 4. Canonical profile row uses the distribution's id; local_auth_id links back
+    //    to the local auth account, so authMiddleware can resolve a local session
+    //    token to this same canonical user.
+    const { error: insertErr } = await supabaseAdmin.from("users").insert({
+      id: distributionUserId,
+      email,
+      full_name,
+      phone,
+      role: "user",
+      local_auth_id: localAuthId,
+    });
+    if (insertErr) {
+      // Race with another concurrent request (or a row that slipped in between
+      // our lookup and this insert) — treat as already linked rather than fail.
+      if (insertErr.code === "23505") {
+        return res.status(200).json({ success: true, linked: true, email });
+      }
+      console.error("verifyDistribution insert error:", insertErr.message);
+      return res.status(500).json({ success: false, message: insertErr.message });
+    }
+
+    return res.status(201).json({ success: true, linked: true, created: true, email });
+  } catch (err) {
+    console.error("verifyDistribution error:", err.message);
+    return res.status(500).json({ success: false, message: "Could not verify with Movement Creations." });
   }
 };
