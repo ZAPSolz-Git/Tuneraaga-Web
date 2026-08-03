@@ -2,13 +2,10 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useOutletContext } from "react-router-dom";
 import { Play, Pause, Music, Users, ListMusic, User, Search as SearchIcon } from "lucide-react";
-import { createClient } from '@supabase/supabase-js';
+import { supabase, API_BASE_URL } from "../lib/supabaseClient";
 
-// ─── CONFIGURATION ───
-const supabaseUrl = 'https://suaguciltgydkoyjmbmx.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWd1Y2lsdGd5ZGtveWptYm14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMjM3MTQsImV4cCI6MjA4ODc5OTcxNH0.ypgJm4BnNxalLsACpEtBF9T8uP5OwNSw4nwjiN-3rE8';
-const supabase = createClient(supabaseUrl, supabaseKey);
-const ARTIST_API_URL = "http://localhost:5000/api/artists";
+const ARTIST_API_URL = `${API_BASE_URL}/artists`;
+const SEARCH_DEBOUNCE_MS = 300;
 
 // ─── COLORS ───
 const BLUE_LIGHT = "#3b82f6";
@@ -33,52 +30,59 @@ const UniversalSearch = () => {
 
   // ─── FETCH LOGIC ───
   useEffect(() => {
-    const fetchGlobalResults = async () => {
-      if (!searchQuery || searchQuery.trim() === "") {
-        setResults({ songs: [], playlists: [], artists: [] });
-        return;
-      }
+    if (!searchQuery || searchQuery.trim() === "") {
+      setResults({ songs: [], playlists: [], artists: [] });
+      setLoading(false);
+      return;
+    }
 
+    let cancelled = false;
+    const query = searchQuery.toLowerCase();
+
+    const timer = setTimeout(async () => {
       setLoading(true);
-      const query = searchQuery.toLowerCase();
-
       try {
-        // 1. Fetch Songs (Releases) from Supabase
-        const { data: songsData } = await supabase
-          .from('releases')
-          .select('*')
-          .or(`title.ilike.%${query}%,primary_artist.ilike.%${query}%`)
-          .limit(5);
+        const [songsRes, playlistsRes, artistsRes] = await Promise.all([
+          supabase
+            .from("releases")
+            .select("*")
+            .or(`title.ilike.%${query}%,primary_artist.ilike.%${query}%`)
+            .limit(5),
+          supabase
+            .from("playlists")
+            .select("*")
+            .ilike("title", `%${query}%`)
+            .limit(5),
+          fetch(ARTIST_API_URL).then((res) => res.json()),
+        ]);
 
-        // 2. Fetch Playlists from Supabase
-        const { data: playlistsData } = await supabase
-          .from('playlists')
-          .select('*')
-          .ilike('title', `%${query}%`)
-          .limit(5);
+        if (cancelled) return;
 
-        // 3. Fetch Artists from Local API
-        const artistRes = await fetch(ARTIST_API_URL);
-        const allArtists = await artistRes.json();
-        const filteredArtists = allArtists.filter(artist => 
-          artist.name.toLowerCase().includes(query) || 
-          artist.genre.toLowerCase().includes(query)
-        ).slice(0, 5);
+        const allArtists = Array.isArray(artistsRes) ? artistsRes : [];
+        const filteredArtists = allArtists
+          .filter(
+            (artist) =>
+              artist.name?.toLowerCase().includes(query) ||
+              artist.genre?.toLowerCase().includes(query),
+          )
+          .slice(0, 5);
 
         setResults({
-          songs: songsData || [],
-          playlists: playlistsData || [],
-          artists: filteredArtists || []
+          songs: songsRes.data || [],
+          playlists: playlistsRes.data || [],
+          artists: filteredArtists,
         });
-
       } catch (error) {
-        console.error("Search Error:", error);
+        if (!cancelled) console.error("Search Error:", error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    };
+    }, SEARCH_DEBOUNCE_MS);
 
-    fetchGlobalResults();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [searchQuery]);
 
   // ─── AUDIO HANDLER ───
