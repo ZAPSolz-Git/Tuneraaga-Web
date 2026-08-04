@@ -20,16 +20,16 @@ const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 const AudiencePage = () => {
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans relative">
-      {/* Hero Section - CLEAR Background Image, No Blur Overlay */}
+      
       <div className="relative w-full overflow-hidden py-24 border-b border-slate-200">
-        {/* Background Image - Clean, No Opacity/Blur */}
+       
         <img
           src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1920&h=800&fit=crop"
           alt="Audience Engagement"
           className="absolute inset-0 w-full h-full object-cover"
         />
 
-        {/* Gradient Overlay: Fades from White (bottom) to Dark (top) for text readability */}
+      
         <div className="absolute inset-0 bg-gradient-to-t from-white via-black/20 to-black/60" />
 
         {/* Hero Content - Glass Card for Readability */}
