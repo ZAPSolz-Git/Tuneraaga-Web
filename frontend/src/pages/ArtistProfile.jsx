@@ -307,13 +307,11 @@ const ArtistProfile = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ✅ FIXED: re-fetch on artist change + reset stale UI state + guard against
-  // race conditions (fast clicks between artists no longer show wrong data)
+  
   useEffect(() => {
     let isCancelled = false;
 
-    // Reset page-level UI state immediately so old artist's filters/tab
-    // don't linger and make it look like nothing navigated.
+  
     setActiveTab("songs");
     setSortBy("popular");
     setActiveLanguage(null);
@@ -322,7 +320,7 @@ const ArtistProfile = () => {
     setIsArtistLiked(false);
     countedSongIds.current = new Set();
 
-    // Scroll to top so the new artist's header is visible right away.
+
     window.scrollTo({
       top: 0,
       behavior: "instant" in window ? "instant" : "auto",
@@ -351,8 +349,7 @@ const ArtistProfile = () => {
           .order("play_count", { ascending: false });
         if (featError) throw featError;
 
-        // If a newer request has started (user clicked another artist
-        // before this one finished), drop this result entirely.
+       
         if (isCancelled) return;
 
         const collabOnly = (featData || []).filter(
