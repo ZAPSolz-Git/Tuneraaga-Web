@@ -655,24 +655,25 @@ const NewRelease = () => {
           .order("created_at", { ascending: false });
         if (error) throw error;
         setSongs(
-          data.map((song) => ({
-            id: song.id,
-            title: song.title,
-            artist: song.primary_artist,
-            featuringArtists: song.featuring_artists || "",
-            actorNames: song.actor_names || "",
-            movieName: song.movie_name || "",
-            img: song.cover_url || "https://via.placeholder.com/300",
-            audioUrl: song.audio_url,
-            language: song.language || "",
-            genre: song.genre || "",
-            subgenre: song.subgenre || "",
-            albumName: song.album_name || "",
-            albumCoverUrl: song.album_cover_url || song.cover_url || "",
-            format: song.format || "Single",
-            trackNumber: song.track_number || 1,
-            playCount: song.play_count || 0,
-          })),
+        data.map((song) => ({
+  id: song.id,
+  title: song.title,
+  artist: song.primary_artist,
+  featuringArtists: song.featuring_artists || "",
+  actorNames: song.actor_names || "",
+  movieName: song.movie_name || "",
+  img: song.cover_url || "https://via.placeholder.com/300",
+  audioUrl: song.audio_url,
+  language: song.language || "",
+  genre: song.genre || "",
+  subgenre: song.subgenre || "",
+  albumName: song.album_name || "",
+  albumCoverUrl: song.album_cover_url || song.cover_url || "",
+  format: song.format || "Single",
+  trackNumber: song.track_number || 1,
+  playCount: song.play_count || 0,
+  isCurated: !song.owner_user_id, // ← add this line
+})),
         );
       } catch (error) {
         console.error("Error fetching songs:", error);
