@@ -23,9 +23,12 @@ import {
   Sparkles,
   Award,
   Edit3,
+  Image as ImageIcon,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabaseClient";
+
+import HeroBannerAdmin from "./HeroBannerAdmin";
 
 // ─── Blue Gradient Palette ───
 const BLUE_LIGHT = "#3b82f6";
@@ -214,6 +217,13 @@ const AdminLayout = () => {
                     to="/admin/song-edit"
                     icon={Edit3}
                     label="Edit Songs"
+                    sidebarOpen={sidebarOpen}
+                  />
+
+                  <NavItem
+                    to="/admin/hero-banner"
+                    icon={ImageIcon}
+                    label="Hero Banner"
                     sidebarOpen={sidebarOpen}
                   />
 

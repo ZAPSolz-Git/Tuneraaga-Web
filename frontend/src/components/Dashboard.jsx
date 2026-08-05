@@ -17,13 +17,14 @@ const BLUE_DARK = "#1d4ed8";
 const TEXT_BLACK = "#0f172a";
 const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 
-const heroContent = {
+// ─── Fallback hero (used only while loading, or if no row exists yet in Supabase) ───
+const defaultHero = {
   id: "hero-mock",
   title: "The Tune Raaga",
   description:
     "A breathtaking journey through uncharted territories. Experience the visuals like never before in 4K HDR.",
-  logo: "/tuneraaga4.png",
-  image:
+  logo_url: "/tuneraaga4.png",
+  background_image_url:
     "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920&h=1080&fit=crop",
   rating: "U/A 13+",
   year: "2024",
@@ -42,6 +43,10 @@ const Dashboard = () => {
   const [loadingTrending, setLoadingTrending] = useState(true);
   const [loadingLatest, setLoadingLatest] = useState(true);
   const [loadingTop10, setLoadingTop10] = useState(true);
+
+  // ─── HERO BANNER STATE (now dynamic, comes from admin panel) ───
+  const [heroContent, setHeroContent] = useState(defaultHero);
+  const [loadingHero, setLoadingHero] = useState(true);
 
   // ─── AUDIO STATE ───
   const audioRef = useRef(null);
@@ -69,10 +74,44 @@ const Dashboard = () => {
 
   // Fetch All Data
   useEffect(() => {
+    fetchHeroBanner();
     fetchTrending();
     fetchLatestReleases();
     fetchTop10India();
   }, []);
+
+  // 0. Fetch Hero Banner (editable from admin panel)
+  const fetchHeroBanner = async () => {
+    setLoadingHero(true);
+    try {
+      const { data, error } = await supabase
+        .from("hero_banner")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setHeroContent({
+          id: data.id,
+          title: data.title || defaultHero.title,
+          description: data.description || defaultHero.description,
+          logo_url: data.logo_url || defaultHero.logo_url,
+          background_image_url:
+            data.background_image_url || defaultHero.background_image_url,
+          rating: data.rating || defaultHero.rating,
+          year: data.year || defaultHero.year,
+          audio_url: data.audio_url || defaultHero.audio_url,
+        });
+      }
+    } catch (err) {
+      console.error("Hero banner fetch failed, using default:", err);
+    } finally {
+      setLoadingHero(false);
+    }
+  };
 
   // Helper function to format items with unique IDs
   const formatItems = (data, prefix) => {
@@ -199,11 +238,15 @@ const Dashboard = () => {
       {/* Hero Section */}
       <div className="relative h-[85vh] w-full">
         <div className="absolute inset-0">
-          <img
-            src={heroContent.image}
-            alt="Hero"
-            className="w-full h-full object-cover"
-          />
+          {loadingHero ? (
+            <div className="w-full h-full bg-slate-200 animate-pulse" />
+          ) : (
+            <img
+              src={heroContent.background_image_url}
+              alt="Hero"
+              className="w-full h-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-black/30 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
         </div>
@@ -221,10 +264,9 @@ const Dashboard = () => {
               {heroContent.rating}
             </span>
 
-            {/* ✅ FIXED LOGO: Removed scale(1.1) and 90vw to prevent horizontal scrolling on mobile */}
             <div className="mt-6 md:mt-12 mb-2 w-full max-w-[320px] md:max-w-[400px]">
               <img
-                src={heroContent.logo}
+                src={heroContent.logo_url}
                 alt={heroContent.title}
                 className="w-full h-auto object-contain drop-shadow-[0_4px_24px_rgba(0,0,0,0.6)] md:translate-y-8"
               />
@@ -407,7 +449,6 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
           draggable="false"
         />
 
-        {/* Dark Gradient Overlay on Hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-300" />
 
         <AnimatePresence>
@@ -418,7 +459,6 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
               exit={{ opacity: 0, y: 10 }}
               className="absolute bottom-0 left-0 right-0 p-3 z-10 flex flex-col items-center justify-end h-full"
             >
-              {/* Play Button - Centered */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -434,17 +474,14 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
                 )}
               </button>
 
-              {/* Song Name */}
               <p className="font-bold text-base text-white text-center truncate w-full">
                 {item.title}
               </p>
 
-              {/* Artist Name */}
               <p className="text-sm text-gray-300 text-center truncate w-full">
                 {item.type}
               </p>
 
-              {/* Now Playing Indicator */}
               {isThisSongPlaying && (
                 <p className="text-xs text-blue-400 font-bold mt-1 animate-pulse">
                   Now Playing...
