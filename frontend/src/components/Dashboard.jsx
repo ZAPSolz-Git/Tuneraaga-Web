@@ -1,9 +1,12 @@
 /* eslint-disable no-unused-vars */
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Volume2, VolumeX, Info, Loader2, Pause } from "lucide-react";
+import { Play, Info, Loader2, Pause } from "lucide-react";
 import { useOutletContext } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
+
+
+import { usePlayer } from "../components/PlayerContext";
 
 // ─── CONFIGURATION ───
 const supabaseUrl = "https://suaguciltgydkoyjmbmx.supabase.co";
@@ -23,7 +26,7 @@ const defaultHero = {
   title: "The Tune Raaga",
   description:
     "A breathtaking journey through uncharted territories. Experience the visuals like never before in 4K HDR.",
-  logo_url: "/tuneraaga4.png",
+  logo_url: "/Tuneraaga2.png",
   background_image_url:
     "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920&h=1080&fit=crop",
   rating: "U/A 13+",
@@ -32,8 +35,10 @@ const defaultHero = {
 };
 
 const Dashboard = () => {
-  const [isMuted, setIsMuted] = useState(true);
   const { searchQuery } = useOutletContext();
+
+  
+  const { playing, currentSong, handleSongClick } = usePlayer();
 
   // --- STATES FOR ALL SECTIONS ---
   const [trendingSongs, setTrendingSongs] = useState([]);
@@ -47,30 +52,6 @@ const Dashboard = () => {
   // ─── HERO BANNER STATE (now dynamic, comes from admin panel) ───
   const [heroContent, setHeroContent] = useState(defaultHero);
   const [loadingHero, setLoadingHero] = useState(true);
-
-  // ─── AUDIO STATE ───
-  const audioRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentSong, setCurrentSong] = useState(null);
-
-  // Audio Setup
-  useEffect(() => {
-    audioRef.current = new Audio();
-    audioRef.current.loop = true;
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, []);
-
-  // Mute Sync
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = isMuted;
-    }
-  }, [isMuted]);
 
   // Fetch All Data
   useEffect(() => {
@@ -113,7 +94,7 @@ const Dashboard = () => {
     }
   };
 
-  // Helper function to format items with unique IDs
+  
   const formatItems = (data, prefix) => {
     return (data || [])
       .map((item, index) => {
@@ -122,9 +103,9 @@ const Dashboard = () => {
           uniqueKey: `${prefix}-${item.releases.id}-${index}`,
           id: item.releases.id,
           title: item.releases.title,
-          image: item.releases.cover_url,
-          type: item.releases.primary_artist,
-          audio_url: item.releases.audio_url,
+          img: item.releases.cover_url,
+          artist: item.releases.primary_artist,
+          audioUrl: item.releases.audio_url,
         };
       })
       .filter(Boolean);
@@ -181,35 +162,25 @@ const Dashboard = () => {
     }
   };
 
-  // ─── AUDIO CONTROLLER ───
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (isPlaying) {
-      audio.play().catch((e) => console.log("Auto-play prevented:", e));
-    } else {
-      audio.pause();
-    }
-  }, [isPlaying]);
-
-  const handlePlaySong = (song) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (currentSong && currentSong.id === song.id) {
-      setIsPlaying(!isPlaying);
-    } else {
-      setCurrentSong(song);
-      audio.src = song.audio_url;
-      audio.load();
-      if (isMuted) {
-        setIsMuted(false);
-        audio.muted = false;
-      }
-      setIsPlaying(true);
-    }
+  
+  const handleRowPlay = (song, list) => {
+    const idx = list.findIndex((s) => s.id === song.id);
+    handleSongClick(idx === -1 ? 0 : idx, song, list);
   };
+
+  
+  const handlePlayHero = () => {
+    const heroTrack = {
+      id: heroContent.id,
+      title: heroContent.title,
+      artist: heroContent.year || "",
+      img: heroContent.background_image_url || heroContent.logo_url,
+      audioUrl: heroContent.audio_url,
+    };
+    handleSongClick(0, heroTrack, [heroTrack]);
+  };
+
+  const isHeroPlaying = currentSong?.id === heroContent.id && playing;
 
   // Combine data for Rows
   const allRows = [
@@ -264,7 +235,7 @@ const Dashboard = () => {
               {heroContent.rating}
             </span>
 
-            <div className="mt-6 md:mt-12 mb-2 w-full max-w-[320px] md:max-w-[400px]">
+            <div className="mt-6 md:mt-12 mb-2 w-full max-w-  [320px] md:max-w-[400px]">
               <img
                 src={heroContent.logo_url}
                 alt={heroContent.title}
@@ -281,18 +252,16 @@ const Dashboard = () => {
 
             <div className="flex items-center gap-3 flex-wrap">
               <button
-                onClick={() => handlePlaySong(heroContent)}
+                onClick={handlePlayHero}
                 className="flex items-center gap-2 px-5 py-2.5 md:px-6 md:py-3 rounded-md font-semibold text-white shadow-lg transition-all hover:opacity-90 text-sm md:text-base"
                 style={{ background: BLUE_GRADIENT }}
               >
-                {currentSong?.id === heroContent.id && isPlaying ? (
+                {isHeroPlaying ? (
                   <Pause className="w-4 h-4 md:w-5 md:h-5 fill-white" />
                 ) : (
                   <Play className="w-4 h-4 md:w-5 md:h-5 fill-white" />
                 )}
-                {currentSong?.id === heroContent.id && isPlaying
-                  ? "Pause"
-                  : "Play"}
+                {isHeroPlaying ? "Pause" : "Play"}
               </button>
 
               <button className="flex items-center gap-2 px-5 py-2.5 md:px-6 md:py-3 rounded-md font-semibold bg-white/20 backdrop-blur-md border border-white/30 text-white hover:bg-white/30 transition-all shadow-sm text-sm md:text-base">
@@ -301,20 +270,6 @@ const Dashboard = () => {
             </div>
           </motion.div>
         </div>
-
-        <button
-          onClick={() => {
-            setIsMuted(!isMuted);
-            if (audioRef.current) audioRef.current.muted = !isMuted;
-          }}
-          className="absolute right-4 md:right-10 bottom-[20%] border border-white/30 rounded-full p-2 bg-black/20 backdrop-blur-sm hover:bg-black/40 transition-colors shadow-sm"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
-        </button>
       </div>
 
       {/* Content Rows */}
@@ -341,15 +296,16 @@ const Dashboard = () => {
           );
           if (searchQuery && filteredItems.length === 0) return null;
 
+          const rowItems = searchQuery ? filteredItems : row.items;
+
           return (
             <ContentRow
               key={row.rowKey}
               title={row.title}
-              items={searchQuery ? filteredItems : row.items}
-              searchQuery={searchQuery}
-              onPlaySong={handlePlaySong}
+              items={rowItems}
+              onPlaySong={(song) => handleRowPlay(song, rowItems)}
               currentSong={currentSong}
-              isPlaying={isPlaying}
+              isPlaying={playing}
             />
           );
         })}
@@ -358,14 +314,7 @@ const Dashboard = () => {
   );
 };
 
-const ContentRow = ({
-  title,
-  items,
-  searchQuery,
-  onPlaySong,
-  currentSong,
-  isPlaying,
-}) => {
+const ContentRow = ({ title, items, onPlaySong, currentSong, isPlaying }) => {
   const rowRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
@@ -443,7 +392,7 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
     >
       <div className="relative aspect-video rounded-md overflow-hidden border border-slate-200 hover:border-blue-400 hover:shadow-xl transition-all duration-300">
         <img
-          src={item.image}
+          src={item.img}
           alt={item.title}
           className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-110"
           draggable="false"
@@ -479,7 +428,7 @@ const ContentCard = ({ item, onPlaySong, currentSong, isPlaying }) => {
               </p>
 
               <p className="text-sm text-gray-300 text-center truncate w-full">
-                {item.type}
+                {item.artist}
               </p>
 
               {isThisSongPlaying && (

@@ -343,6 +343,54 @@ const PlaylistSidebar = ({ user, sidebarOpen }) => {
   );
 };
 
+/**
+ * SiteLogo
+ * ─────────────────────────────────────────────────────────
+ * No static fallback file is used anymore. While the logo is being
+ * fetched from Supabase we render a neutral animated skeleton block
+ * (same footprint as the real logo) instead of a static <img>. This
+ * removes the "flash of static logo -> real logo" that happened when
+ * siteLogoUrl was initialized with a static file path.
+ *
+ * - loading === true            -> skeleton pulse block
+ * - loading === false && url    -> real logo <img>
+ * - loading === false && !url   -> generic (non-branded) music icon
+ */
+const SiteLogo = ({ url, loading, variant }) => {
+  const isSidebar = variant === "sidebar";
+  const boxClass = isSidebar ? "h-16 w-44" : "h-8 w-28";
+
+  if (loading) {
+    return (
+      <div
+        className={`${boxClass} rounded-lg bg-slate-200 animate-pulse`}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (!url) {
+    return (
+      <div
+        className={`${boxClass} rounded-lg flex items-center justify-center`}
+        style={{ background: BLUE_GRADIENT }}
+      >
+        <Music className="w-1/3 h-1/3 text-white" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt="Tune Raaga"
+      className={
+        isSidebar ? "h-16 w-44 object-cover" : "h-8 w-auto object-contain"
+      }
+    />
+  );
+};
+
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("browse");
@@ -358,6 +406,14 @@ const Layout = () => {
   const [subscription, setSubscription] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState("login");
+
+  // ─── DYNAMIC WEBSITE LOGO (set from admin/HeroBannerAdmin.jsx) ───
+  // No static fallback file. Starts as null + loading=true so the UI
+  // shows a skeleton instead of a static image while we fetch the
+  // real logo from Supabase. Once fetched, siteLogoUrl is set and
+  // loadingLogo becomes false — only then is the real <img> rendered.
+  const [siteLogoUrl, setSiteLogoUrl] = useState(null);
+  const [loadingLogo, setLoadingLogo] = useState(true);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -377,6 +433,35 @@ const Layout = () => {
       setUser(session?.user || null);
     });
     return () => subscription.unsubscribe();
+  }, []);
+
+  // ✅ Website logo — fetched once on mount from the same singleton
+  // hero_banner row that HeroBannerAdmin.jsx writes to. No static
+  // fallback is used: while the request is in flight, loadingLogo
+  // stays true and the UI shows a skeleton. If the row genuinely has
+  // no logo, siteLogoUrl stays null and a generic (non-static) icon
+  // is shown instead of a bundled static image file.
+  useEffect(() => {
+    const fetchSiteLogo = async () => {
+      setLoadingLogo(true);
+      try {
+        const { data, error } = await supabase
+          .from("hero_banner")
+          .select("site_logo_url")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) throw error;
+        setSiteLogoUrl(data?.site_logo_url || null);
+      } catch (err) {
+        console.error("Site logo fetch failed:", err);
+        setSiteLogoUrl(null);
+      } finally {
+        setLoadingLogo(false);
+      }
+    };
+    fetchSiteLogo();
   }, []);
 
   // ✅ current plan fetch — payment/receipt ke baad ya route change par auto update
@@ -508,10 +593,10 @@ const Layout = () => {
         <nav className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
           <div className="px-4 py-3 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-2">
-              <img
-                src="/tuneraaga.png"
-                alt="Tune Raaga"
-                className="h-8 w-auto"
+              <SiteLogo
+                url={siteLogoUrl}
+                loading={loadingLogo}
+                variant="header"
               />
             </Link>
             <div className="flex items-center gap-2">
@@ -640,10 +725,10 @@ const Layout = () => {
                 className="flex items-center p-2 rounded-lg"
                 style={{ background: "rgba(0, 0, 0, 0.03)" }}
               >
-                <img
-                  src="/tuneraaga.png"
-                  alt="Tune Raaga Logo"
-                  className="h-16 w-44 object-cover"
+                <SiteLogo
+                  url={siteLogoUrl}
+                  loading={loadingLogo}
+                  variant="sidebar"
                 />
               </Link>
             ) : (

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { Loader2, UploadCloud, Save, Music } from "lucide-react";
 import { toastEvents } from "../utils/toastEvents";
+import { useNavigate } from "react-router-dom";
 
 // ─── Supabase project (same one used for auth + DB) ───
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -22,6 +23,13 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // or keep it private and swap getPublicUrl() for createSignedUrl() below.
 const BUCKET = "hero-assets";
 
+// Must match the event name AdminLayout.jsx listens for. Firing this after
+// a successful save lets the sidebar logo / top-bar text update immediately
+// — without it, AdminLayout only re-fetches on mount, so navigating to
+// "/admin" (same layout, no remount) would leave the old logo/text showing
+// until a manual page refresh.
+const ADMIN_BRANDING_EVENT = "admin-branding-updated";
+
 const BLUE_LIGHT = "#3b82f6";
 const BLUE_DARK = "#1d4ed8";
 const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
@@ -35,16 +43,31 @@ const emptyForm = {
   rating: "",
   year: "",
   audio_url: "",
+  site_logo_url: "",
+  admin_panel_logo_url: "",
+  admin_panel_top_text: "",
 };
 
 const HeroBannerAdmin = () => {
+  const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBg, setUploadingBg] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [uploadingSiteLogo, setUploadingSiteLogo] = useState(false);
+  const [uploadingAdminLogo, setUploadingAdminLogo] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Tracks admin_panel_logo_url and admin_panel_top_text exactly as last
+  // loaded from the DB. Used only to decide where to redirect after a
+  // successful save: if EITHER the admin logo or the admin top-bar text
+  // changed in this save, we send the admin back to /admin (so they see the
+  // update immediately); otherwise the normal hero-banner save still goes to
+  // the public home dashboard "/".
+  const lastSavedAdminLogoRef = useRef("");
+  const lastSavedAdminTopTextRef = useRef("");
 
   useEffect(() => {
     fetchExisting();
@@ -72,7 +95,12 @@ const HeroBannerAdmin = () => {
           rating: data.rating || "",
           year: data.year || "",
           audio_url: data.audio_url || "",
+          site_logo_url: data.site_logo_url || "",
+          admin_panel_logo_url: data.admin_panel_logo_url || "",
+          admin_panel_top_text: data.admin_panel_top_text || "",
         });
+        lastSavedAdminLogoRef.current = data.admin_panel_logo_url || "";
+        lastSavedAdminTopTextRef.current = data.admin_panel_top_text || "";
       }
     } catch (err) {
       console.error("fetchExisting failed:", err);
@@ -90,15 +118,15 @@ const HeroBannerAdmin = () => {
   };
 
   // Upload a file straight to Supabase Storage and return its public URL.
+  //
+  // NOTE: We intentionally do NOT block on supabase.auth.getSession() here.
+  // In this project login is done via a custom profiles/role flow (see LoginPage),
+  // so there may not be a Supabase Auth session even though the user is "logged in".
+  //
+  // If your bucket is PUBLIC or has an RLS policy allowing anon inserts, this works
+  // with the anon key. If the upload gets rejected, you'll see the REAL storage
+  // error (e.g. "new row violates row-level security policy" or "Bucket not found").
   const uploadFile = async (file, folder) => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      throw new Error("Not logged in — please sign in again.");
-    }
-
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${folder}/${Date.now()}-${safeName}`;
 
@@ -110,7 +138,7 @@ const HeroBannerAdmin = () => {
       });
 
     if (uploadError) {
-      // Common causes: bucket doesn't exist, or storage RLS policy blocks insert
+      // Common causes: bucket doesn't exist, or storage RLS policy blocks insert.
       throw new Error(`Upload failed: ${uploadError.message}`);
     }
 
@@ -182,6 +210,52 @@ const HeroBannerAdmin = () => {
     }
   };
 
+  // Website-wide logo (used in Layout.jsx sidebar/header — separate from the
+  // hero-section logo above, which only shows inside the banner itself).
+  const handleSiteLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingSiteLogo(true);
+    setErrorMsg("");
+    try {
+      const url = await uploadFile(file, "site-logo");
+      setForm((prev) => ({ ...prev, site_logo_url: url }));
+      toastEvents.show("Website logo uploaded.", "success");
+    } catch (err) {
+      console.error("Site logo upload error:", err);
+      setErrorMsg("Website logo upload failed: " + err.message);
+      toastEvents.show("Website logo upload failed: " + err.message, "error");
+    } finally {
+      setUploadingSiteLogo(false);
+      e.target.value = "";
+    }
+  };
+
+  // Admin Panel sidebar logo — replaces the static "Admin Panel" text at the
+  // top of AdminLayout.jsx's sidebar. Separate from the public website logo,
+  // since admin branding is often different from the public-facing one.
+  const handleAdminLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAdminLogo(true);
+    setErrorMsg("");
+    try {
+      const url = await uploadFile(file, "admin-logo");
+      setForm((prev) => ({ ...prev, admin_panel_logo_url: url }));
+      toastEvents.show("Admin panel logo uploaded.", "success");
+    } catch (err) {
+      console.error("Admin logo upload error:", err);
+      setErrorMsg("Admin panel logo upload failed: " + err.message);
+      toastEvents.show(
+        "Admin panel logo upload failed: " + err.message,
+        "error",
+      );
+    } finally {
+      setUploadingAdminLogo(false);
+      e.target.value = "";
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setErrorMsg("");
@@ -194,6 +268,9 @@ const HeroBannerAdmin = () => {
         rating: form.rating,
         year: form.year,
         audio_url: form.audio_url,
+        site_logo_url: form.site_logo_url,
+        admin_panel_logo_url: form.admin_panel_logo_url,
+        admin_panel_top_text: form.admin_panel_top_text,
         updated_at: new Date().toISOString(),
       };
 
@@ -209,6 +286,22 @@ const HeroBannerAdmin = () => {
           .maybeSingle();
         error = res.error;
         savedRow = res.data;
+
+        if (error) throw error;
+
+        // ── KEY FIX ──
+        // If Postgrest returns no error AND no row, it almost always means
+        // RLS silently filtered the update to 0 affected rows (or the row
+        // no longer exists). Previously this case was NOT checked, so the
+        // UI showed "success" even though nothing was actually saved.
+        if (!savedRow) {
+          throw new Error(
+            "Update did not affect any row. This usually means a Row Level " +
+              "Security (RLS) policy on 'hero_banner' is blocking UPDATE for " +
+              "the anon role, or the row with this id no longer exists. " +
+              "Check Supabase → Authentication → Policies for this table.",
+          );
+        }
       } else {
         const res = await supabase
           .from("hero_banner")
@@ -217,21 +310,55 @@ const HeroBannerAdmin = () => {
           .single();
         error = res.error;
         savedRow = res.data;
+
+        if (error) throw error;
+
+        if (!savedRow) {
+          // Insert/update "succeeded" but returned nothing — almost always an RLS
+          // policy silently filtering the row back out. Surface this clearly
+          // instead of pretending it worked.
+          throw new Error(
+            "Save returned no row back — this usually means a Row Level Security " +
+              "policy on 'hero_banner' is blocking select-after-write. Check " +
+              "Supabase → Authentication → Policies for this table.",
+          );
+        }
       }
 
-      if (error) throw error;
+      // Only reached if we actually have a confirmed saved row back from the DB.
+      const adminLogoChanged =
+        (savedRow.admin_panel_logo_url || "") !== lastSavedAdminLogoRef.current;
+      const adminTopTextChanged =
+        (savedRow.admin_panel_top_text || "") !==
+        lastSavedAdminTopTextRef.current;
+      const isAdminOnlyChange = adminLogoChanged || adminTopTextChanged;
 
-      if (savedRow) {
-        setForm((prev) => ({ ...prev, id: savedRow.id }));
-      } else if (!form.id) {
-        // Update/insert "succeeded" but returned nothing — almost always an RLS policy
-        // silently filtering the row back out. Surface this clearly instead of pretending it worked.
-        throw new Error(
-          "Save returned no row back — this usually means a Row Level Security policy on 'hero_banner' is blocking select-after-write. Check Supabase → Authentication → Policies for this table.",
-        );
-      }
-
+      setForm((prev) => ({ ...prev, id: savedRow.id }));
       toastEvents.show("Hero banner updated successfully.", "success");
+
+      // Re-fetch from DB to make 100% sure what's on screen matches what's saved.
+      await fetchExisting();
+
+      // ── LIVE SIDEBAR UPDATE ──
+      // Tell AdminLayout.jsx to re-fetch the admin logo / top-bar text right
+      // now. Without this, navigating to "/admin" doesn't remount the
+      // layout (it's the shared parent route), so the sidebar kept showing
+      // stale branding until the page was manually refreshed.
+      if (isAdminOnlyChange) {
+        window.dispatchEvent(new CustomEvent(ADMIN_BRANDING_EVENT));
+      }
+
+      // ── CONDITIONAL REDIRECT ──
+      // If EITHER the admin panel logo or the admin top-bar text changed in
+      // this save, stay in the admin area (redirect to /admin) so the admin
+      // immediately sees the update. Otherwise (normal hero-banner content
+      // changes — title, description, hero logo, bg image, audio, website
+      // logo) redirect to the public home dashboard "/" as before.
+      if (isAdminOnlyChange) {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
     } catch (err) {
       console.error("Save error:", err);
       setErrorMsg("Save failed: " + (err.message || "unknown error"));
@@ -264,6 +391,105 @@ const HeroBannerAdmin = () => {
           {errorMsg}
         </div>
       )}
+
+      {/* ── WEBSITE LOGO (site-wide, shows in sidebar/header via Layout.jsx) ── */}
+      <div className="mb-6 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Website Logo (Header / Sidebar)
+        </label>
+        <p className="text-xs text-slate-500 mb-3">
+          This logo appears across the whole site's sidebar and mobile header —
+          separate from the hero banner logo below.
+        </p>
+        <div className="flex items-center gap-4">
+          {form.site_logo_url && (
+            <img
+              src={form.site_logo_url}
+              alt="website logo preview"
+              className="h-14 object-contain border rounded-md bg-slate-50 p-1"
+            />
+          )}
+          <label className="flex items-center gap-2 px-4 py-2 rounded-md border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
+            {uploadingSiteLogo ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              <UploadCloud size={16} />
+            )}
+            Upload website logo
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleSiteLogoUpload}
+            />
+          </label>
+        </div>
+        <input
+          type="text"
+          value={form.site_logo_url}
+          onChange={handleChange("site_logo_url")}
+          placeholder="Or paste a website logo URL directly"
+          className="w-full mt-2 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
+
+      {/* ── ADMIN PANEL LOGO (replaces static "Admin Panel" text in AdminLayout.jsx sidebar) ── */}
+      <div className="mb-6 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Admin Panel Logo
+        </label>
+        <p className="text-xs text-slate-500 mb-3">
+          Replaces the "Admin Panel" text at the top of the admin sidebar. If
+          left empty, the sidebar will keep showing the "Admin Panel" text.
+        </p>
+        <div className="flex items-center gap-4">
+          {form.admin_panel_logo_url && (
+            <img
+              src={form.admin_panel_logo_url}
+              alt="admin panel logo preview"
+              className="h-14 object-contain border rounded-md bg-slate-50 p-1"
+            />
+          )}
+          <label className="flex items-center gap-2 px-4 py-2 rounded-md border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
+            {uploadingAdminLogo ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              <UploadCloud size={16} />
+            )}
+            Upload admin panel logo
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAdminLogoUpload}
+            />
+          </label>
+        </div>
+        <input
+          type="text"
+          value={form.admin_panel_logo_url}
+          onChange={handleChange("admin_panel_logo_url")}
+          placeholder="Or paste an admin panel logo URL directly"
+          className="w-full mt-2 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Top Bar Text (next to search bar)
+          </label>
+          <p className="text-xs text-slate-500 mb-2">
+            Shows next to the search bar at the top of the admin dashboard
+            (AdminLayout.jsx). Leave empty to show nothing there.
+          </p>
+          <input
+            type="text"
+            value={form.admin_panel_top_text}
+            onChange={handleChange("admin_panel_top_text")}
+            placeholder="e.g. Tune Raaga Admin"
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+      </div>
 
       <div className="space-y-5 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         {/* Title */}
