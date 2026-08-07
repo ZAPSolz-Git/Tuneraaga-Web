@@ -97,11 +97,13 @@ app.post(
 );
 
 // --- Route Mounting ---
+app.use("/api/incoming-songs", require("./routes/IncomingsongsRoutes"));
 app.use("/api/artists", artistRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/jamendo", jamendoRoutes);
 app.use("/api", orderRoutes);
 app.use("/api/internal", require("./routes/internalReleases"));
+
 // 🔍 404 catch-all
 app.use((req, res) => {
   console.log(`❌ No route matched: ${req.method} ${req.originalUrl}`);

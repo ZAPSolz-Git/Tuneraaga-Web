@@ -9,59 +9,31 @@ import {
   Download,
   Calendar,
   User,
+  UploadCloud,
 } from "lucide-react";
-import { distributionClient } from "../lib/distributionClient";
-import { supabase } from "../lib/supabaseClient";
-
-// ⚠️ CONFIRM: distribution project mein released songs kis TABLE mein hain
-// aur uske column names kya hain. Neeche apne hisaab se adjust karo.
-const DIST_TABLE = "releases"; // e.g. "releases" / "distribution_releases"
-const DIST_STATUS_FILTER = { column: "status", value: "Released" }; // sirf released dikhao
+import apiClient from "@/lib/ApiClient";
 
 const IncomingSongs = () => {
-  const [songs, setSongs] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [importingId, setImportingId] = useState(null);
-  const [importedIds, setImportedIds] = useState(new Set());
+  const [syncingAll, setSyncingAll] = useState(false);
 
   const fetchIncoming = async () => {
     setLoading(true);
     setError("");
     try {
-      let q = distributionClient
-        .from(DIST_TABLE)
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (DIST_STATUS_FILTER) {
-        q = q.eq(DIST_STATUS_FILTER.column, DIST_STATUS_FILTER.value);
-      }
-
-      const { data, error } = await q;
-      if (error) {
-        console.error("IncomingSongs fetch error:", error);
-        setError(
-          "Distribution se songs load nahi hue. Table naam / .env keys / RLS check karo.",
-        );
-        setSongs([]);
-      } else {
-        setSongs(data || []);
-      }
-
-      // pehle se streaming mein import ho chuke songs ka pata lagao
-      // (agar streaming.releases mein distribution_id column ho)
-      try {
-        const { data: existing } = await supabase
-          .from("releases")
-          .select("distribution_id");
-        setImportedIds(
-          new Set(
-            (existing || []).map((r) => r.distribution_id).filter(Boolean),
-          ),
-        );
-      } catch (_) {}
+      const { data } = await apiClient.get("/api/incoming-songs");
+      setSubmissions(data.submissions || []);
+    } catch (err) {
+      console.error("IncomingSongs fetch error:", err);
+      setError(
+        err?.response?.data?.error ||
+          "Incoming songs load nahi hue. Server route/logs check karo.",
+      );
+      setSubmissions([]);
     } finally {
       setLoading(false);
     }
@@ -72,46 +44,65 @@ const IncomingSongs = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Distribution song ko streaming platform mein import/publish karo
-  const importSong = async (song) => {
-    setImportingId(song.id);
+  // ---- single submission publish ----
+  const importSubmission = async (submission) => {
+    setImportingId(submission.id);
     try {
-      // ⚠️ column mapping: distribution ke fields -> streaming.releases ke fields.
-      // Apne streaming releases table ke hisaab se adjust karo.
-      const payload = {
-        distribution_id: song.id, // dedupe ke liye
-        title: song.title,
-        primary_artist: song.primary_artist || song.artist,
-        featuring_artists: song.featuring_artists || null,
-        album_name: song.album_name || null,
-        cover_url: song.cover_url || song.artwork_url || null,
-        audio_url: song.audio_url || song.song_url || null,
-        language: song.language || null,
-        genre: song.genre || null,
-        status: "Published", // streaming pe live
-      };
-
-      const { error } = await supabase.from("releases").insert([payload]);
-      if (error) {
-        console.error("import error:", error);
-        alert("Import fail hua: " + error.message);
-      } else {
-        setImportedIds((prev) => new Set(prev).add(song.id));
-      }
+      await apiClient.post("/api/incoming-songs/sync", {
+        submissionIds: [submission.id],
+      });
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.id === submission.id ? { ...s, imported: true } : s,
+        ),
+      );
+    } catch (err) {
+      console.error("import error:", err);
+      alert("Import fail hua: " + (err?.response?.data?.error || err.message));
     } finally {
       setImportingId(null);
     }
   };
 
-  const filtered = songs.filter((s) => {
+  // ---- bulk publish all pending approved submissions ----
+  const syncAll = async () => {
+    const pendingIds = submissions
+      .filter((s) => !s.imported)
+      .map((s) => s.id);
+    if (!pendingIds.length) return;
+
+    setSyncingAll(true);
+    try {
+      await apiClient.post("/api/incoming-songs/sync", {
+        submissionIds: pendingIds,
+      });
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          pendingIds.includes(s.id) ? { ...s, imported: true } : s,
+        ),
+      );
+    } catch (err) {
+      console.error("bulk sync error:", err);
+      alert(
+        "Bulk sync fail hua: " + (err?.response?.data?.error || err.message),
+      );
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
+  const filtered = submissions.filter((s) => {
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     return (
       (s.title || "").toLowerCase().includes(q) ||
-      (s.primary_artist || s.artist || "").toLowerCase().includes(q) ||
-      (s.album_name || "").toLowerCase().includes(q)
+      (s.primary_artist || "").toLowerCase().includes(q) ||
+      (s.users?.full_name || "").toLowerCase().includes(q) ||
+      (s.users?.label_name || "").toLowerCase().includes(q)
     );
   });
+
+  const pendingCount = submissions.filter((s) => !s.imported).length;
 
   return (
     <div className="p-4 md:p-8">
@@ -122,18 +113,33 @@ const IncomingSongs = () => {
             <Music2 size={24} className="text-emerald-500" /> Incoming Songs
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Movement Creations (Distribution) se released songs — yahan se
-            streaming platform pe publish karo.
+            Movement Creations (Distribution) se approved submissions — yahan
+            se TuneRaaga pe publish karo.
           </p>
         </div>
-        <button
-          onClick={fetchIncoming}
-          disabled={loading}
-          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60 self-start"
-        >
-          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={syncAll}
+            disabled={syncingAll || loading || pendingCount === 0}
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
+          >
+            <UploadCloud
+              size={15}
+              className={syncingAll ? "animate-spin" : ""}
+            />
+            {syncingAll
+              ? "Syncing..."
+              : `Sync All Approved (${pendingCount})`}
+          </button>
+          <button
+            onClick={fetchIncoming}
+            disabled={loading}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
+          >
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* search */}
@@ -145,7 +151,7 @@ const IncomingSongs = () => {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search title, artist, album..."
+          placeholder="Search title, artist, label..."
           className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
         />
       </div>
@@ -163,15 +169,18 @@ const IncomingSongs = () => {
       ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-slate-400 text-sm flex flex-col items-center gap-2">
           <Music2 size={30} className="text-slate-300" />
-          Koi incoming song nahi mila.
+          Koi approved submission nahi mila.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((song, i) => {
-            const imported = importedIds.has(song.id);
+          {filtered.map((submission, i) => {
+            const trackCount = Array.isArray(submission.tracks)
+              ? submission.tracks.length
+              : 0;
+
             return (
               <motion.div
-                key={song.id}
+                key={submission.id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
@@ -179,57 +188,53 @@ const IncomingSongs = () => {
               >
                 <div className="flex gap-3 p-4">
                   <img
-                    src={
-                      song.cover_url ||
-                      song.artwork_url ||
-                      "https://via.placeholder.com/80"
-                    }
+                    src={submission.cover_url || "https://via.placeholder.com/80"}
                     alt=""
                     className="w-16 h-16 rounded-lg object-cover border border-slate-100 flex-shrink-0"
                   />
                   <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-slate-900 text-sm truncate">
-                      {song.title || "Untitled"}
+                      {submission.title || "Untitled"}
                     </h3>
                     <p className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
                       <User size={11} />
-                      {song.primary_artist || song.artist || "Unknown artist"}
+                      {submission.primary_artist || "Unknown artist"}
                     </p>
-                    {song.album_name && (
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                        {song.album_name}
-                      </p>
-                    )}
-                    {song.created_at && (
+                    <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                      {submission.users?.label_name ||
+                        submission.users?.full_name ||
+                        "—"}
+                      {trackCount > 1 ? ` · ${trackCount} tracks` : ""}
+                    </p>
+                    {submission.created_at && (
                       <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1">
                         <Calendar size={10} />
-                        {new Date(song.created_at).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
+                        {new Date(submission.created_at).toLocaleDateString(
+                          "en-IN",
+                          { day: "numeric", month: "short", year: "numeric" },
+                        )}
                       </p>
                     )}
                   </div>
                 </div>
 
                 <div className="mt-auto px-4 pb-4">
-                  {imported ? (
+                  {submission.imported ? (
                     <div className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
-                      <CheckCircle2 size={14} /> Published on Streaming
+                      <CheckCircle2 size={14} /> Published on TuneRaaga
                     </div>
                   ) : (
                     <button
-                      onClick={() => importSong(song)}
-                      disabled={importingId === song.id}
+                      onClick={() => importSubmission(submission)}
+                      disabled={importingId === submission.id}
                       className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
                     >
-                      {importingId === song.id ? (
+                      {importingId === submission.id ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <Download size={14} />
                       )}
-                      Publish to Streaming
+                      Publish to TuneRaaga
                     </button>
                   )}
                 </div>
