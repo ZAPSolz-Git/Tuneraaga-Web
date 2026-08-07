@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Play, Volume2, VolumeX, Info, Loader2, Pause } from "lucide-react";
 import { useOutletContext } from "react-router-dom";
-// --- UPDATED: Centralized Supabase Client Import ---
+// --- Centralized Supabase Client Import ---
 import { supabase } from "@/lib/supabaseClient";
 import { useNavigate } from "react-router-dom";
 
@@ -13,20 +13,22 @@ const BLUE_DARK = "#1d4ed8";
 const TEXT_BLACK = "#0f172a";
 const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 
-const heroContent = {
+// ─── Fallback hero (used only while loading, or if no row exists yet in Supabase) ───
+// Field names match the `hero_banner` table columns so the same object shape
+// works whether it comes from the DB or from this default.
+const defaultHero = {
   id: "admin-hero-mock",
   title: "The Tune Raaga",
   description:
     "A breathtaking journey through uncharted territories. Experience the visuals like never before in 4K HDR.",
-  logo: "/tuneraaga4.png",
-  image:
+  logo_url: "/tuneraaga4.png",
+  background_image_url:
     "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920&h=1080&fit=crop",
   rating: "U/A 13+",
   year: "2024",
   // Dummy audio for the hero section
   audio_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
 };
-
 
 const AdminDash = () => {
   const [isMuted, setIsMuted] = useState(true);
@@ -40,6 +42,10 @@ const AdminDash = () => {
   const [loadingTrending, setLoadingTrending] = useState(true);
   const [loadingLatest, setLoadingLatest] = useState(true);
   const [loadingTop10, setLoadingTop10] = useState(true);
+
+  // ─── HERO BANNER STATE (now dynamic, comes from admin panel / hero_banner table) ───
+  const [heroContent, setHeroContent] = useState(defaultHero);
+  const [loadingHero, setLoadingHero] = useState(true);
 
   // ─── AUDIO STATE ───
   const audioRef = useRef(null);
@@ -67,10 +73,44 @@ const AdminDash = () => {
 
   // Fetch All Data
   useEffect(() => {
+    fetchHeroBanner();
     fetchTrending();
     fetchLatestReleases();
     fetchTop10India();
   }, []);
+
+  // 0. Fetch Hero Banner (editable from admin panel / HeroBannerAdmin.jsx)
+  const fetchHeroBanner = async () => {
+    setLoadingHero(true);
+    try {
+      const { data, error } = await supabase
+        .from("hero_banner")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setHeroContent({
+          id: data.id,
+          title: data.title || defaultHero.title,
+          description: data.description || defaultHero.description,
+          logo_url: data.logo_url || defaultHero.logo_url,
+          background_image_url:
+            data.background_image_url || defaultHero.background_image_url,
+          rating: data.rating || defaultHero.rating,
+          year: data.year || defaultHero.year,
+          audio_url: data.audio_url || defaultHero.audio_url,
+        });
+      }
+    } catch (err) {
+      console.error("Hero banner fetch failed, using default:", err);
+    } finally {
+      setLoadingHero(false);
+    }
+  };
 
   // 1. Fetch Trending
   const fetchTrending = async () => {
@@ -81,13 +121,18 @@ const AdminDash = () => {
         .select(`*, releases (id, title, primary_artist, cover_url, audio_url)`)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const formatted = (data || []).map((item) => ({
-        id: item.releases.id,
-        title: item.releases.title,
-        image: item.releases.cover_url,
-        type: item.releases.primary_artist,
-        audio_url: item.releases.audio_url,
-      }));
+      const formatted = (data || [])
+        .map((item) => {
+          if (!item.releases) return null;
+          return {
+            id: item.releases.id,
+            title: item.releases.title,
+            image: item.releases.cover_url,
+            type: item.releases.primary_artist,
+            audio_url: item.releases.audio_url,
+          };
+        })
+        .filter(Boolean);
       setTrendingSongs(formatted);
     } catch (err) {
       console.error(err);
@@ -105,13 +150,18 @@ const AdminDash = () => {
         .select(`*, releases (id, title, primary_artist, cover_url, audio_url)`)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const formatted = (data || []).map((item) => ({
-        id: item.releases.id,
-        title: item.releases.title,
-        image: item.releases.cover_url,
-        type: item.releases.primary_artist,
-        audio_url: item.releases.audio_url,
-      }));
+      const formatted = (data || [])
+        .map((item) => {
+          if (!item.releases) return null;
+          return {
+            id: item.releases.id,
+            title: item.releases.title,
+            image: item.releases.cover_url,
+            type: item.releases.primary_artist,
+            audio_url: item.releases.audio_url,
+          };
+        })
+        .filter(Boolean);
       setLatestReleases(formatted);
     } catch (err) {
       console.error(err);
@@ -129,13 +179,18 @@ const AdminDash = () => {
         .select(`*, releases (id, title, primary_artist, cover_url, audio_url)`)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const formatted = (data || []).map((item) => ({
-        id: item.releases.id,
-        title: item.releases.title,
-        image: item.releases.cover_url,
-        type: item.releases.primary_artist,
-        audio_url: item.releases.audio_url,
-      }));
+      const formatted = (data || [])
+        .map((item) => {
+          if (!item.releases) return null;
+          return {
+            id: item.releases.id,
+            title: item.releases.title,
+            image: item.releases.cover_url,
+            type: item.releases.primary_artist,
+            audio_url: item.releases.audio_url,
+          };
+        })
+        .filter(Boolean);
       setTop10India(formatted);
     } catch (err) {
       console.error(err);
@@ -198,11 +253,15 @@ const AdminDash = () => {
     <div className="relative bg-white">
       <div className="relative h-[85vh] w-full">
         <div className="absolute inset-0">
-          <img
-            src={heroContent.image}
-            alt="Hero"
-            className="w-full h-full object-cover"
-          />
+          {loadingHero ? (
+            <div className="w-full h-full bg-slate-200 animate-pulse" />
+          ) : (
+            <img
+              src={heroContent.background_image_url}
+              alt="Hero"
+              className="w-full h-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-white via-black/20 to-black/60" />
         </div>
 
@@ -218,7 +277,7 @@ const AdminDash = () => {
 
             <div className="mt-4 mb-2">
               <img
-                src={heroContent.logo}
+                src={heroContent.logo_url}
                 alt={heroContent.title}
                 className="w-[280px] md:w-[400px] h-auto object-contain drop-shadow-[0_4px_15px_rgba(0,0,0,0.3)] translate-y-12"
               />

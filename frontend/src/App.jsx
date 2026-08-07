@@ -65,6 +65,10 @@ import LoginPage from "./pages/LoginPage";
 // Incoming Songs
 import IncomingSongs from "./admin/IncomingSongs";
 
+import HeroBannerAdmin from "./admin/HeroBannerAdmin";
+
+import GlobalToast from "./components/GlobalToast";
+
 // ✅ Center Toast
 import CenterToast from "./components/CenterToast";
 
@@ -75,6 +79,7 @@ function App() {
   // useAntiInspect();
   return (
     <Router>
+      <GlobalToast />
       <AuthProvider>
         <PlayerProvider>
           <Routes>
@@ -164,6 +169,7 @@ function App() {
               <Route path="top-playlists" element={<TopPlaylistAdmin />} />
               <Route path="new-release" element={<AdminNewRelease />} />
               <Route path="/admin/incoming-songs" element={<IncomingSongs />} />
+              <Route path="/admin/hero-banner" element={<HeroBannerAdmin />} />
               <Route path="song-edit" element={<SongEditAdmin />} />
               <Route path="podcasts" element={<PodcastAdmin />} />
               <Route path="radio" element={<RadioAdmin />} />

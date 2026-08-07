@@ -155,6 +155,7 @@ const LoginPage = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    
     if (isLoading) return;
     setIsLoading(true);
     setError("");

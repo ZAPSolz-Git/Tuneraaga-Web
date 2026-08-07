@@ -50,8 +50,7 @@ const TopChart = () => {
 
   const moreMenuRef = useRef(null);
 
-  // ✅ Everything playback-related now comes from the shared player —
-  // no local <audio>, no local ad logic, no local auth listener.
+
   const {
     playing,
     currentSong,
@@ -123,8 +122,7 @@ const TopChart = () => {
     fetchCharts();
   }, []);
 
-  // Register this page's "expand" behavior with the shared player so the
-  // sticky player's Maximize2 button opens THIS page's chart-profile panel.
+ 
   const handlePlayerExpandToggle = useCallback(() => {
     if (!currentSong) return;
     const foundChart = charts.find((c) =>
@@ -792,8 +790,7 @@ const TopChart = () => {
           </div>
         )}
       </div>
-      {/* Sticky player is rendered globally by <PlayerProvider> — nothing
-          to render here anymore. */}
+     
     </div>
   );
 };

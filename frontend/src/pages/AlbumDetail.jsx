@@ -231,7 +231,7 @@ const AlbumDetails = () => {
   const currentIndexRef = useRef(null);
   const isShuffleRef = useRef(false);
   const moreMenuRef = useRef(null);
-  const countedSongIds = useRef(new Set()); // ✅ To increment count only once per session
+  const countedSongIds = useRef(new Set()); 
 
   useEffect(() => {
     currentSongRef.current = currentSong;
@@ -299,7 +299,7 @@ const AlbumDetails = () => {
     fetchAlbumSongs();
   }, [decodedAlbumName]);
 
-  // ✅ Fetch Actual Song Durations for Table
+ 
   useEffect(() => {
     albumSongs.forEach((song) => {
       if (!durations[song.id] && song.audioUrl) {
@@ -364,7 +364,7 @@ const AlbumDetails = () => {
         setCurrentTime(0);
         audio.src = song.audioUrl;
         audio.load();
-        incrementSongCounts(song); // ✅ Increment count when new song plays
+        incrementSongCounts(song); 
       }
 
       let hasStarted = false;
@@ -579,7 +579,7 @@ const AlbumDetails = () => {
     "https://via.placeholder.com/400";
   const albumTitle = decodedAlbumName || "Unknown Album";
 
-  // ✅ FIX: Using playCount to calculate Listeners so it never shows 0 if data exists
+ 
   const totalListeners = albumSongs.reduce(
     (sum, s) => sum + (s.playCount || 0),
     0,
