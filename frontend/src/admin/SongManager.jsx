@@ -27,18 +27,10 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { apiRequest, uploadFileSecure } from "../lib/secureApi";
 
-// ─────────────────────────────────────────────────────────────
-// ⚙️ CONFIGURATION
-// This client (anon key) is used for READS only — RLS restricts it
-// to SELECT. All writes go through the secure backend (see lib/secureApi).
-// --- ENV CONFIGURATION ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ─────────────────────────────────────────────────────────────
-// 📚 DATA: GENRES & LANGUAGES
-// ─────────────────────────────────────────────────────────────
 import { genres } from "../lib/subgener";
 const LANGUAGES = [
   "For You",
@@ -60,9 +52,6 @@ const LANGUAGES = [
   "Assamese",
 ];
 
-// ─────────────────────────────────────────────────────────────
-// 🛠️ UI COMPONENTS
-// ─────────────────────────────────────────────────────────────
 const Button = ({
   children,
   variant = "default",
@@ -200,10 +189,6 @@ const MOCK_PLATFORMS = [
   { id: "deezer", name: "Deezer" },
 ];
 
-// ─────────────────────────────────────────────────────────────
-// 🎵 AUDIO RELEASE FORM
-// ─────────────────────────────────────────────────────────────
-
 const initialAudioState = {
   title: "",
   primaryArtist: "",
@@ -327,7 +312,6 @@ const AudioReleaseForm = ({
 
   const prevStep = () => setStep((s) => Math.max(0, s - 1));
 
-  // ── SECURE SUBMIT: uploads + insert/update, all via the backend API ──
   const handleSubmit = async () => {
     if (step < 3) return;
     setLoading(true);
@@ -409,7 +393,6 @@ const AudioReleaseForm = ({
       className="flex flex-col h-full bg-white"
       onSubmit={(e) => e.preventDefault()}
     >
-      {/* Stepper */}
       <div className="border-b border-gray-200 px-8 py-4 bg-white">
         <div className="flex items-center justify-between max-w-4xl mx-auto">
           {steps.map((s, i) => (
@@ -437,7 +420,6 @@ const AudioReleaseForm = ({
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 md:p-8 bg-gray-50">
-        {/* STEP 1: Upload */}
         {step === 0 && (
           <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-8">
@@ -511,7 +493,6 @@ const AudioReleaseForm = ({
           </div>
         )}
 
-        {/* STEP 2: Info */}
         {step === 1 && (
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-xl font-bold text-gray-900 mb-6">
@@ -526,7 +507,6 @@ const AudioReleaseForm = ({
                   placeholder="Release Title"
                 />
 
-                {/* UPDATED: Primary Artist Dropdown to match Artist Profile Exactly */}
                 <div>
                   <label className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5 block">
                     Primary Artist *
@@ -627,7 +607,6 @@ const AudioReleaseForm = ({
           </div>
         )}
 
-        {/* STEP 3: Audio/Lyrics */}
         {step === 2 && (
           <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="text-center mb-8">
@@ -709,7 +688,6 @@ const AudioReleaseForm = ({
           </div>
         )}
 
-        {/* STEP 4: Rights */}
         {step === 3 && (
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-xl font-bold text-gray-900 mb-6">
@@ -758,7 +736,6 @@ const AudioReleaseForm = ({
         )}
       </div>
 
-      {/* FOOTER BUTTONS */}
       <div className="border-t border-gray-200 bg-white p-4 md:px-8 flex justify-between items-center">
         <Button
           type="button"
@@ -793,13 +770,9 @@ const AudioReleaseForm = ({
   );
 };
 
-// ─────────────────────────────────────────────────────────────
-// 🎵 SONG MANAGER MAIN WRAPPER
-// ─────────────────────────────────────────────────────────────
-
 const SongManager = () => {
   const [songs, setSongs] = useState([]);
-  const [availableArtists, setAvailableArtists] = useState([]); // NEW STATE
+  const [availableArtists, setAvailableArtists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("list");
   const [viewMode, setViewMode] = useState("grid");
@@ -820,7 +793,6 @@ const SongManager = () => {
     setTimeout(() => setToast((prev) => ({ ...prev, show: false })), 3000);
   };
 
-  // ── READ: still direct via supabase — RLS restricts to SELECT only ──
   const fetchSongs = async () => {
     setLoading(true);
     try {
@@ -855,7 +827,7 @@ const SongManager = () => {
       const { data, error } = await supabase
         .from("artists")
         .select("name")
-        .eq("status", "Verified") // Only show verified artists to link songs to
+        .eq("status", "Verified")
         .order("name", { ascending: true });
       if (error) throw error;
       setAvailableArtists(data || []);
@@ -901,7 +873,6 @@ const SongManager = () => {
     fetchSongs();
   };
 
-  // ── SECURE DELETE — via backend API ──────────────────────────────
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this release?"))
       return;
@@ -945,7 +916,6 @@ const SongManager = () => {
                 <ArrowLeft size={20} />
               </button>
             )}
-            {/* ADDED SONG COUNT BADGE HERE */}
             <h1 className="text-xl font-bold text-gray-900 tracking-tight">
               {view === "form" ? (
                 editingSong ? (

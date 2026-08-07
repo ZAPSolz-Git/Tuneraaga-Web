@@ -14,7 +14,6 @@ import {
   Film,
 } from "lucide-react";
 
-// ─── Blue Gradient Palette ───
 const BLUE_LIGHT = "#3b82f6";
 const BLUE_DARK = "#1d4ed8";
 const TEXT_BLACK = "#0f172a";
@@ -23,27 +22,19 @@ const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 const KnowledgePage = () => {
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans">
-      {/* Hero Section - Clean Image WITHOUT White Blur */}
       <div className="relative h-[50vh] w-full overflow-hidden">
         <img
           src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1920&h=1080&fit=crop"
           alt="Technology Background"
-          className="w-full h-full object-cover" // Removed opacity-30 for a clean, vibrant image
+          className="w-full h-full object-cover"
         />
-        {/* 
-           Gradient Overlay: 
-           'from-black/60' (Top) -> Helps white text pop.
-           'via-black/30' (Middle) -> Keeps image visible.
-           'to-white' (Bottom) -> Smooth transition to the white section below.
-        */}
         <div className="absolute inset-0 bg-gradient-to-t from-white via-black/20 to-black/60" />
-        
+
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
           <motion.span
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            // Changed to a "Glass" look pill to stand out on the image
             className="text-xs uppercase tracking-[0.3em] text-white/90 mb-4 border border-white/20 px-4 py-1 rounded-full bg-black/10 backdrop-blur-sm"
           >
             Knowledge Base
@@ -52,7 +43,7 @@ const KnowledgePage = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-5xl md:text-7xl font-extrabold tracking-tight text-white" // Changed text to white
+            className="text-5xl md:text-7xl font-extrabold tracking-tight text-white"
           >
             The <span style={{ color: BLUE_LIGHT }}>Streaming</span> Ecosystem
           </motion.h1>
@@ -60,7 +51,7 @@ const KnowledgePage = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="mt-6 max-w-2xl text-lg text-slate-200" // Changed text to light gray
+            className="mt-6 max-w-2xl text-lg text-slate-200"
           >
             Understanding the technology, infrastructure, and economy behind
             digital media.
@@ -68,7 +59,6 @@ const KnowledgePage = () => {
         </div>
       </div>
 
-      {/* Section 1: What is it? */}
       <div className="max-w-7xl mx-auto px-6 md:px-12 py-20">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -83,7 +73,10 @@ const KnowledgePage = () => {
             >
               Definition
             </h2>
-            <h3 className="text-4xl font-bold mb-6 leading-tight" style={{ color: TEXT_BLACK }}>
+            <h3
+              className="text-4xl font-bold mb-6 leading-tight"
+              style={{ color: TEXT_BLACK }}
+            >
               What Is a Digital <br /> Streaming Platform?
             </h3>
             <p className="text-slate-600 leading-relaxed mb-6 text-lg">
@@ -97,7 +90,6 @@ const KnowledgePage = () => {
             </p>
           </div>
           <div className="grid grid-cols-1 gap-6">
-            {/* Audio Card */}
             <motion.div
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -109,7 +101,12 @@ const KnowledgePage = () => {
                 <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 bg-blue-100 border border-blue-200 group-hover:bg-blue-500 transition-all duration-300">
                   <Music2 className="w-7 h-7 text-blue-600 group-hover:text-white transition-colors" />
                 </div>
-                <h4 className="text-2xl font-bold mb-4" style={{ color: TEXT_BLACK }}>Audio Streaming</h4>
+                <h4
+                  className="text-2xl font-bold mb-4"
+                  style={{ color: TEXT_BLACK }}
+                >
+                  Audio Streaming
+                </h4>
                 <p className="text-slate-500 leading-relaxed mb-6">
                   Real-time delivery of music, podcasts, and audiobooks.
                   Dominated by platforms like Spotify and Apple Music serving
@@ -117,7 +114,10 @@ const KnowledgePage = () => {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {["Spotify", "Apple Music", "JioSaavn"].map((name) => (
-                    <span key={name} className="px-3 py-1 text-xs bg-white rounded-full text-slate-600 border border-slate-200 shadow-sm">
+                    <span
+                      key={name}
+                      className="px-3 py-1 text-xs bg-white rounded-full text-slate-600 border border-slate-200 shadow-sm"
+                    >
                       {name}
                     </span>
                   ))}
@@ -125,7 +125,6 @@ const KnowledgePage = () => {
               </div>
             </motion.div>
 
-            {/* Video Card */}
             <motion.div
               initial={{ opacity: 0, x: 50 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -137,7 +136,12 @@ const KnowledgePage = () => {
                 <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 bg-blue-100 border border-blue-200 group-hover:bg-blue-500 transition-all duration-300">
                   <Film className="w-7 h-7 text-blue-600 group-hover:text-white transition-colors" />
                 </div>
-                <h4 className="text-2xl font-bold mb-4" style={{ color: TEXT_BLACK }}>Video Streaming</h4>
+                <h4
+                  className="text-2xl font-bold mb-4"
+                  style={{ color: TEXT_BLACK }}
+                >
+                  Video Streaming
+                </h4>
                 <p className="text-slate-500 leading-relaxed mb-6">
                   Real-time delivery of visual content, music videos, and
                   documentaries. Dominated by platforms like YouTube and Netflix
@@ -145,7 +149,10 @@ const KnowledgePage = () => {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {["YouTube", "Netflix", "Prime Video"].map((name) => (
-                    <span key={name} className="px-3 py-1 text-xs bg-white rounded-full text-slate-600 border border-slate-200 shadow-sm">
+                    <span
+                      key={name}
+                      className="px-3 py-1 text-xs bg-white rounded-full text-slate-600 border border-slate-200 shadow-sm"
+                    >
                       {name}
                     </span>
                   ))}
@@ -156,7 +163,6 @@ const KnowledgePage = () => {
         </motion.div>
       </div>
 
-      {/* Section 3: Industry Terms */}
       <div className="bg-slate-50 py-20 border-y border-slate-200">
         <div className="max-w-7xl mx-auto px-6 md:px-12">
           <motion.div
@@ -171,7 +177,9 @@ const KnowledgePage = () => {
             >
               Glossary
             </h2>
-            <h3 className="text-4xl font-bold" style={{ color: TEXT_BLACK }}>Key Industry Terms</h3>
+            <h3 className="text-4xl font-bold" style={{ color: TEXT_BLACK }}>
+              Key Industry Terms
+            </h3>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -182,7 +190,6 @@ const KnowledgePage = () => {
         </div>
       </div>
 
-      {/* Section 4: How It Works Timeline */}
       <div className="bg-white py-24">
         <div className="max-w-5xl mx-auto px-6 md:px-12">
           <motion.div
@@ -197,14 +204,14 @@ const KnowledgePage = () => {
             >
               The Process
             </h2>
-            <h3 className="text-4xl font-bold" style={{ color: TEXT_BLACK }}>How Streaming Actually Works</h3>
+            <h3 className="text-4xl font-bold" style={{ color: TEXT_BLACK }}>
+              How Streaming Actually Works
+            </h3>
           </motion.div>
 
           <div className="relative">
-            {/* The vertical line */}
             <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px bg-slate-200 transform md:-translate-x-1/2" />
 
-            {/* Steps */}
             {stepsData.map((step, index) => (
               <StepItem
                 key={index}
@@ -220,7 +227,6 @@ const KnowledgePage = () => {
   );
 };
 
-// Term Card Component
 const TermCard = ({ title, description, icon: Icon, delay }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
@@ -234,14 +240,15 @@ const TermCard = ({ title, description, icon: Icon, delay }) => (
         <Icon className="w-5 h-5 text-blue-600 transition-colors" />
       </div>
       <div>
-        <h4 className="text-lg font-bold mb-1" style={{ color: TEXT_BLACK }}>{title}</h4>
+        <h4 className="text-lg font-bold mb-1" style={{ color: TEXT_BLACK }}>
+          {title}
+        </h4>
         <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
       </div>
     </div>
   </motion.div>
 );
 
-// Step Item Component
 const StepItem = ({ step, index, totalSteps }) => {
   const isLeft = index % 2 === 0;
 
@@ -255,7 +262,6 @@ const StepItem = ({ step, index, totalSteps }) => {
         isLeft ? "md:flex-row-reverse" : "md:flex-row"
       } flex-row`}
     >
-      {/* Content Box */}
       <div
         className={`w-full md:w-1/2 pl-12 md:pl-0 ${isLeft ? "md:pr-12" : "md:pl-12"}`}
       >
@@ -267,7 +273,9 @@ const StepItem = ({ step, index, totalSteps }) => {
             >
               {index + 1}
             </div>
-            <h4 className="text-lg font-bold" style={{ color: TEXT_BLACK }}>{step.title}</h4>
+            <h4 className="text-lg font-bold" style={{ color: TEXT_BLACK }}>
+              {step.title}
+            </h4>
           </div>
           <p className="text-sm text-slate-500 leading-relaxed">
             {step.description}
@@ -275,15 +283,11 @@ const StepItem = ({ step, index, totalSteps }) => {
         </div>
       </div>
 
-      {/* Center Dot */}
-      <div className="absolute left-4 md:left-1/2 transform md:-translate-x-1/2 w-8 h-8 rounded-full bg-white border-4 border-blue-500 z-10 flex items-center justify-center shadow-md">
-        {/* Icon can go here if needed */}
-      </div>
+      <div className="absolute left-4 md:left-1/2 transform md:-translate-x-1/2 w-8 h-8 rounded-full bg-white border-4 border-blue-500 z-10 flex items-center justify-center shadow-md"></div>
     </motion.div>
   );
 };
 
-// Data Arrays
 const termsData = [
   {
     title: "Streaming",

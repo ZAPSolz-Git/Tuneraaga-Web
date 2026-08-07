@@ -69,6 +69,8 @@ import HeroBannerAdmin from "./admin/HeroBannerAdmin";
 
 import GlobalToast from "./components/GlobalToast";
 
+import AdsAdmin from "./admin/AdsAdmin";
+
 // ✅ Center Toast
 import CenterToast from "./components/CenterToast";
 
@@ -169,6 +171,7 @@ function App() {
               <Route path="top-playlists" element={<TopPlaylistAdmin />} />
               <Route path="new-release" element={<AdminNewRelease />} />
               <Route path="/admin/incoming-songs" element={<IncomingSongs />} />
+              <Route path="/admin/ads" element={<AdsAdmin />} />
               <Route path="/admin/hero-banner" element={<HeroBannerAdmin />} />
               <Route path="song-edit" element={<SongEditAdmin />} />
               <Route path="podcasts" element={<PodcastAdmin />} />

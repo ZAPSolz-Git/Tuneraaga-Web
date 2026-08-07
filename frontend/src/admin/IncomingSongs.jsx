@@ -5,13 +5,17 @@ import {
   Music2,
   RefreshCw,
   Search,
-  CheckCircle2,
   Download,
   Calendar,
   User,
   UploadCloud,
 } from "lucide-react";
 import apiClient from "@/lib/ApiClient";
+
+// ─── Blue Gradient Palette (matches the rest of the admin panel) ───
+const BLUE_LIGHT = "#3b82f6";
+const BLUE_DARK = "#1d4ed8";
+const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 
 const IncomingSongs = () => {
   const [submissions, setSubmissions] = useState([]);
@@ -66,9 +70,7 @@ const IncomingSongs = () => {
 
   // ---- bulk publish all pending approved submissions ----
   const syncAll = async () => {
-    const pendingIds = submissions
-      .filter((s) => !s.imported)
-      .map((s) => s.id);
+    const pendingIds = submissions.filter((s) => !s.imported).map((s) => s.id);
     if (!pendingIds.length) return;
 
     setSyncingAll(true);
@@ -91,52 +93,59 @@ const IncomingSongs = () => {
     }
   };
 
-  const filtered = submissions.filter((s) => {
-    if (!query.trim()) return true;
-    const q = query.toLowerCase();
-    return (
-      (s.title || "").toLowerCase().includes(q) ||
-      (s.primary_artist || "").toLowerCase().includes(q) ||
-      (s.users?.full_name || "").toLowerCase().includes(q) ||
-      (s.users?.label_name || "").toLowerCase().includes(q)
-    );
-  });
+  // Only show songs that are NOT yet published — once a submission is
+  // imported/published, it disappears from this list immediately (no more
+  // "Published" badge lingering here; published songs live on the main site).
+  const filtered = submissions
+    .filter((s) => !s.imported)
+    .filter((s) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        (s.title || "").toLowerCase().includes(q) ||
+        (s.primary_artist || "").toLowerCase().includes(q) ||
+        (s.users?.full_name || "").toLowerCase().includes(q) ||
+        (s.users?.label_name || "").toLowerCase().includes(q)
+      );
+    });
 
   const pendingCount = submissions.filter((s) => !s.imported).length;
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 bg-white min-h-full">
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-            <Music2 size={24} className="text-emerald-500" /> Incoming Songs
+            <Music2 size={24} className="text-blue-500" /> Incoming Songs
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Movement Creations (Distribution) se approved submissions — yahan
-            se TuneRaaga pe publish karo.
+            Movement Creations (Distribution) se approved submissions — yahan se
+            TuneRaaga pe publish karo.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
             onClick={syncAll}
             disabled={syncingAll || loading || pendingCount === 0}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm hover:opacity-90 disabled:opacity-50"
+            style={{ background: BLUE_GRADIENT }}
           >
             <UploadCloud
               size={15}
               className={syncingAll ? "animate-spin" : ""}
             />
-            {syncingAll
-              ? "Syncing..."
-              : `Sync All Approved (${pendingCount})`}
+            {syncingAll ? "Syncing..." : `Sync All Approved (${pendingCount})`}
           </button>
           <button
             onClick={fetchIncoming}
             disabled={loading}
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60 shadow-sm"
           >
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            <RefreshCw
+              size={15}
+              className={`text-blue-500 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </div>
@@ -152,7 +161,7 @@ const IncomingSongs = () => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search title, artist, label..."
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
         />
       </div>
 
@@ -164,7 +173,7 @@ const IncomingSongs = () => {
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <Loader2 className="animate-spin text-slate-400" size={30} />
+          <Loader2 className="animate-spin text-blue-400" size={30} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-slate-400 text-sm flex flex-col items-center gap-2">
@@ -184,11 +193,13 @@ const IncomingSongs = () => {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col"
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all overflow-hidden flex flex-col"
               >
                 <div className="flex gap-3 p-4">
                   <img
-                    src={submission.cover_url || "https://via.placeholder.com/80"}
+                    src={
+                      submission.cover_url || "https://via.placeholder.com/80"
+                    }
                     alt=""
                     className="w-16 h-16 rounded-lg object-cover border border-slate-100 flex-shrink-0"
                   />
@@ -197,7 +208,7 @@ const IncomingSongs = () => {
                       {submission.title || "Untitled"}
                     </h3>
                     <p className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
-                      <User size={11} />
+                      <User size={11} className="text-blue-400" />
                       {submission.primary_artist || "Unknown artist"}
                     </p>
                     <p className="text-[11px] text-slate-400 truncate mt-0.5">
@@ -208,7 +219,7 @@ const IncomingSongs = () => {
                     </p>
                     {submission.created_at && (
                       <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1">
-                        <Calendar size={10} />
+                        <Calendar size={10} className="text-blue-400" />
                         {new Date(submission.created_at).toLocaleDateString(
                           "en-IN",
                           { day: "numeric", month: "short", year: "numeric" },
@@ -219,24 +230,19 @@ const IncomingSongs = () => {
                 </div>
 
                 <div className="mt-auto px-4 pb-4">
-                  {submission.imported ? (
-                    <div className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
-                      <CheckCircle2 size={14} /> Published on TuneRaaga
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => importSubmission(submission)}
-                      disabled={importingId === submission.id}
-                      className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
-                    >
-                      {importingId === submission.id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Download size={14} />
-                      )}
-                      Publish to TuneRaaga
-                    </button>
-                  )}
+                  <button
+                    onClick={() => importSubmission(submission)}
+                    disabled={importingId === submission.id}
+                    className="w-full flex items-center justify-center gap-1.5 text-white text-xs font-bold py-2.5 rounded-lg transition-all shadow-sm hover:opacity-90 disabled:opacity-60"
+                    style={{ background: BLUE_GRADIENT }}
+                  >
+                    {importingId === submission.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    Publish to TuneRaaga
+                  </button>
                 </div>
               </motion.div>
             );
