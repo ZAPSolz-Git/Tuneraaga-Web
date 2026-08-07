@@ -13,7 +13,8 @@ import {
   EyeOff,
 } from "lucide-react";
 import { toastEvents } from "../utils/toastEvents";
-
+import { supabaseAuth } from "../lib/supabaseAuth"; // ✅ new import
+const DISTRIBUTION_API_URL = import.meta.env.VITE_DISTRIBUTION_API_URL; 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
@@ -27,7 +28,9 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
   const [needsConfirm, setNeedsConfirm] = useState(false); // resend button dikhane ke liye
-
+  const [showLinkModal, setShowLinkModal] = useState(false);
+const [linkProfile, setLinkProfile] = useState(null); // { full_name, email }
+const [linkSession, setLinkSession] = useState(null);
   // 🔎 DIAGNOSTIC: kaunse Supabase project pe request ja rahi hai — console mein dekho.
   // Ye wahi project hona chahiye jahan Authentication → Users mein tumhara user dikhta hai.
   useEffect(() => {
@@ -42,6 +45,80 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
     setInfoMessage("");
     setNeedsConfirm(false);
   };
+
+
+const handleContinueWithDistribution = async () => {
+  resetMessages();
+  if (!email || !password) {
+    setError("Email and password are required.");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/api/auth/verify-distribution`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      setError(result.message || "Could not verify with Movement Creations.");
+      return;
+    }
+
+    // Account now exists locally (either just now, or already linked) —
+    // sign in normally, same as any Streaming account.
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({
+      email: email.trim(), password,
+    });
+    if (loginError || !data?.session) {
+      setError("Verified, but sign-in failed. Please try again.");
+      return;
+    }
+
+    toastEvents.show(
+      result.created ? "Account created from Movement Creations" : "Logged in successfully",
+      "success",
+    );
+    onSuccess ? onSuccess() : onClose?.();
+  } catch (err) {
+    console.error("Distribution verify error:", err);
+    setError("Could not connect. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleConfirmLink = async () => {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/api/auth/link-distribution`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: linkSession.access_token, password }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      setError(result.message || "Linking failed.");
+      return;
+    }
+    // Already signed in via supabaseAuth from the previous step
+    setShowLinkModal(false);
+    toastEvents.show("Logged in with Movement Creations", "success");
+    onSuccess ? onSuccess() : onClose?.();
+  } catch (err) {
+    setError("Could not complete linking.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleCancelLink = async () => {
+  await supabaseAuth.auth.signOut();
+  setShowLinkModal(false);
+  setLinkSession(null);
+  setLinkProfile(null);
+};
 
   // ─── RESEND CONFIRMATION EMAIL ───
   const handleResendConfirmation = async () => {
@@ -403,6 +480,17 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
                   </div>
                 )}
 
+                {mode === "login" && (
+  <button
+    type="button"
+    onClick={handleContinueWithDistribution}
+    disabled={loading}
+    className="w-full mt-2 border border-slate-300 text-slate-700 font-semibold py-2.5 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-60"
+  >
+    Continue with Movement Creations
+  </button>
+)}
+
                 {error && (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
                     {error}
@@ -473,6 +561,25 @@ export default function Auth({ onClose, onSuccess, initialMode = "login" }) {
                     </button>
                   </>
                 )}
+
+                {showLinkModal && (
+  <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <h3 className="text-lg font-bold text-slate-900 mb-2">Use your Movement Creations account?</h3>
+      <p className="text-slate-600 text-sm mb-5">
+        We found <strong>{linkProfile?.full_name || linkProfile?.email}</strong> on Movement Creations.
+        Link this identity to TuneRaaga to see your released songs here.
+      </p>
+      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{error}</div>}
+      <div className="flex gap-3">
+        <button onClick={handleCancelLink} disabled={loading} className="flex-1 border border-slate-300 rounded-xl py-2.5 font-semibold text-slate-700">Cancel</button>
+        <button onClick={handleConfirmLink} disabled={loading} className="flex-1 bg-blue-600 text-white rounded-xl py-2.5 font-semibold">
+          {loading ? "Linking..." : "Confirm"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
               </div>
             </>
           )}

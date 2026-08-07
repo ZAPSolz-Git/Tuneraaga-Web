@@ -1,14 +1,29 @@
 const { supabaseAdmin, distributionAuth } = require("../config/supabaseClient");
-
 const verifyToken = async (token) => {
+  // 1. Distribution — covers Distribution-native logins and "Continue with Movement Creations"
   try {
     const { data, error } = await distributionAuth.auth.getUser(token);
-    if (!error && data?.user) return data.user;
+    if (!error && data?.user) {
+      return { id: data.user.id, email: data.user.email };
+    }
   } catch (_) {}
+
+  // 2. Streaming's own project — native signups AND linked users' local password
   try {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (!error && data?.user) return data.user;
+    if (!error && data?.user) {
+      const localId = data.user.id;
+      // ✅ NEW — if this local account is linked, resolve to the canonical Distribution id
+      const { data: linked } = await supabaseAdmin
+        .from("users")
+        .select("id, email")
+        .eq("local_auth_id", localId)
+        .maybeSingle();
+      if (linked) return { id: linked.id, email: linked.email };
+      return { id: localId, email: data.user.email };
+    }
   } catch (_) {}
+
   return null;
 };
 

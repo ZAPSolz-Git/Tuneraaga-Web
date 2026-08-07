@@ -25,21 +25,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import { genres, getSubgenres } from "../lib/subgener";
 
-// ✅ FIX: was hardcoded to "http://localhost:5000/api/content".
-// That meant the LIVE site (tuneraagaweb.vercel.app) tried to call
-// localhost:5000 on the visitor's own machine, which doesn't exist there —
-// hence "blocked by CORS policy... loopback address space" and uploads
-// only working locally.
-//
-// Now it reads from Vite's env variable VITE_API_URL (already defined in
-// your .env files):
-//   - local .env      -> VITE_API_URL=http://localhost:5000
-//   - production .env -> VITE_API_URL=https://tuneraaga-web-1.onrender.com
-//
-// IMPORTANT: On Vercel, this env var must ALSO be added under
-// Project Settings -> Environment Variables (VITE_API_URL = your Render URL),
-// then redeploy — Vite bakes env vars in at build time, so just having it
-// in a local .env file is not enough for the live build.
+
 const API_BASE = `${import.meta.env.VITE_API_URL}/api/content`;
 
 const uploadAssetToBackend = async (file) => {
