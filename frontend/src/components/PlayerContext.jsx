@@ -20,6 +20,7 @@ import {
   Maximize2,
   Megaphone,
   ChevronRight,
+  Music,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -48,6 +49,32 @@ export const parseArtists = (artistStr) => {
 
 const AD_FAILSAFE_MS = 45000;
 const AD_SKIP_AFTER_SECONDS = 5;
+const AD_CACHE_DURATION_MS = 30000; // 30 sec cache, uske baad fresh fetch DB se
+
+// 🔊 ROBUST video detection: sirf `media_type` column par depend nahi karte.
+// Agar column missing/null/galat ho, URL ke extension se bhi guess kar lete hain,
+// taaki video file kabhi bhi galti se <audio> element mein na chali jaye.
+const VIDEO_EXTENSIONS = [
+  ".mp4",
+  ".mov",
+  ".webm",
+  ".mkv",
+  ".avi",
+  ".m4v",
+  ".ogv",
+];
+const isVideoAd = (ad) => {
+  if (!ad) return false;
+  const type = String(ad.media_type || "")
+    .trim()
+    .toLowerCase();
+  if (type === "video") return true;
+  if (type === "audio") return false;
+  const url = String(ad.audio_url || "")
+    .toLowerCase()
+    .split("?")[0];
+  return VIDEO_EXTENSIONS.some((ext) => url.endsWith(ext));
+};
 
 const PlayerContext = createContext(null);
 
@@ -70,6 +97,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [isAdPlaying, setIsAdPlaying] = useState(false);
+  const [adMediaType, setAdMediaType] = useState(null); // 🔊 'audio' | 'video' | null
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [topBannerDismissed, setTopBannerDismissed] = useState(false);
@@ -82,6 +110,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   }, []);
 
   const audioRef = useRef(null);
+  const videoAdRef = useRef(null); // 🔊 dedicated <video> element for video ads
   const currentSongRef = useRef(null);
   const currentListRef = useRef([]);
   const currentIndexRef = useRef(null);
@@ -89,11 +118,14 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   const countedSongIds = useRef(new Set());
   const userRef = useRef(null);
   const isPaidRef = useRef(false); // 🔊 live paid flag (ad decision isi se)
+  const isMutedRef = useRef(false); // 🔊 live mute flag (video unmute-after-play ke liye)
+  const volumeRef = useRef(1); // 🔊 live volume flag (video unmute-after-play ke liye)
 
   const isAdPlayingRef = useRef(false);
   const pendingSongRef = useRef(null);
   const adsListRef = useRef([]);
   const adsFetchedRef = useRef(false);
+  const adsFetchedAtRef = useRef(0); // 🔊 last fetch timestamp (cache invalidation ke liye)
   const adFailsafeTimerRef = useRef(null);
 
   const playTokenRef = useRef(0);
@@ -111,6 +143,12 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   useEffect(() => {
     isShuffleRef.current = isShuffle;
   }, [isShuffle]);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
 
   // 🔊 email ka koi PAID order hai? -> isPaid true (tabhi ad-free)
   const checkPaid = useCallback(async (email) => {
@@ -163,8 +201,16 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     return () => subscription.unsubscribe();
   }, [checkPaid]);
 
-  const fetchAds = useCallback(async () => {
-    if (adsFetchedRef.current) return adsListRef.current;
+  // 🔊 ads list cache: 30 sec ke baad DB se fresh list, isliye naya upload
+  // bina page reload ke bhi thodi der mein reflect ho jata hai.
+  const fetchAds = useCallback(async (force = false) => {
+    const now = Date.now();
+    const cacheExpired = now - adsFetchedAtRef.current > AD_CACHE_DURATION_MS;
+
+    if (!force && adsFetchedRef.current && !cacheExpired) {
+      return adsListRef.current;
+    }
+
     try {
       const { data, error } = await supabase
         .from("ads")
@@ -172,6 +218,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         .eq("active", true);
       if (!error && data) {
         adsListRef.current = data;
+        adsFetchedAtRef.current = now;
       } else if (error) {
         console.error("Ads fetch error:", error);
       }
@@ -183,7 +230,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
   }, []);
 
   const getRandomAd = useCallback(async () => {
-    const ads = adsFetchedRef.current ? adsListRef.current : await fetchAds();
+    const ads = await fetchAds();
     if (!ads || ads.length === 0) return null;
     return ads[Math.floor(Math.random() * ads.length)];
   }, [fetchAds]);
@@ -247,40 +294,85 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     }
   };
 
-  const attemptPlay = useCallback((token, onFailure) => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  // 🔊 ab optional mediaEl param leta hai — audio ya video, dono ke liye
+  // same logic reuse hoti hai.
+  //
+  // 🔊 VIDEO AUTOPLAY FIX: browsers (Chrome/Safari/etc.) block UNMUTED
+  // autoplay once the "user gesture" context is lost — and here it IS lost,
+  // because playAd() does `await getRandomAd()` before calling play(). For
+  // <audio> elements browsers are lenient and still allow it, but for
+  // <video> elements with sound they reject it (NotAllowedError). When that
+  // happened, the old code treated it as a hard failure and skipped
+  // straight to the real song — so you'd hear the real song's audio
+  // (mistaken for "the ad playing with no video") while the video ad was
+  // silently never shown at all.
+  //
+  // Fix: for the VIDEO element specifically, we always start MUTED (which
+  // every browser allows to autoplay), then unmute immediately once
+  // playback has actually started. This guarantees the video is visible,
+  // and restores sound right after — matching real ad-player behaviour.
+  const attemptPlay = useCallback((token, onFailure, mediaEl) => {
+    const media = mediaEl || audioRef.current;
+    if (!media) return;
+    const isVideoEl = media === videoAdRef.current;
     let hasStarted = false;
-    const tryPlay = () => {
+
+    const tryPlay = (forceMuted) => {
       if (hasStarted) return;
       if (playTokenRef.current !== token) return;
-      audio
+
+      if (isVideoEl && forceMuted) {
+        media.muted = true;
+      }
+
+      media
         .play()
         .then(() => {
           if (playTokenRef.current !== token) {
-            audio.pause();
+            media.pause();
             return;
           }
           hasStarted = true;
           setPlaying(true);
+
+          // Unmute the video right after playback actually starts — this
+          // "muted bootstrap" is allowed by browser autoplay policies even
+          // though a cold unmuted autoplay wasn't.
+          if (isVideoEl && forceMuted) {
+            media.muted = isMutedRef.current;
+            media.volume = volumeRef.current;
+          }
         })
         .catch((err) => {
+          // If an unmuted video autoplay was blocked, retry once — but
+          // muted this time — instead of giving up on the ad entirely.
+          if (
+            isVideoEl &&
+            !forceMuted &&
+            (err.name === "NotAllowedError" || err.name === "AbortError")
+          ) {
+            tryPlay(true);
+            return;
+          }
           if (err.name !== "AbortError" && err.name !== "NotAllowedError")
             console.error("Play error:", err);
           if (playTokenRef.current === token && onFailure) onFailure();
         });
     };
-    if (audio.readyState >= 2) tryPlay();
+
+    const startAttempt = () => tryPlay(isVideoEl ? false : undefined);
+
+    if (media.readyState >= 2) startAttempt();
     else {
       const onCanPlay = () => {
-        audio.removeEventListener("canplay", onCanPlay);
+        media.removeEventListener("canplay", onCanPlay);
         clearTimeout(fb);
-        tryPlay();
+        startAttempt();
       };
-      audio.addEventListener("canplay", onCanPlay, { once: true });
+      media.addEventListener("canplay", onCanPlay, { once: true });
       const fb = setTimeout(() => {
-        audio.removeEventListener("canplay", onCanPlay);
-        tryPlay();
+        media.removeEventListener("canplay", onCanPlay);
+        startAttempt();
       }, 3000);
     }
   }, []);
@@ -293,7 +385,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       audio.pause();
       audio.src = url;
       audio.load();
-      attemptPlay(token);
+      attemptPlay(token, undefined, audio);
       return token;
     },
     [attemptPlay],
@@ -309,6 +401,14 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
       clearAdFailsafe();
       isAdPlayingRef.current = false;
       setIsAdPlaying(false);
+      setAdMediaType(null);
+
+      // agar video ad chal raha tha to use rok/clear kar do
+      const video = videoAdRef.current;
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+      }
 
       setCurrentSong(song);
       currentSongRef.current = song;
@@ -321,7 +421,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         loadedSongIdRef.current = song.id;
         loadAndPlay(song.audioUrl);
       } else {
-        attemptPlay(playTokenRef.current);
+        attemptPlay(playTokenRef.current, undefined, audio);
       }
     },
     [incrementSongCounts, saveToHistory, loadAndPlay, attemptPlay],
@@ -331,14 +431,24 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     clearAdFailsafe();
     isAdPlayingRef.current = false;
     setIsAdPlaying(false);
+    setAdMediaType(null);
+
+    const video = videoAdRef.current;
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+    }
+
     const song = pendingSongRef.current;
     pendingSongRef.current = null;
     if (song) startActualSong(song);
   }, [startActualSong]);
 
+  // 🔊 ab audio ya video, dono type ke ads handle karta hai
   const playAd = useCallback(
     async (song) => {
       const audio = audioRef.current;
+      const video = videoAdRef.current;
       if (!audio) return;
 
       isAdPlayingRef.current = true;
@@ -359,13 +469,14 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         // koi ad configured nahi -> user ko block mat karo, song chalao
         isAdPlayingRef.current = false;
         setIsAdPlaying(false);
+        setAdMediaType(null);
         startActualSong(song);
         return;
       }
 
-      audio.pause();
-      audio.src = ad.audio_url;
-      audio.load();
+      const isVideo = isVideoAd(ad);
+      console.log("[Player] Ad selected:", ad, "=> isVideo:", isVideo);
+      setAdMediaType(isVideo ? "video" : "audio");
 
       clearAdFailsafe();
       adFailsafeTimerRef.current = setTimeout(() => {
@@ -373,7 +484,23 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
         finishAdAndPlayPending();
       }, AD_FAILSAFE_MS);
 
-      attemptPlay(token, finishAdAndPlayPending);
+      if (isVideo && video) {
+        audio.pause();
+        audio.removeAttribute("src");
+        video.pause();
+        video.src = ad.audio_url;
+        video.load();
+        attemptPlay(token, finishAdAndPlayPending, video);
+      } else {
+        if (video) {
+          video.pause();
+          video.removeAttribute("src");
+        }
+        audio.pause();
+        audio.src = ad.audio_url;
+        audio.load();
+        attemptPlay(token, finishAdAndPlayPending, audio);
+      }
     },
     [getRandomAd, startActualSong, attemptPlay, finishAdAndPlayPending],
   );
@@ -489,12 +616,17 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     finishAdPlayAndPlayPendingRef.current = finishAdAndPlayPending;
   });
 
+  // 🔊 audio element (songs + audio ads)
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "auto";
     audioRef.current = audio;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onTimeUpdate = () => {
+      if (isAdPlayingRef.current) return; // video ad ke time video element khud track karta hai
+      setCurrentTime(audio.currentTime);
+    };
     const onLoadedMetadata = () => {
+      if (isAdPlayingRef.current) return;
       if (audio.duration && isFinite(audio.duration)) {
         setDuration(audio.duration);
       }
@@ -539,6 +671,15 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     if (audioRef.current) {
       audioRef.current.volume = volume;
       audioRef.current.muted = isMuted;
+    }
+    // Video ad's mute/volume is intentionally NOT force-synced here while an
+    // ad is starting up — attemptPlay() manages muted-bootstrap-then-unmute
+    // itself for the video element so autoplay isn't blocked. Once the ad is
+    // already playing, it's safe to keep it in sync with the player's
+    // volume/mute controls like normal.
+    if (videoAdRef.current && !videoAdRef.current.paused) {
+      videoAdRef.current.volume = volume;
+      videoAdRef.current.muted = isMuted;
     }
   }, [volume, isMuted]);
 
@@ -596,6 +737,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     isMuted,
     isShuffle,
     isAdPlaying,
+    adMediaType,
     canSkipAd,
     adSkipAfterSeconds: AD_SKIP_AFTER_SECONDS,
     user,
@@ -623,6 +765,60 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
     <PlayerContext.Provider value={value}>
       {children}
 
+      {/* 🔊 video ad — FULLSCREEN overlay while a video ad is playing.
+          "fixed inset-0" always has real viewport dimensions (never 0x0),
+          so we only toggle opacity/pointer-events to show/hide — this keeps
+          the earlier zero-size autoplay bug fixed while going fullscreen. */}
+      <div
+        className={`fixed inset-0 z-[110] bg-black flex items-center justify-center transition-opacity duration-300 ${
+          isAdPlaying && adMediaType === "video"
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <video
+          ref={videoAdRef}
+          muted
+          playsInline
+          className="w-full h-full object-contain bg-black"
+          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+          onLoadedMetadata={(e) => {
+            if (
+              e.currentTarget.duration &&
+              isFinite(e.currentTarget.duration)
+            ) {
+              setDuration(e.currentTarget.duration);
+            }
+          }}
+          onEnded={() => finishAdAndPlayPending()}
+          onError={() => finishAdAndPlayPending()}
+        />
+
+        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 md:px-8 py-4 md:py-6 bg-gradient-to-b from-black/80 to-transparent">
+          <span className="flex items-center gap-2 text-white text-sm md:text-base font-bold">
+            <Megaphone className="w-4 h-4 md:w-5 md:h-5 text-amber-400" />
+            Advertisement
+          </span>
+          {isAdPlaying && adMediaType === "video" && (
+            <>
+              {canSkipAd ? (
+                <button
+                  onClick={skipAd}
+                  className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white text-xs md:text-sm font-bold px-3.5 py-2 rounded-full border border-white/20 transition-colors"
+                >
+                  Skip Ad <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <span className="text-white/80 text-xs md:text-sm font-semibold bg-black/40 px-3.5 py-2 rounded-full border border-white/10">
+                  Skip in{" "}
+                  {Math.max(0, Math.ceil(AD_SKIP_AFTER_SECONDS - currentTime))}s
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="fixed bottom-0 left-0 right-0 z-[100] flex flex-col pointer-events-none">
         <AnimatePresence>
           {showTopBanner && (
@@ -642,6 +838,7 @@ export function PlayerProvider({ children, proPlansRoute = "/pro-plans" }) {
                 song={currentSong}
                 isPlaying={playing}
                 isAdPlaying={isAdPlaying}
+                adMediaType={adMediaType}
                 canSkipAd={canSkipAd}
                 adSkipAfterSeconds={AD_SKIP_AFTER_SECONDS}
                 onSkipAd={skipAd}
@@ -750,6 +947,7 @@ const StickyPlayer = ({
   song,
   isPlaying,
   isAdPlaying,
+  adMediaType,
   canSkipAd,
   adSkipAfterSeconds,
   onSkipAd,
@@ -771,10 +969,12 @@ const StickyPlayer = ({
 }) => {
   if (!song) return null;
   const disabled = isAdPlaying;
+  const isVideoAdPlaying = isAdPlaying && adMediaType === "video";
   const skipCountdown = Math.max(
     0,
     Math.ceil(adSkipAfterSeconds - currentTime),
   );
+  const hasArt = Boolean(song.albumArt || song.img);
 
   return (
     <motion.div
@@ -790,14 +990,26 @@ const StickyPlayer = ({
               <div className="w-full h-full flex items-center justify-center bg-slate-800">
                 <Megaphone className="w-6 h-6 text-amber-400" />
               </div>
-            ) : (
+            ) : hasArt ? (
               <img
-                src={
-                  song.albumArt || song.img || "https://via.placeholder.com/50"
-                }
+                src={song.albumArt || song.img}
                 alt="Art"
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                onError={(e) => {
+                  // 🔊 broken/unreachable image URL -> local fallback dikhao,
+                  // kisi external placeholder service (via.placeholder.com) ko call mat karo
+                  e.currentTarget.replaceWith(
+                    Object.assign(document.createElement("div"), {
+                      className:
+                        "w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800",
+                    }),
+                  );
+                }}
               />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800">
+                <Music className="w-6 h-6 text-gray-400" />
+              </div>
             )}
           </div>
           <div className="flex flex-col overflow-hidden">
@@ -807,7 +1019,9 @@ const StickyPlayer = ({
                   Advertisement
                 </h4>
                 <p className="text-xs text-gray-400 truncate mt-1">
-                  Song shuru hoga ad khatam/skip hone ke baad
+                  {isVideoAdPlaying
+                    ? "Video ad chal raha hai"
+                    : "Song shuru hoga ad khatam/skip hone ke baad"}
                 </p>
               </>
             ) : (

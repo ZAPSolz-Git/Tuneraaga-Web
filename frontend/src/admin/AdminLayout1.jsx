@@ -8,7 +8,6 @@ import {
   Search,
   User,
   Home,
-  Music,
   X,
   Info,
   TrendingUp,
@@ -18,7 +17,6 @@ import {
   Users,
   LogOut,
   Upload,
-  Inbox,
   ListMusic,
   Sparkles,
   Award,
@@ -39,11 +37,6 @@ const BLUE_DARK = "#1d4ed8";
 const TEXT_BLACK = "#0f172a";
 const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 
-// Name of the custom event HeroBannerAdmin.jsx fires right after a
-// successful save. AdminLayout listens for this so the sidebar logo /
-// top-bar text update immediately, without needing a full page refresh
-// (a route change to the same "/admin*" layout does NOT remount this
-// component, so the old mount-only useEffect never re-ran).
 const ADMIN_BRANDING_EVENT = "admin-branding-updated";
 
 const NavItem = ({ icon: Icon, label, to, sidebarOpen }) => {
