@@ -256,20 +256,33 @@ export default function LikedSongs() {
   // Show login required if not authenticated
   if (!user && !loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-        <Music size={48} className="text-slate-300 mb-4" />
-        <h2 className="text-2xl font-bold mb-2 text-slate-900">
-          Login Required
-        </h2>
-        <p className="text-slate-500 mb-6 text-center">
-          Please login to see your liked songs.
-        </p>
-        <button
-          onClick={() => setShowAuthModal(true)}
-          className="bg-blue-600 text-white px-6 py-3 rounded-full font-bold hover:bg-blue-700"
-        >
-          Login / Sign Up
-        </button>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-red-50/40 to-slate-50 p-4">
+        <div className="relative bg-white/80 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-xl shadow-red-100/50 px-8 py-12 md:px-14 md:py-16 max-w-md w-full text-center overflow-hidden">
+          {/* Decorative blurred circles */}
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-200/40 rounded-full blur-2xl" />
+          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-200/40 rounded-full blur-2xl" />
+
+          {/* Icon */}
+          <div className="relative w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-red-500 to-pink-500 flex items-center justify-center shadow-lg shadow-red-200">
+            <Heart size={36} className="text-white fill-white" />
+          </div>
+
+          <h2 className="relative text-2xl md:text-3xl font-extrabold mb-2 text-slate-900 tracking-tight">
+            Login Required
+          </h2>
+          <p className="relative text-slate-500 mb-8 text-sm md:text-base leading-relaxed">
+            Please login to see your liked songs and keep track of the music you
+            love.
+          </p>
+
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="relative w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-pink-600 text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-red-200 hover:shadow-xl hover:shadow-red-300 hover:scale-105 active:scale-95 transition-all duration-300"
+          >
+            Login / Sign Up
+          </button>
+        </div>
+
         {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
       </div>
     );
