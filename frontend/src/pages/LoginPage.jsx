@@ -155,7 +155,7 @@ const LoginPage = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    
+
     if (isLoading) return;
     setIsLoading(true);
     setError("");
@@ -362,14 +362,14 @@ const LoginPage = () => {
         </div>
 
         <div className="text-center">
-          <div className="flex justify-center">
+          {/* <div className="flex justify-center">
             <motion.img
               whileHover={{ scale: 1.05, rotate: 5 }}
               src="/tuneraaga.png"
               alt="Tune Raaga Logo"
               className="w-[180px] sm:w-[220px] h-auto object-contain drop-shadow-lg"
             />
-          </div>
+          </div> */}
 
           <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-600">
             {loginType === "admin" ? "Admin Portal" : "Artist Portal"}

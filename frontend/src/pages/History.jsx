@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../components/AuthContext";
+import useAuthGate from "../hooks/useAuthGate";
 import {
   Play,
   Pause,
@@ -50,6 +51,23 @@ export default function History() {
   const historySongsRef = useRef([]);
   const currentIndexRef = useRef(null);
   const currentListRef = useRef([]);
+
+  // Reusable "Login Required" gate — same blue color scheme as before
+  const authGate = useAuthGate({
+    icon: Clock,
+    message:
+      "Please login to view your recently played songs and pick up right where you left off.",
+    pageGradient: "from-slate-50 via-blue-50/40 to-slate-50",
+    cardShadow: "shadow-blue-100/50",
+    blob1: "bg-blue-200/40",
+    blob2: "bg-cyan-200/40",
+    iconGradient: "from-blue-500 to-cyan-500",
+    iconShadow: "shadow-blue-200",
+    buttonGradient: "from-blue-600 to-cyan-600",
+    buttonShadow: "shadow-blue-200 hover:shadow-xl hover:shadow-blue-300",
+    showAuthModal,
+    setShowAuthModal,
+  });
 
   // Keep refs in sync
   useEffect(() => {
@@ -340,37 +358,7 @@ export default function History() {
 
   // Show login required if not authenticated
   if (!user && !loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-50 p-4">
-        <div className="relative bg-white/80 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-xl shadow-blue-100/50 px-8 py-12 md:px-14 md:py-16 max-w-md w-full text-center overflow-hidden">
-          {/* Decorative blurred circles */}
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-200/40 rounded-full blur-2xl" />
-          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-cyan-200/40 rounded-full blur-2xl" />
-
-          {/* Icon */}
-          <div className="relative w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-200">
-            <Clock size={36} className="text-white" />
-          </div>
-
-          <h2 className="relative text-2xl md:text-3xl font-extrabold mb-2 text-slate-900 tracking-tight">
-            Login Required
-          </h2>
-          <p className="relative text-slate-500 mb-8 text-sm md:text-base leading-relaxed">
-            Please login to view your recently played songs and pick up right
-            where you left off.
-          </p>
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="relative w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-blue-200 hover:shadow-xl hover:shadow-blue-300 hover:scale-105 active:scale-95 transition-all duration-300"
-          >
-            Login / Sign Up
-          </button>
-        </div>
-
-        {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
-      </div>
-    );
+    return authGate;
   }
 
   return (

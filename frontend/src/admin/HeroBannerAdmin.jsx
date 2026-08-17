@@ -17,17 +17,13 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Storage bucket used for hero banner assets.
-// Create this bucket in Supabase Dashboard → Storage → "New bucket" → name it exactly "hero-assets".
-// Mark it Public (so <img>/<audio> tags can load the returned URL directly),
-// or keep it private and swap getPublicUrl() for createSignedUrl() below.
+
 const BUCKET = "hero-assets";
 
-// Must match the event name AdminLayout.jsx listens for. Firing this after
-// a successful save lets the sidebar logo / top-bar text update immediately
-// — without it, AdminLayout only re-fetches on mount, so navigating to
-// "/admin" (same layout, no remount) would leave the old logo/text showing
-// until a manual page refresh.
+
+const SINGLETON_ROW_ID = "11111111-1111-4111-8111-111111111111";
+
+
 const ADMIN_BRANDING_EVENT = "admin-branding-updated";
 
 const BLUE_LIGHT = "#3b82f6";
@@ -60,12 +56,7 @@ const HeroBannerAdmin = () => {
   const [uploadingAdminLogo, setUploadingAdminLogo] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Tracks admin_panel_logo_url and admin_panel_top_text exactly as last
-  // loaded from the DB. Used only to decide where to redirect after a
-  // successful save: if EITHER the admin logo or the admin top-bar text
-  // changed in this save, we send the admin back to /admin (so they see the
-  // update immediately); otherwise the normal hero-banner save still goes to
-  // the public home dashboard "/".
+  
   const lastSavedAdminLogoRef = useRef("");
   const lastSavedAdminTopTextRef = useRef("");
 
@@ -75,15 +66,22 @@ const HeroBannerAdmin = () => {
 
   const fetchExisting = async () => {
     setLoading(true);
+    setErrorMsg("");
     try {
+   
       const { data, error } = await supabase
         .from("hero_banner")
         .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(1)
+        .eq("id", SINGLETON_ROW_ID)
         .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        // A real Postgrest error here (not just "0 rows") almost always
+        // means RLS is blocking SELECT for the anon role.
+        throw new Error(
+          `Could not read hero_banner (possible RLS SELECT block): ${error.message}`,
+        );
+      }
 
       if (data) {
         setForm({
@@ -101,6 +99,9 @@ const HeroBannerAdmin = () => {
         });
         lastSavedAdminLogoRef.current = data.admin_panel_logo_url || "";
         lastSavedAdminTopTextRef.current = data.admin_panel_top_text || "";
+      } else {
+      
+        setForm({ ...emptyForm, id: null });
       }
     } catch (err) {
       console.error("fetchExisting failed:", err);
@@ -117,15 +118,7 @@ const HeroBannerAdmin = () => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
-  // Upload a file straight to Supabase Storage and return its public URL.
-  //
-  // NOTE: We intentionally do NOT block on supabase.auth.getSession() here.
-  // In this project login is done via a custom profiles/role flow (see LoginPage),
-  // so there may not be a Supabase Auth session even though the user is "logged in".
-  //
-  // If your bucket is PUBLIC or has an RLS policy allowing anon inserts, this works
-  // with the anon key. If the upload gets rejected, you'll see the REAL storage
-  // error (e.g. "new row violates row-level security policy" or "Bucket not found").
+
   const uploadFile = async (file, folder) => {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${folder}/${Date.now()}-${safeName}`;
@@ -210,8 +203,7 @@ const HeroBannerAdmin = () => {
     }
   };
 
-  // Website-wide logo (used in Layout.jsx sidebar/header — separate from the
-  // hero-section logo above, which only shows inside the banner itself).
+  
   const handleSiteLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -231,9 +223,7 @@ const HeroBannerAdmin = () => {
     }
   };
 
-  // Admin Panel sidebar logo — replaces the static "Admin Panel" text at the
-  // top of AdminLayout.jsx's sidebar. Separate from the public website logo,
-  // since admin branding is often different from the public-facing one.
+ 
   const handleAdminLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -261,6 +251,8 @@ const HeroBannerAdmin = () => {
     setErrorMsg("");
     try {
       const payload = {
+        
+        id: form.id || SINGLETON_ROW_ID,
         title: form.title,
         description: form.description,
         logo_url: form.logo_url,
@@ -274,56 +266,35 @@ const HeroBannerAdmin = () => {
         updated_at: new Date().toISOString(),
       };
 
-      let error;
-      let savedRow;
+      console.log("[HeroBannerAdmin] saving payload:", payload);
 
-      if (form.id) {
-        const res = await supabase
-          .from("hero_banner")
-          .update(payload)
-          .eq("id", form.id)
-          .select()
-          .maybeSingle();
-        error = res.error;
-        savedRow = res.data;
+      
+      const { data: savedRow, error } = await supabase
+        .from("hero_banner")
+        .upsert(payload, { onConflict: "id" })
+        .select()
+        .maybeSingle();
 
-        if (error) throw error;
-
-        // ── KEY FIX ──
-        // If Postgrest returns no error AND no row, it almost always means
-        // RLS silently filtered the update to 0 affected rows (or the row
-        // no longer exists). Previously this case was NOT checked, so the
-        // UI showed "success" even though nothing was actually saved.
-        if (!savedRow) {
-          throw new Error(
-            "Update did not affect any row. This usually means a Row Level " +
-              "Security (RLS) policy on 'hero_banner' is blocking UPDATE for " +
-              "the anon role, or the row with this id no longer exists. " +
-              "Check Supabase → Authentication → Policies for this table.",
-          );
-        }
-      } else {
-        const res = await supabase
-          .from("hero_banner")
-          .insert(payload)
-          .select()
-          .single();
-        error = res.error;
-        savedRow = res.data;
-
-        if (error) throw error;
-
-        if (!savedRow) {
-          // Insert/update "succeeded" but returned nothing — almost always an RLS
-          // policy silently filtering the row back out. Surface this clearly
-          // instead of pretending it worked.
-          throw new Error(
-            "Save returned no row back — this usually means a Row Level Security " +
-              "policy on 'hero_banner' is blocking select-after-write. Check " +
-              "Supabase → Authentication → Policies for this table.",
-          );
-        }
+      if (error) {
+        // Almost always RLS blocking INSERT/UPDATE for the anon role.
+        throw new Error(
+          `Save failed (possible RLS block on hero_banner): ${error.message}`,
+        );
       }
+
+      if (!savedRow) {
+        // No error but also no row back — RLS is filtering the
+        // select-after-write. Surface this clearly instead of pretending it
+        // worked.
+        throw new Error(
+          "Save returned no row back — this usually means a Row Level " +
+            "Security (RLS) policy on 'hero_banner' is blocking INSERT/UPDATE " +
+            "or the select-after-write for the anon role. Check Supabase → " +
+            "Authentication → Policies for this table.",
+        );
+      }
+
+      console.log("[HeroBannerAdmin] confirmed saved row:", savedRow);
 
       // Only reached if we actually have a confirmed saved row back from the DB.
       const adminLogoChanged =
@@ -339,21 +310,12 @@ const HeroBannerAdmin = () => {
       // Re-fetch from DB to make 100% sure what's on screen matches what's saved.
       await fetchExisting();
 
-      // ── LIVE SIDEBAR UPDATE ──
-      // Tell AdminLayout.jsx to re-fetch the admin logo / top-bar text right
-      // now. Without this, navigating to "/admin" doesn't remount the
-      // layout (it's the shared parent route), so the sidebar kept showing
-      // stale branding until the page was manually refreshed.
+     
       if (isAdminOnlyChange) {
         window.dispatchEvent(new CustomEvent(ADMIN_BRANDING_EVENT));
       }
 
-      // ── CONDITIONAL REDIRECT ──
-      // If EITHER the admin panel logo or the admin top-bar text changed in
-      // this save, stay in the admin area (redirect to /admin) so the admin
-      // immediately sees the update. Otherwise (normal hero-banner content
-      // changes — title, description, hero logo, bg image, audio, website
-      // logo) redirect to the public home dashboard "/" as before.
+     
       if (isAdminOnlyChange) {
         navigate("/admin");
       } else {

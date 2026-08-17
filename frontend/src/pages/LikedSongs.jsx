@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../components/AuthContext";
+import useAuthGate from "../hooks/useAuthGate";
 import {
   Play,
   Pause,
@@ -48,6 +49,24 @@ export default function LikedSongs() {
   const currentListRef = useRef([]);
   const currentIndexRef = useRef(null);
   const userRef = useRef(null);
+
+  // Reusable "Login Required" gate — same red/pink color scheme as before
+  const authGate = useAuthGate({
+    icon: Heart,
+    iconClassName: "text-white fill-white",
+    message:
+      "Please login to see your liked songs and keep track of the music you love.",
+    pageGradient: "from-slate-50 via-red-50/40 to-slate-50",
+    cardShadow: "shadow-red-100/50",
+    blob1: "bg-red-200/40",
+    blob2: "bg-pink-200/40",
+    iconGradient: "from-red-500 to-pink-500",
+    iconShadow: "shadow-red-200",
+    buttonGradient: "from-red-600 to-pink-600",
+    buttonShadow: "shadow-red-200 hover:shadow-xl hover:shadow-red-300",
+    showAuthModal,
+    setShowAuthModal,
+  });
 
   useEffect(() => {
     userRef.current = user;
@@ -255,37 +274,7 @@ export default function LikedSongs() {
 
   // Show login required if not authenticated
   if (!user && !loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-red-50/40 to-slate-50 p-4">
-        <div className="relative bg-white/80 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-xl shadow-red-100/50 px-8 py-12 md:px-14 md:py-16 max-w-md w-full text-center overflow-hidden">
-          {/* Decorative blurred circles */}
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-200/40 rounded-full blur-2xl" />
-          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-200/40 rounded-full blur-2xl" />
-
-          {/* Icon */}
-          <div className="relative w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-red-500 to-pink-500 flex items-center justify-center shadow-lg shadow-red-200">
-            <Heart size={36} className="text-white fill-white" />
-          </div>
-
-          <h2 className="relative text-2xl md:text-3xl font-extrabold mb-2 text-slate-900 tracking-tight">
-            Login Required
-          </h2>
-          <p className="relative text-slate-500 mb-8 text-sm md:text-base leading-relaxed">
-            Please login to see your liked songs and keep track of the music you
-            love.
-          </p>
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="relative w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-pink-600 text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-red-200 hover:shadow-xl hover:shadow-red-300 hover:scale-105 active:scale-95 transition-all duration-300"
-          >
-            Login / Sign Up
-          </button>
-        </div>
-
-        {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
-      </div>
-    );
+    return authGate;
   }
 
   return (

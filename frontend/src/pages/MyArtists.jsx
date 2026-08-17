@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import useAuthGate from "../hooks/useAuthGate";
 import {
   Play,
   Pause,
@@ -49,6 +50,23 @@ export default function MyArtists() {
   const userRef = useRef(null);
   const currentIndexRef = useRef(null);
   const currentListRef = useRef([]);
+
+  // Reusable "Login Required" gate — same emerald/teal color scheme as before
+  const authGate = useAuthGate({
+    icon: Users,
+    message:
+      "Please login to view your followed artists and stay updated on their latest releases.",
+    pageGradient: "from-slate-50 via-emerald-50/40 to-slate-50",
+    cardShadow: "shadow-emerald-100/50",
+    blob1: "bg-emerald-200/40",
+    blob2: "bg-teal-200/40",
+    iconGradient: "from-emerald-600 to-teal-600",
+    iconShadow: "shadow-emerald-200",
+    buttonGradient: "from-emerald-600 to-teal-600",
+    buttonShadow: "shadow-emerald-200 hover:shadow-xl hover:shadow-emerald-300",
+    showAuthModal,
+    setShowAuthModal,
+  });
 
   useEffect(() => {
     userRef.current = user;
@@ -320,37 +338,7 @@ export default function MyArtists() {
   );
 
   if (!user && !loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-emerald-50/40 to-slate-50 p-4">
-        <div className="relative bg-white/80 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-xl shadow-emerald-100/50 px-8 py-12 md:px-14 md:py-16 max-w-md w-full text-center overflow-hidden">
-          {/* Decorative blurred circles */}
-          <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-200/40 rounded-full blur-2xl" />
-          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-teal-200/40 rounded-full blur-2xl" />
-
-          {/* Icon */}
-          <div className="relative w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-200">
-            <Users size={36} className="text-white" />
-          </div>
-
-          <h2 className="relative text-2xl md:text-3xl font-extrabold mb-2 text-slate-900 tracking-tight">
-            Login Required
-          </h2>
-          <p className="relative text-slate-500 mb-8 text-sm md:text-base leading-relaxed">
-            Please login to view your followed artists and stay updated on their
-            latest releases.
-          </p>
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="relative w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-8 py-3.5 rounded-full font-bold shadow-lg shadow-emerald-200 hover:shadow-xl hover:shadow-emerald-300 hover:scale-105 active:scale-95 transition-all duration-300"
-          >
-            Login / Sign Up
-          </button>
-        </div>
-
-        {showAuthModal && <Auth onClose={() => setShowAuthModal(false)} />}
-      </div>
-    );
+    return authGate;
   }
 
   return (
