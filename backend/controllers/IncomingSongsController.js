@@ -1,20 +1,24 @@
-// distributionData = distribution project, SERVICE ROLE key (bypasses RLS —
-// needed to read all users' submissions, not just one). Not distributionAuth —
-// that one is anon-scoped for SSO/identity only.
-// supabaseAdmin = TuneRaaga's own project, service role (for the releases write).
 const { distributionData, supabaseAdmin } = require("../config/supabaseClient");
 console.log("distributionData is:", typeof distributionData, distributionData);
 const SUBMISSIONS_TABLE = "submissions";
 const APPROVED_STATUS = "approved";
 
-// ---- submission (+ its earliest track) -> releases row ----
-function mapSubmissionToRelease(submission) {
+function mapSubmissionToRelease(submission, releaseType) {
   const tracks = Array.isArray(submission.tracks) ? submission.tracks : [];
   const primaryTrack = tracks.length
     ? [...tracks].sort(
         (a, b) => new Date(a.created_at) - new Date(b.created_at),
       )[0]
     : null;
+
+  const normalizedType =
+    releaseType && ["Single", "Album"].includes(releaseType)
+      ? releaseType
+      : submission.release_type && submission.release_type !== "Single"
+        ? "Album"
+        : "Single";
+
+  const isAlbum = normalizedType === "Album";
 
   return {
     source_submission_id: submission.id, // upsert / dedupe key
@@ -29,7 +33,7 @@ function mapSubmissionToRelease(submission) {
     genre: submission.genre || primaryTrack?.genre || null,
     subgenre: submission.subgenre || primaryTrack?.subgenre || null,
     language: submission.language || primaryTrack?.trackTitleLanguage || null,
-    format: submission.format || null,
+    format: normalizedType,
     copyright_holder: submission.copyright_holder || null,
     copyright_year: submission.copyright_year
       ? String(submission.copyright_year)
@@ -41,19 +45,15 @@ function mapSubmissionToRelease(submission) {
     cover_url: submission.cover_url || null,
     audio_url: submission.audio_url || primaryTrack?.audio_file_url || null,
     lyrics: primaryTrack?.lyrics || null,
-    album_name:
-      submission.release_type && submission.release_type !== "Single"
-        ? submission.title
-        : null,
+
+    album_name: isAlbum
+      ? submission.title || primaryTrack?.title || null
+      : null,
     track_number: 1,
     status: "Published",
   };
 }
 
-// GET /api/admin/incoming-songs
-// Approved submissions (+ tracks + uploader) fetched directly from the
-// distribution DB, flagged with whether each is already in TuneRaaga's
-// own releases table.
 async function getIncomingSongs(req, res) {
   try {
     const { data: submissions, error: subError } = await distributionData
@@ -108,11 +108,9 @@ async function getIncomingSongs(req, res) {
   }
 }
 
-// POST /api/admin/incoming-songs/sync
-// Body: { submissionIds?: string[] }  — omit/empty to sync ALL pending approved submissions.
 async function syncIncomingSongs(req, res) {
   try {
-    const { submissionIds } = req.body || {};
+    const { submissionIds, releaseType } = req.body || {};
 
     let query = distributionData
       .from(SUBMISSIONS_TABLE)
@@ -139,12 +137,16 @@ async function syncIncomingSongs(req, res) {
       return res.json({ synced: 0, releases: [] });
     }
 
-    const payloads = submissions.map(mapSubmissionToRelease);
+    const payloads = submissions.map((s) =>
+      mapSubmissionToRelease(s, releaseType),
+    );
 
     const { data: upserted, error: upsertError } = await supabaseAdmin
       .from("releases")
       .upsert(payloads, { onConflict: "source_submission_id" })
-      .select("id, source_submission_id, title, primary_artist");
+      .select(
+        "id, source_submission_id, title, primary_artist, format, album_name",
+      );
 
     if (upsertError) {
       console.error("[syncIncomingSongs] upsert error:", upsertError);

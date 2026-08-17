@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2,
   Music2,
@@ -9,6 +9,8 @@ import {
   Calendar,
   User,
   UploadCloud,
+  Disc3,
+  X,
 } from "lucide-react";
 import apiClient from "@/lib/ApiClient";
 
@@ -24,6 +26,16 @@ const IncomingSongs = () => {
   const [query, setQuery] = useState("");
   const [importingId, setImportingId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
+
+  // release type used for the "Sync All" bulk action ("Single" | "Album")
+  const [bulkReleaseType, setBulkReleaseType] = useState("Single");
+
+  // controls the per-submission "Single / Album" choice modal
+  const [publishModal, setPublishModal] = useState({
+    open: false,
+    submission: null,
+    releaseType: "Single",
+  });
 
   const fetchIncoming = async () => {
     setLoading(true);
@@ -48,12 +60,30 @@ const IncomingSongs = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- single submission publish ----
-  const importSubmission = async (submission) => {
+  // ---- open the choice modal for a single submission ----
+  const openPublishModal = (submission) => {
+    // default: agar submission me 1 se zyada track hai to Album pre-select karo
+    const trackCount = Array.isArray(submission.tracks)
+      ? submission.tracks.length
+      : 0;
+    setPublishModal({
+      open: true,
+      submission,
+      releaseType: trackCount > 1 ? "Album" : "Single",
+    });
+  };
+
+  const closePublishModal = () => {
+    setPublishModal({ open: false, submission: null, releaseType: "Single" });
+  };
+
+  // ---- single submission publish (releaseType: "Single" | "Album") ----
+  const importSubmission = async (submission, releaseType) => {
     setImportingId(submission.id);
     try {
       await apiClient.post("/api/incoming-songs/sync", {
         submissionIds: [submission.id],
+        releaseType, // "Single" ya "Album" — backend isko `format` column me save karega
       });
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -68,6 +98,13 @@ const IncomingSongs = () => {
     }
   };
 
+  const confirmPublish = async () => {
+    if (!publishModal.submission) return;
+    const { submission, releaseType } = publishModal;
+    closePublishModal();
+    await importSubmission(submission, releaseType);
+  };
+
   // ---- bulk publish all pending approved submissions ----
   const syncAll = async () => {
     const pendingIds = submissions.filter((s) => !s.imported).map((s) => s.id);
@@ -77,6 +114,7 @@ const IncomingSongs = () => {
     try {
       await apiClient.post("/api/incoming-songs/sync", {
         submissionIds: pendingIds,
+        releaseType: bulkReleaseType, // sab pending submissions ke liye same type
       });
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -124,7 +162,17 @@ const IncomingSongs = () => {
             TuneRaaga pe publish karo.
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex items-center gap-2 self-start flex-wrap">
+          {/* bulk release type selector */}
+          <select
+            value={bulkReleaseType}
+            onChange={(e) => setBulkReleaseType(e.target.value)}
+            className="text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:border-blue-400"
+            title="Sync All ke liye release type"
+          >
+            <option value="Single">Single</option>
+            <option value="Album">Album</option>
+          </select>
           <button
             onClick={syncAll}
             disabled={syncingAll || loading || pendingCount === 0}
@@ -231,7 +279,7 @@ const IncomingSongs = () => {
 
                 <div className="mt-auto px-4 pb-4">
                   <button
-                    onClick={() => importSubmission(submission)}
+                    onClick={() => openPublishModal(submission)}
                     disabled={importingId === submission.id}
                     className="w-full flex items-center justify-center gap-1.5 text-white text-xs font-bold py-2.5 rounded-lg transition-all shadow-sm hover:opacity-90 disabled:opacity-60"
                     style={{ background: BLUE_GRADIENT }}
@@ -249,6 +297,124 @@ const IncomingSongs = () => {
           })}
         </div>
       )}
+
+      {/* ─── Single / Album choice modal ─── */}
+      <AnimatePresence>
+        {publishModal.open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={closePublishModal}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 relative"
+            >
+              <button
+                onClick={closePublishModal}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+
+              <h2 className="text-lg font-extrabold text-slate-900 mb-1">
+                Publish "{publishModal.submission?.title || "Untitled"}"
+              </h2>
+              <p className="text-sm text-slate-500 mb-4">
+                Ye release TuneRaaga pe kaise publish karna hai?
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <button
+                  onClick={() =>
+                    setPublishModal((prev) => ({
+                      ...prev,
+                      releaseType: "Single",
+                    }))
+                  }
+                  className={`flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 transition-all ${
+                    publishModal.releaseType === "Single"
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-slate-200 hover:border-blue-200"
+                  }`}
+                >
+                  <Music2
+                    size={20}
+                    className={
+                      publishModal.releaseType === "Single"
+                        ? "text-blue-600"
+                        : "text-slate-400"
+                    }
+                  />
+                  <span
+                    className={`text-sm font-bold ${
+                      publishModal.releaseType === "Single"
+                        ? "text-blue-700"
+                        : "text-slate-600"
+                    }`}
+                  >
+                    Single
+                  </span>
+                </button>
+
+                <button
+                  onClick={() =>
+                    setPublishModal((prev) => ({
+                      ...prev,
+                      releaseType: "Album",
+                    }))
+                  }
+                  className={`flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 transition-all ${
+                    publishModal.releaseType === "Album"
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-slate-200 hover:border-blue-200"
+                  }`}
+                >
+                  <Disc3
+                    size={20}
+                    className={
+                      publishModal.releaseType === "Album"
+                        ? "text-blue-600"
+                        : "text-slate-400"
+                    }
+                  />
+                  <span
+                    className={`text-sm font-bold ${
+                      publishModal.releaseType === "Album"
+                        ? "text-blue-700"
+                        : "text-slate-600"
+                    }`}
+                  >
+                    Album
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={closePublishModal}
+                  className="flex-1 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl py-2.5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmPublish}
+                  className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-white rounded-xl py-2.5 transition-all shadow-sm hover:opacity-90"
+                  style={{ background: BLUE_GRADIENT }}
+                >
+                  <UploadCloud size={14} />
+                  Publish
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

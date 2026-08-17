@@ -40,11 +40,20 @@ import {
   parseArtists,
 } from "../components/PlayerContext";
 
+// ✅ FIXED: grouping ab sirf `albumName` ke bharose nahi hota. Ab tabhi
+// "Album" section me jaayega jab:
+//   1) song.format === "Album" (yani IncomingSongs se Album choose karke
+//      publish kiya gaya tha)
+//   2) AND uska albumName bhi set ho
+// Agar format "Single" hai, to chahe albumName kuch bhi ho, wo song
+// hamesha Singles section me hi dikhega.
 const groupByAlbum = (songList) => {
   const albumMap = {};
   const singles = [];
   songList.forEach((song) => {
-    if (song.albumName && song.albumName.trim() !== "") {
+    const isAlbumFormat = (song.format || "").trim().toLowerCase() === "album";
+
+    if (isAlbumFormat && song.albumName && song.albumName.trim() !== "") {
       const key = song.albumName.trim().toLowerCase();
       if (!albumMap[key]) {
         albumMap[key] = {
@@ -655,25 +664,25 @@ const NewRelease = () => {
           .order("created_at", { ascending: false });
         if (error) throw error;
         setSongs(
-        data.map((song) => ({
-  id: song.id,
-  title: song.title,
-  artist: song.primary_artist,
-  featuringArtists: song.featuring_artists || "",
-  actorNames: song.actor_names || "",
-  movieName: song.movie_name || "",
-  img: song.cover_url || "https://via.placeholder.com/300",
-  audioUrl: song.audio_url,
-  language: song.language || "",
-  genre: song.genre || "",
-  subgenre: song.subgenre || "",
-  albumName: song.album_name || "",
-  albumCoverUrl: song.album_cover_url || song.cover_url || "",
-  format: song.format || "Single",
-  trackNumber: song.track_number || 1,
-  playCount: song.play_count || 0,
-  isCurated: !song.owner_user_id, // ← add this line
-})),
+          data.map((song) => ({
+            id: song.id,
+            title: song.title,
+            artist: song.primary_artist,
+            featuringArtists: song.featuring_artists || "",
+            actorNames: song.actor_names || "",
+            movieName: song.movie_name || "",
+            img: song.cover_url || "https://via.placeholder.com/300",
+            audioUrl: song.audio_url,
+            language: song.language || "",
+            genre: song.genre || "",
+            subgenre: song.subgenre || "",
+            albumName: song.album_name || "",
+            albumCoverUrl: song.album_cover_url || song.cover_url || "",
+            format: song.format || "Single",
+            trackNumber: song.track_number || 1,
+            playCount: song.play_count || 0,
+            isCurated: !song.owner_user_id,
+          })),
         );
       } catch (error) {
         console.error("Error fetching songs:", error);
