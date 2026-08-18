@@ -1,23 +1,25 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2,
   Music2,
   RefreshCw,
   Search,
+  CheckCircle2,
   Download,
   Calendar,
   User,
   UploadCloud,
-  Disc3,
+  Eye,
   X,
+  Play,
+  Pause,
+  Disc3,
+  Tag,
+  Languages,
+  Globe2,
 } from "lucide-react";
 import apiClient from "@/lib/ApiClient";
-
-// ─── Blue Gradient Palette (matches the rest of the admin panel) ───
-const BLUE_LIGHT = "#3b82f6";
-const BLUE_DARK = "#1d4ed8";
-const BLUE_GRADIENT = `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`;
 
 const IncomingSongs = () => {
   const [submissions, setSubmissions] = useState([]);
@@ -27,15 +29,13 @@ const IncomingSongs = () => {
   const [importingId, setImportingId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
 
-  // release type used for the "Sync All" bulk action ("Single" | "Album")
-  const [bulkReleaseType, setBulkReleaseType] = useState("Single");
+  // ---- details modal ----
+  const [activeSubmission, setActiveSubmission] = useState(null);
 
-  // controls the per-submission "Single / Album" choice modal
-  const [publishModal, setPublishModal] = useState({
-    open: false,
-    submission: null,
-    releaseType: "Single",
-  });
+  // ---- audio playback (single shared <audio> element) ----
+  const audioRef = useRef(null);
+  const [playingUrl, setPlayingUrl] = useState(null);
+  const [audioLoadingUrl, setAudioLoadingUrl] = useState(null);
 
   const fetchIncoming = async () => {
     setLoading(true);
@@ -60,30 +60,28 @@ const IncomingSongs = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- open the choice modal for a single submission ----
-  const openPublishModal = (submission) => {
-    // default: agar submission me 1 se zyada track hai to Album pre-select karo
-    const trackCount = Array.isArray(submission.tracks)
-      ? submission.tracks.length
-      : 0;
-    setPublishModal({
-      open: true,
-      submission,
-      releaseType: trackCount > 1 ? "Album" : "Single",
-    });
-  };
+  // stop playback whenever the modal closes
+  useEffect(() => {
+    if (!activeSubmission) {
+      stopAudio();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubmission]);
 
-  const closePublishModal = () => {
-    setPublishModal({ open: false, submission: null, releaseType: "Single" });
-  };
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
 
-  // ---- single submission publish (releaseType: "Single" | "Album") ----
-  const importSubmission = async (submission, releaseType) => {
+  // ---- single submission publish ----
+  const importSubmission = async (submission) => {
     setImportingId(submission.id);
     try {
       await apiClient.post("/api/incoming-songs/sync", {
         submissionIds: [submission.id],
-        releaseType, // "Single" ya "Album" — backend isko `format` column me save karega
       });
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -98,23 +96,17 @@ const IncomingSongs = () => {
     }
   };
 
-  const confirmPublish = async () => {
-    if (!publishModal.submission) return;
-    const { submission, releaseType } = publishModal;
-    closePublishModal();
-    await importSubmission(submission, releaseType);
-  };
-
   // ---- bulk publish all pending approved submissions ----
   const syncAll = async () => {
-    const pendingIds = submissions.filter((s) => !s.imported).map((s) => s.id);
+    const pendingIds = submissions
+      .filter((s) => !s.imported)
+      .map((s) => s.id);
     if (!pendingIds.length) return;
 
     setSyncingAll(true);
     try {
       await apiClient.post("/api/incoming-songs/sync", {
         submissionIds: pendingIds,
-        releaseType: bulkReleaseType, // sab pending submissions ke liye same type
       });
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -131,70 +123,95 @@ const IncomingSongs = () => {
     }
   };
 
-  // Only show songs that are NOT yet published — once a submission is
-  // imported/published, it disappears from this list immediately (no more
-  // "Published" badge lingering here; published songs live on the main site).
-  const filtered = submissions
-    .filter((s) => !s.imported)
-    .filter((s) => {
-      if (!query.trim()) return true;
-      const q = query.toLowerCase();
-      return (
-        (s.title || "").toLowerCase().includes(q) ||
-        (s.primary_artist || "").toLowerCase().includes(q) ||
-        (s.users?.full_name || "").toLowerCase().includes(q) ||
-        (s.users?.label_name || "").toLowerCase().includes(q)
-      );
-    });
+  // ---- audio playback helpers ----
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setPlayingUrl(null);
+    setAudioLoadingUrl(null);
+  };
+
+  const togglePlay = (url) => {
+    if (!url || !audioRef.current) return;
+
+    // same track already playing -> pause it
+    if (playingUrl === url) {
+      audioRef.current.pause();
+      setPlayingUrl(null);
+      return;
+    }
+
+    // switching tracks (or starting fresh)
+    setAudioLoadingUrl(url);
+    audioRef.current.src = url;
+    audioRef.current
+      .play()
+      .then(() => {
+        setPlayingUrl(url);
+        setAudioLoadingUrl(null);
+      })
+      .catch((err) => {
+        console.error("audio play error:", err);
+        setAudioLoadingUrl(null);
+        alert("Audio play nahi ho paaya — file URL check karo.");
+      });
+  };
+
+  const filtered = submissions.filter((s) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      (s.title || "").toLowerCase().includes(q) ||
+      (s.primary_artist || "").toLowerCase().includes(q) ||
+      (s.users?.full_name || "").toLowerCase().includes(q) ||
+      (s.users?.label_name || "").toLowerCase().includes(q)
+    );
+  });
 
   const pendingCount = submissions.filter((s) => !s.imported).length;
 
   return (
-    <div className="p-4 md:p-8 bg-white min-h-full">
+    <div className="p-4 md:p-8">
+      {/* shared audio element — src swapped by togglePlay() */}
+      <audio
+        ref={audioRef}
+        onEnded={() => setPlayingUrl(null)}
+        className="hidden"
+      />
+
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-            <Music2 size={24} className="text-blue-500" /> Incoming Songs
+            <Music2 size={24} className="text-emerald-500" /> Incoming Songs
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Movement Creations (Distribution) se approved submissions — yahan se
-            TuneRaaga pe publish karo.
+            Movement Creations (Distribution) se approved submissions — yahan
+            se TuneRaaga pe publish karo.
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start flex-wrap">
-          {/* bulk release type selector */}
-          <select
-            value={bulkReleaseType}
-            onChange={(e) => setBulkReleaseType(e.target.value)}
-            className="text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:border-blue-400"
-            title="Sync All ke liye release type"
-          >
-            <option value="Single">Single</option>
-            <option value="Album">Album</option>
-          </select>
+        <div className="flex items-center gap-2 self-start">
           <button
             onClick={syncAll}
             disabled={syncingAll || loading || pendingCount === 0}
-            className="flex items-center gap-2 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all shadow-sm hover:opacity-90 disabled:opacity-50"
-            style={{ background: BLUE_GRADIENT }}
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
           >
-            <UploadCloud
-              size={15}
-              className={syncingAll ? "animate-spin" : ""}
-            />
+            {syncingAll ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <UploadCloud size={15} />
+            )}
             {syncingAll ? "Syncing..." : `Sync All Approved (${pendingCount})`}
           </button>
           <button
             onClick={fetchIncoming}
             disabled={loading}
-            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60 shadow-sm"
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
           >
-            <RefreshCw
-              size={15}
-              className={`text-blue-500 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            {loading ? "Loading..." : "Refresh"}
           </button>
         </div>
       </div>
@@ -209,7 +226,7 @@ const IncomingSongs = () => {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search title, artist, label..."
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
         />
       </div>
 
@@ -221,7 +238,7 @@ const IncomingSongs = () => {
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <Loader2 className="animate-spin text-blue-400" size={30} />
+          <Loader2 className="animate-spin text-slate-400" size={30} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-slate-400 text-sm flex flex-col items-center gap-2">
@@ -234,6 +251,7 @@ const IncomingSongs = () => {
             const trackCount = Array.isArray(submission.tracks)
               ? submission.tracks.length
               : 0;
+            const isImporting = importingId === submission.id;
 
             return (
               <motion.div
@@ -241,13 +259,11 @@ const IncomingSongs = () => {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all overflow-hidden flex flex-col"
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col"
               >
                 <div className="flex gap-3 p-4">
                   <img
-                    src={
-                      submission.cover_url || "https://via.placeholder.com/80"
-                    }
+                    src={submission.cover_url || "https://via.placeholder.com/80"}
                     alt=""
                     className="w-16 h-16 rounded-lg object-cover border border-slate-100 flex-shrink-0"
                   />
@@ -256,7 +272,7 @@ const IncomingSongs = () => {
                       {submission.title || "Untitled"}
                     </h3>
                     <p className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
-                      <User size={11} className="text-blue-400" />
+                      <User size={11} />
                       {submission.primary_artist || "Unknown artist"}
                     </p>
                     <p className="text-[11px] text-slate-400 truncate mt-0.5">
@@ -267,7 +283,7 @@ const IncomingSongs = () => {
                     </p>
                     {submission.created_at && (
                       <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1">
-                        <Calendar size={10} className="text-blue-400" />
+                        <Calendar size={10} />
                         {new Date(submission.created_at).toLocaleDateString(
                           "en-IN",
                           { day: "numeric", month: "short", year: "numeric" },
@@ -277,20 +293,37 @@ const IncomingSongs = () => {
                   </div>
                 </div>
 
-                <div className="mt-auto px-4 pb-4">
+                <div className="mt-auto px-4 pb-4 flex gap-2">
                   <button
-                    onClick={() => openPublishModal(submission)}
-                    disabled={importingId === submission.id}
-                    className="w-full flex items-center justify-center gap-1.5 text-white text-xs font-bold py-2.5 rounded-lg transition-all shadow-sm hover:opacity-90 disabled:opacity-60"
-                    style={{ background: BLUE_GRADIENT }}
+                    onClick={() => setActiveSubmission(submission)}
+                    className="flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold py-2.5 px-3 rounded-lg transition-colors"
                   >
-                    {importingId === submission.id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    Publish to TuneRaaga
+                    <Eye size={14} /> Details
                   </button>
+
+                  {submission.imported ? (
+                    <div className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
+                      <CheckCircle2 size={14} /> Published on TuneRaaga
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => importSubmission(submission)}
+                      disabled={isImporting}
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
+                    >
+                      {isImporting ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Publishing...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={14} />
+                          Publish to TuneRaaga
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </motion.div>
             );
@@ -298,118 +331,203 @@ const IncomingSongs = () => {
         </div>
       )}
 
-      {/* ─── Single / Album choice modal ─── */}
+      {/* ---- Details modal ---- */}
       <AnimatePresence>
-        {publishModal.open && (
+        {activeSubmission && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={closePublishModal}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setActiveSubmission(null)}
           >
             <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.97 }}
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 relative"
+              className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-xl"
             >
-              <button
-                onClick={closePublishModal}
-                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-              >
-                <X size={18} />
-              </button>
-
-              <h2 className="text-lg font-extrabold text-slate-900 mb-1">
-                Publish "{publishModal.submission?.title || "Untitled"}"
-              </h2>
-              <p className="text-sm text-slate-500 mb-4">
-                Ye release TuneRaaga pe kaise publish karna hai?
-              </p>
-
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <button
-                  onClick={() =>
-                    setPublishModal((prev) => ({
-                      ...prev,
-                      releaseType: "Single",
-                    }))
+              {/* modal header */}
+              <div className="flex items-start gap-3 p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+                <img
+                  src={
+                    activeSubmission.cover_url ||
+                    "https://via.placeholder.com/80"
                   }
-                  className={`flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 transition-all ${
-                    publishModal.releaseType === "Single"
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-slate-200 hover:border-blue-200"
-                  }`}
-                >
-                  <Music2
-                    size={20}
-                    className={
-                      publishModal.releaseType === "Single"
-                        ? "text-blue-600"
-                        : "text-slate-400"
-                    }
-                  />
-                  <span
-                    className={`text-sm font-bold ${
-                      publishModal.releaseType === "Single"
-                        ? "text-blue-700"
-                        : "text-slate-600"
-                    }`}
-                  >
-                    Single
-                  </span>
-                </button>
-
+                  alt=""
+                  className="w-14 h-14 rounded-lg object-cover border border-slate-100 flex-shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-extrabold text-slate-900 text-base truncate">
+                    {activeSubmission.title || "Untitled"}
+                  </h2>
+                  <p className="text-xs text-slate-500 truncate">
+                    {activeSubmission.primary_artist || "Unknown artist"}
+                    {activeSubmission.featuring_artists
+                      ? ` ft. ${activeSubmission.featuring_artists}`
+                      : ""}
+                  </p>
+                </div>
                 <button
-                  onClick={() =>
-                    setPublishModal((prev) => ({
-                      ...prev,
-                      releaseType: "Album",
-                    }))
-                  }
-                  className={`flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 transition-all ${
-                    publishModal.releaseType === "Album"
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-slate-200 hover:border-blue-200"
-                  }`}
+                  onClick={() => setActiveSubmission(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 flex-shrink-0"
                 >
-                  <Disc3
-                    size={20}
-                    className={
-                      publishModal.releaseType === "Album"
-                        ? "text-blue-600"
-                        : "text-slate-400"
-                    }
-                  />
-                  <span
-                    className={`text-sm font-bold ${
-                      publishModal.releaseType === "Album"
-                        ? "text-blue-700"
-                        : "text-slate-600"
-                    }`}
-                  >
-                    Album
-                  </span>
+                  <X size={18} />
                 </button>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={closePublishModal}
-                  className="flex-1 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl py-2.5 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmPublish}
-                  className="flex-1 flex items-center justify-center gap-1.5 text-sm font-bold text-white rounded-xl py-2.5 transition-all shadow-sm hover:opacity-90"
-                  style={{ background: BLUE_GRADIENT }}
-                >
-                  <UploadCloud size={14} />
-                  Publish
-                </button>
+              <div className="p-5 space-y-5">
+                {/* metadata grid */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  {activeSubmission.genre && (
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      <Disc3 size={13} className="text-slate-400" />
+                      {activeSubmission.genre}
+                      {activeSubmission.subgenre
+                        ? ` · ${activeSubmission.subgenre}`
+                        : ""}
+                    </div>
+                  )}
+                  {activeSubmission.language && (
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      <Languages size={13} className="text-slate-400" />
+                      {activeSubmission.language}
+                    </div>
+                  )}
+                  {activeSubmission.release_type && (
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      <Tag size={13} className="text-slate-400" />
+                      {activeSubmission.release_type}
+                    </div>
+                  )}
+                  {Array.isArray(activeSubmission.distribution_platforms) &&
+                    activeSubmission.distribution_platforms.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-slate-600 col-span-2">
+                        <Globe2 size={13} className="text-slate-400" />
+                        {activeSubmission.distribution_platforms.join(", ")}
+                      </div>
+                    )}
+                </div>
+
+                {/* main submission-level audio, if present */}
+                {activeSubmission.audio_url && (
+                  <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <button
+                      onClick={() => togglePlay(activeSubmission.audio_url)}
+                      className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+                    >
+                      {audioLoadingUrl === activeSubmission.audio_url ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : playingUrl === activeSubmission.audio_url ? (
+                        <Pause size={16} />
+                      ) : (
+                        <Play size={16} className="ml-0.5" />
+                      )}
+                    </button>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800">
+                        Main audio
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        Submission-level file
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* tracks */}
+                {Array.isArray(activeSubmission.tracks) &&
+                  activeSubmission.tracks.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                        Tracks ({activeSubmission.tracks.length})
+                      </p>
+                      <div className="space-y-2">
+                        {[...activeSubmission.tracks]
+                          .sort(
+                            (a, b) =>
+                              new Date(a.created_at) - new Date(b.created_at),
+                          )
+                          .map((track, idx) => {
+                            const url = track.audio_file_url;
+                            const isPlaying = url && playingUrl === url;
+                            const isLoadingTrack = url && audioLoadingUrl === url;
+
+                            return (
+                              <div
+                                key={track.id}
+                                className="flex items-center gap-3 border border-slate-100 rounded-xl p-3"
+                              >
+                                <button
+                                  onClick={() => togglePlay(url)}
+                                  disabled={!url}
+                                  className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+                                >
+                                  {isLoadingTrack ? (
+                                    <Loader2 size={16} className="animate-spin" />
+                                  ) : isPlaying ? (
+                                    <Pause size={16} />
+                                  ) : (
+                                    <Play size={16} className="ml-0.5" />
+                                  )}
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-800 truncate">
+                                    {idx + 1}. {track.title || "Untitled track"}
+                                  </p>
+                                  <p className="text-[11px] text-slate-400 truncate">
+                                    {track.primaryArtist || "—"}
+                                    {track.duration
+                                      ? ` · ${Math.round(track.duration)}s`
+                                      : ""}
+                                    {!url ? " · no audio file" : ""}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
+                {activeSubmission.lyrics && (
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">
+                      Lyrics
+                    </p>
+                    <p className="text-xs text-slate-600 whitespace-pre-line leading-relaxed">
+                      {activeSubmission.lyrics}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* modal footer action */}
+              <div className="p-5 pt-0">
+                {activeSubmission.imported ? (
+                  <div className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
+                    <CheckCircle2 size={14} /> Published on TuneRaaga
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => importSubmission(activeSubmission)}
+                    disabled={importingId === activeSubmission.id}
+                    className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
+                  >
+                    {importingId === activeSubmission.id ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Publishing...
+                      </>
+                    ) : (
+                      <>
+                        <Download size={14} />
+                        Publish to TuneRaaga
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </motion.div>
           </motion.div>
