@@ -3,7 +3,7 @@ const router = express.Router();
 const {
   getIncomingSongs,
   syncIncomingSongs,
-} = require("../controllers/incomingSongsController");
+} = require("../controllers/IncomingSongsController");
 
 router.get("/", getIncomingSongs);
 router.post("/sync", syncIncomingSongs);
