@@ -17,15 +17,30 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // --- Middleware ---
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:5174",
+  "http://localhost:8081",
+  "https://tuneraagaweb.vercel.app",
+  // Live custom domain — without these the production site cannot reach the API.
+  "https://tuneraaga.in",
+  "https://www.tuneraaga.in",
+];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://localhost:5174",
-      "http://localhost:8081",
-      "https://tuneraagaweb.vercel.app",
-    ],
+    origin: (origin, callback) => {
+      // Allow non-browser clients (curl, Postman, server-to-server) which send
+      // no Origin header, plus any Vercel preview deployment of this project.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (/^https:\/\/tuneraagaweb-.*\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+      console.log(`❌ Blocked by CORS: ${origin}`);
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
 
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
