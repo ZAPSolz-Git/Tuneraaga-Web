@@ -123,42 +123,6 @@ const IncomingSongs = () => {
     }
   };
 
-  // ---- audio playback helpers ----
-  const stopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-    setPlayingUrl(null);
-    setAudioLoadingUrl(null);
-  };
-
-  const togglePlay = (url) => {
-    if (!url || !audioRef.current) return;
-
-    // same track already playing -> pause it
-    if (playingUrl === url) {
-      audioRef.current.pause();
-      setPlayingUrl(null);
-      return;
-    }
-
-    // switching tracks (or starting fresh)
-    setAudioLoadingUrl(url);
-    audioRef.current.src = url;
-    audioRef.current
-      .play()
-      .then(() => {
-        setPlayingUrl(url);
-        setAudioLoadingUrl(null);
-      })
-      .catch((err) => {
-        console.error("audio play error:", err);
-        setAudioLoadingUrl(null);
-        alert("Audio play nahi ho paaya — file URL check karo.");
-      });
-  };
-
   const filtered = submissions.filter((s) => {
     if (!query.trim()) return true;
     const q = query.toLowerCase();
@@ -174,13 +138,6 @@ const IncomingSongs = () => {
 
   return (
     <div className="p-4 md:p-8">
-      {/* shared audio element — src swapped by togglePlay() */}
-      <audio
-        ref={audioRef}
-        onEnded={() => setPlayingUrl(null)}
-        className="hidden"
-      />
-
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
@@ -198,12 +155,13 @@ const IncomingSongs = () => {
             disabled={syncingAll || loading || pendingCount === 0}
             className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
           >
-            {syncingAll ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <UploadCloud size={15} />
-            )}
-            {syncingAll ? "Syncing..." : `Sync All Approved (${pendingCount})`}
+            <UploadCloud
+              size={15}
+              className={syncingAll ? "animate-spin" : ""}
+            />
+            {syncingAll
+              ? "Syncing..."
+              : `Sync All Approved (${pendingCount})`}
           </button>
           <button
             onClick={fetchIncoming}
@@ -211,7 +169,7 @@ const IncomingSongs = () => {
             className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-60"
           >
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-            {loading ? "Loading..." : "Refresh"}
+            Refresh
           </button>
         </div>
       </div>
@@ -293,35 +251,23 @@ const IncomingSongs = () => {
                   </div>
                 </div>
 
-                <div className="mt-auto px-4 pb-4 flex gap-2">
-                  <button
-                    onClick={() => setActiveSubmission(submission)}
-                    className="flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold py-2.5 px-3 rounded-lg transition-colors"
-                  >
-                    <Eye size={14} /> Details
-                  </button>
-
+                <div className="mt-auto px-4 pb-4">
                   {submission.imported ? (
-                    <div className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
+                    <div className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
                       <CheckCircle2 size={14} /> Published on TuneRaaga
                     </div>
                   ) : (
                     <button
                       onClick={() => importSubmission(submission)}
-                      disabled={isImporting}
-                      className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
+                      disabled={importingId === submission.id}
+                      className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
                     >
-                      {isImporting ? (
-                        <>
-                          <Loader2 size={14} className="animate-spin" />
-                          Publishing...
-                        </>
+                      {importingId === submission.id ? (
+                        <Loader2 size={14} className="animate-spin" />
                       ) : (
-                        <>
-                          <Download size={14} />
-                          Publish to TuneRaaga
-                        </>
+                        <Download size={14} />
                       )}
+                      Publish to TuneRaaga
                     </button>
                   )}
                 </div>

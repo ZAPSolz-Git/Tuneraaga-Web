@@ -20,9 +20,6 @@ import {
   ListMusic,
   Sparkles,
   Award,
-  Music,
-  Inbox,
-  Megaphone,
   Edit3,
   Image as ImageIcon,
 } from "lucide-react";
@@ -301,13 +298,6 @@ const AdminLayout = () => {
                     to="/admin/incoming-songs"
                     icon={Inbox}
                     label="Incoming Songs"
-                    sidebarOpen={sidebarOpen}
-                  />
-
-                  <NavItem
-                    to="/admin/ads"
-                    icon={Megaphone}
-                    label="Ads Manager"
                     sidebarOpen={sidebarOpen}
                   />
 
