@@ -13,6 +13,8 @@ import {
   TrendingUp,
   Podcast,
   Radio,
+  Music,
+  Inbox,
   Flame,
   Users,
   LogOut,

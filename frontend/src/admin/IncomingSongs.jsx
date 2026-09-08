@@ -76,6 +76,37 @@ const IncomingSongs = () => {
     };
   }, []);
 
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setPlayingUrl(null);
+    setAudioLoadingUrl(null);
+  };
+
+  const togglePlay = async (url) => {
+    if (!url || !audioRef.current) return;
+
+    if (playingUrl === url) {
+      audioRef.current.pause();
+      setPlayingUrl(null);
+      return;
+    }
+
+    try {
+      setAudioLoadingUrl(url);
+      if (audioRef.current.src !== url) {
+        audioRef.current.src = url;
+      }
+      await audioRef.current.play();
+      setPlayingUrl(url);
+    } catch (err) {
+      console.error("audio play error:", err);
+    } finally {
+      setAudioLoadingUrl(null);
+    }
+  };
+
   // ---- single submission publish ----
   const importSubmission = async (submission) => {
     setImportingId(submission.id);
@@ -138,6 +169,12 @@ const IncomingSongs = () => {
 
   return (
     <div className="p-4 md:p-8">
+      <audio
+        ref={audioRef}
+        onEnded={() => setPlayingUrl(null)}
+        onPause={() => setPlayingUrl(null)}
+        className="hidden"
+      />
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
@@ -251,16 +288,22 @@ const IncomingSongs = () => {
                   </div>
                 </div>
 
-                <div className="mt-auto px-4 pb-4">
+                <div className="mt-auto px-4 pb-4 flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveSubmission(submission)}
+                    className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold px-3 py-2.5 rounded-lg transition-colors"
+                  >
+                    <Eye size={14} />
+                  </button>
                   {submission.imported ? (
-                    <div className="flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
+                    <div className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold py-2.5 rounded-lg border border-emerald-200">
                       <CheckCircle2 size={14} /> Published on TuneRaaga
                     </div>
                   ) : (
                     <button
                       onClick={() => importSubmission(submission)}
                       disabled={importingId === submission.id}
-                      className="w-full flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-lg transition-colors"
                     >
                       {importingId === submission.id ? (
                         <Loader2 size={14} className="animate-spin" />
