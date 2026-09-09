@@ -39,8 +39,10 @@ import {
   Upload,
   Camera,
   Link as LinkIcon,
+  Link2,
   Languages,
   PlayCircle,
+  Share2,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -435,7 +437,13 @@ const BecomeArtistModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   );
 };
 
-const BiographySection = ({ artist }) => {
+const BiographySection = ({ artist, externalBio, externalBioLoading }) => {
+  const hasManualBio =
+    artist.born_date ||
+    artist.early_life ||
+    artist.career ||
+    artist.recognition_awards;
+
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 space-y-8">
       <div className="flex items-center gap-3 mb-6">
@@ -444,6 +452,45 @@ const BiographySection = ({ artist }) => {
           Biography
         </h2>
       </div>
+
+      {/* Spotify + Wikipedia bio — shown when the artist hasn't filled in
+          their own biography fields yet */}
+      {!hasManualBio &&
+        (externalBioLoading ? (
+          <div className="bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 space-y-3">
+            <div className="h-3 bg-slate-100 rounded animate-pulse w-full" />
+            <div className="h-3 bg-slate-100 rounded animate-pulse w-5/6" />
+            <div className="h-3 bg-slate-100 rounded animate-pulse w-2/3" />
+          </div>
+        ) : (
+          externalBio?.bio && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="bg-white rounded-3xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 flex items-start gap-6 hover:shadow-[0_8px_40px_rgb(0,0,0,0.08)] transition-all duration-300"
+            >
+              <div className="p-4 rounded-2xl bg-green-50 text-green-600 shrink-0 shadow-sm">
+                <FileText size={28} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-900 mb-2">
+                  About
+                </h4>
+                <p className="text-slate-600 leading-relaxed text-lg">
+                  {externalBio.bio}
+                </p>
+                {externalBio.followers > 0 && (
+                  <div className="flex items-center gap-3 flex-wrap mt-4 text-sm text-slate-400">
+                    <span>
+                      {formatFollowers(externalBio.followers)} Followers
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )
+        ))}
 
       {artist.born_date && (
         <motion.div
@@ -530,17 +577,14 @@ const BiographySection = ({ artist }) => {
         </motion.div>
       )}
 
-      {!artist.born_date &&
-        !artist.early_life &&
-        !artist.career &&
-        !artist.recognition_awards && (
-          <div className="text-center py-16 text-slate-400 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
-            <FileText className="mx-auto mb-4 text-slate-300" size={48} />
-            <p className="text-lg font-medium">
-              No biography details available for this artist yet.
-            </p>
-          </div>
-        )}
+      {!hasManualBio && !externalBioLoading && !externalBio?.bio && (
+        <div className="text-center py-16 text-slate-400 bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
+          <FileText className="mx-auto mb-4 text-slate-300" size={48} />
+          <p className="text-lg font-medium">
+            No biography details available for this artist yet.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
@@ -568,6 +612,20 @@ const StickyPlayer = ({
     e.stopPropagation();
   };
 
+  const handleShareSong = () => {
+    const shareData = {
+      title: song.title,
+      text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      toastEvents.show("Song link copied to clipboard!", "success");
+    }
+  };
+
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -590,6 +648,13 @@ const StickyPlayer = ({
             </h4>
             <p className="text-xs text-gray-400 truncate mt-1">{song.artist}</p>
           </div>
+          <button
+            onClick={handleShareSong}
+            title="Share Song"
+            className="text-gray-400 hover:text-white transition-colors shrink-0"
+          >
+            <Share2 size={18} />
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
@@ -714,6 +779,13 @@ const TopArtist = () => {
   const [loading, setLoading] = useState(true);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [requestLoading, setRequestLoading] = useState(false);
+  const [externalBio, setExternalBio] = useState(null);
+  const [externalBioLoading, setExternalBioLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef(null);
 
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -724,6 +796,15 @@ const TopArtist = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const location = useLocation();
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target))
+        setShowMoreMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => {
     const fetchArtistsData = async () => {
@@ -749,6 +830,7 @@ const TopArtist = () => {
           );
           return {
             ...artist,
+            source: "custom",
             songs: artistSongs.map((song) => ({
               id: song.id,
               title: song.title,
@@ -761,7 +843,37 @@ const TopArtist = () => {
             })),
           };
         });
-        setArtistList(artistsWithSongs);
+
+        // Spotify-sourced artists, merged in alongside the custom (TuneRaaga)
+        // ones — skipped for any name that already exists as a custom artist
+        // so the same person doesn't show up twice.
+        let apiArtists = [];
+        try {
+          const res = await fetch(`${API_BASE}/api/external-artist/popular`);
+          if (res.ok) {
+            const data = await res.json();
+            const customNames = new Set(
+              artistsWithSongs.map((a) => a.name.toLowerCase()),
+            );
+            apiArtists = (data.artists || [])
+              .filter((a) => !customNames.has(a.name.toLowerCase()))
+              .map((a) => ({
+                id: `spotify-${a.id}`,
+                name: a.name,
+                genre: a.genres?.[0] || "",
+                image: a.image,
+                followers: a.followers || 0,
+                verified: false,
+                source: "api",
+                spotifyUrl: a.spotifyUrl,
+                songs: [],
+              }));
+          }
+        } catch (apiErr) {
+          console.error("Error fetching popular Spotify artists:", apiErr);
+        }
+
+        setArtistList([...artistsWithSongs, ...apiArtists]);
       } catch (err) {
         console.error("Error fetching artists:", err);
       } finally {
@@ -899,6 +1011,57 @@ const TopArtist = () => {
     }
   };
 
+  // Debounced live search — lets the user look up ANY artist on Spotify
+  // (not just the curated popular seed list), each result already carrying
+  // its Wikipedia bio from the backend.
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    const timeoutId = setTimeout(() => {
+      fetch(
+        `${API_BASE}/api/external-artist/search?q=${encodeURIComponent(query)}&limit=10`,
+      )
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => setSearchResults(data?.artists || []))
+        .catch((error) => {
+          console.error("Artist search failed:", error);
+          setSearchResults([]);
+        })
+        .finally(() => setSearchLoading(false));
+    }, 400);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  // A searched artist might already be one of our custom/API artists (with
+  // real songs) — reuse that entry instead of building a bare synthetic one.
+  const resolveSearchResultArtist = (result) => {
+    const existing = artistList.find(
+      (a) => a.name.toLowerCase() === result.name.toLowerCase(),
+    );
+    if (existing) return existing;
+    return {
+      id: `spotify-${result.id}`,
+      name: result.name,
+      genre: result.genres?.[0] || "",
+      image: result.image,
+      followers: result.followers || 0,
+      verified: false,
+      source: "api",
+      spotifyUrl: result.spotifyUrl,
+      songs: [],
+    };
+  };
+
+  const openSearchResult = (result) => {
+    openArtist(resolveSearchResultArtist(result));
+    setSearchQuery("");
+  };
+
   const openArtist = (artist) => {
     setActiveArtist(artist);
     setActiveTab("overview");
@@ -906,10 +1069,71 @@ const TopArtist = () => {
     setCurrentSong(null);
     window.scrollTo(0, 0);
   };
+
+  // Spotify + Wikipedia bio for whichever artist is currently open — used as
+  // a fallback in the Biography tab when the artist hasn't filled in their
+  // own bio fields.
+  useEffect(() => {
+    if (!activeArtist?.name) {
+      setExternalBio(null);
+      return;
+    }
+    let isCancelled = false;
+    setExternalBio(null);
+    setExternalBioLoading(true);
+    fetch(`${API_BASE}/api/external-artist/${encodeURIComponent(activeArtist.name)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isCancelled && data?.success) setExternalBio(data.artist);
+      })
+      .catch((error) => {
+        console.error("Error fetching artist bio:", error);
+      })
+      .finally(() => {
+        if (!isCancelled) setExternalBioLoading(false);
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeArtist?.name]);
   const closeArtist = () => {
     setActiveArtist(null);
     setPlaying(false);
+    setShowMoreMenu(false);
     if (audioRef.current) audioRef.current.pause();
+  };
+
+  const handleShareArtist = () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: activeArtist?.name, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+      toastEvents.show("Link copied!", "success");
+    }
+    setShowMoreMenu(false);
+  };
+
+  const handleCopyArtistLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toastEvents.show("Link copied to clipboard!", "success");
+    setShowMoreMenu(false);
+  };
+
+  // Shares any song from the Overview/Songs lists directly, without needing
+  // to play it first.
+  const handleShareSong = (song) => {
+    const shareData = {
+      title: song.title,
+      text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      toastEvents.show("Song link copied to clipboard!", "success");
+    }
   };
 
   const handleArtistRequest = async (formData) => {
@@ -1069,6 +1293,82 @@ const TopArtist = () => {
               </button>
             </div>
 
+            {/* Search — looks up any artist on Spotify, not just the curated list */}
+            <div className="relative max-w-xl mb-10">
+              <Search
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                size={20}
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search any artist..."
+                className="w-full bg-white border border-gray-200 rounded-2xl pl-12 pr-10 py-3.5 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {searchQuery.trim() ? (
+              <div>
+                <h3 className="text-lg font-bold text-slate-700 mb-6">
+                  Search results for "{searchQuery.trim()}"
+                </h3>
+                {searchLoading ? (
+                  <div className="flex justify-center py-16">
+                    <Loader2 className="animate-spin text-blue-600" size={36} />
+                  </div>
+                ) : searchResults.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <Music className="mx-auto mb-4 text-slate-300" size={40} />
+                    <p>No artist found for "{searchQuery.trim()}".</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 md:gap-8">
+                    {searchResults.map((result, index) => (
+                      <motion.div
+                        key={result.id}
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: index * 0.04 }}
+                        className="group cursor-pointer"
+                        onClick={() => openSearchResult(result)}
+                      >
+                        <div className="relative aspect-square rounded-3xl overflow-hidden mb-4 bg-gray-200 shadow-lg border border-white/20 group-hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] transition-all duration-500 group-hover:-translate-y-2">
+                          <img
+                            src={result.image || "https://via.placeholder.com/300"}
+                            alt={result.name}
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                            <div className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center text-white shadow-xl transform scale-0 group-hover:scale-100 transition-transform duration-300 delay-75">
+                              <ChevronRight className="w-8 h-8 fill-white ml-1" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="px-1 text-center">
+                          <h3 className="font-bold text-slate-900 truncate text-lg group-hover:text-blue-600 transition-colors">
+                            {result.name}
+                          </h3>
+                          {result.bio && (
+                            <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                              {result.bio}
+                            </p>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 md:gap-8">
               {artistList.map((artist, index) => (
                 <motion.div
@@ -1109,16 +1409,19 @@ const TopArtist = () => {
                       {artist.name}
                     </h3>
                     <p className="text-sm text-gray-500 truncate mt-0.5">
-                      {artist.genre}
+                      {artist.genre || (artist.source === "api" ? "Artist" : "")}
                     </p>
-                    <p className="text-xs text-gray-400 font-medium mt-1 flex items-center justify-center gap-1">
-                      <Users size={12} /> {formatFollowers(artist.followers)}{" "}
-                      Listeners
-                    </p>
+                    {artist.followers > 0 && (
+                      <p className="text-xs text-gray-400 font-medium mt-1 flex items-center justify-center gap-1">
+                        <Users size={12} /> {formatFollowers(artist.followers)}{" "}
+                        Listeners
+                      </p>
+                    )}
                   </div>
                 </motion.div>
               ))}
             </div>
+            )}
           </div>
         ) : (
           <div className="w-full min-h-screen bg-gradient-to-b from-white to-slate-50">
@@ -1158,10 +1461,25 @@ const TopArtist = () => {
                   <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tight mb-4 leading-none">
                     {activeArtist.name}
                   </h1>
-                  <p className="text-slate-500 text-xl mb-8 flex items-center justify-center md:justify-start gap-2 font-bold">
-                    <Users className="w-5 h-5" />{" "}
-                    {formatFollowers(activeArtist.followers)} Monthly Listeners
-                  </p>
+                  {activeArtist.followers > 0 ? (
+                    <p className="text-slate-500 text-xl mb-8 flex items-center justify-center md:justify-start gap-2 font-bold">
+                      <Users className="w-5 h-5" />{" "}
+                      {formatFollowers(activeArtist.followers)} Monthly
+                      Listeners
+                    </p>
+                  ) : activeArtist.source === "api" &&
+                    activeArtist.spotifyUrl ? (
+                    <a
+                      href={activeArtist.spotifyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-600 text-lg mb-8 flex items-center justify-center md:justify-start gap-2 font-bold hover:underline w-fit mx-auto md:mx-0"
+                    >
+                      View Profile
+                    </a>
+                  ) : (
+                    <div className="mb-8" />
+                  )}
                   <div className="flex items-center gap-6 justify-center md:justify-start">
                     <button
                       onClick={() =>
@@ -1183,9 +1501,40 @@ const TopArtist = () => {
                     >
                       <Shuffle size={24} />
                     </button>
-                    <button className="w-14 h-14 rounded-full border border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:scale-105 transition-all flex items-center justify-center">
-                      <MoreHorizontal size={24} />
-                    </button>
+                    <div className="relative" ref={moreMenuRef}>
+                      <button
+                        onClick={() => setShowMoreMenu(!showMoreMenu)}
+                        className="w-14 h-14 rounded-full border border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 hover:scale-105 transition-all flex items-center justify-center"
+                      >
+                        <MoreHorizontal size={24} />
+                      </button>
+                      <AnimatePresence>
+                        {showMoreMenu && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: -5 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute left-0 md:left-auto md:right-0 top-16 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 overflow-hidden"
+                          >
+                            <button
+                              onClick={handleShareArtist}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
+                              <Share2 size={16} className="text-slate-400" />{" "}
+                              Share Artist
+                            </button>
+                            <button
+                              onClick={handleCopyArtistLink}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                            >
+                              <Link2 size={16} className="text-slate-400" />{" "}
+                              Copy Link
+                            </button>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1255,6 +1604,16 @@ const TopArtist = () => {
                             <span className="text-sm text-slate-400 font-mono">
                               {formatDuration(song.duration)}
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareSong(song);
+                              }}
+                              title="Share Song"
+                              className="text-slate-300 hover:text-blue-500 transition-colors"
+                            >
+                              <Share2 size={16} />
+                            </button>
                           </div>
                         ))
                       ) : (
@@ -1309,6 +1668,16 @@ const TopArtist = () => {
                           <span className="text-sm text-slate-400 font-mono">
                             {formatDuration(song.duration)}
                           </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShareSong(song);
+                            }}
+                            title="Share Song"
+                            className="text-slate-300 hover:text-blue-500 transition-colors"
+                          >
+                            <Share2 size={16} />
+                          </button>
                         </div>
                       ))
                     ) : (
@@ -1321,7 +1690,11 @@ const TopArtist = () => {
               )}
 
               {activeTab === "biography" && (
-                <BiographySection artist={activeArtist} />
+                <BiographySection
+                  artist={activeArtist}
+                  externalBio={externalBio}
+                  externalBioLoading={externalBioLoading}
+                />
               )}
             </div>
           </div>

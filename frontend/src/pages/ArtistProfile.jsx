@@ -28,10 +28,13 @@ import {
   User,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { toastEvents } from "../utils/toastEvents";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 // ─── Helpers ───
 const formatDuration = (val) => {
@@ -107,6 +110,20 @@ const StickyPlayer = ({
   if (!song) return null;
   const featuringList = parseArtists(song.featuringArtists);
 
+  const handleShareSong = () => {
+    const shareData = {
+      title: song.title,
+      text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      toastEvents.show("Song link copied to clipboard!", "success");
+    }
+  };
+
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -148,6 +165,13 @@ const StickyPlayer = ({
               </p>
             )}
           </div>
+          <button
+            onClick={handleShareSong}
+            title="Share Song"
+            className="text-slate-400 hover:text-blue-500 transition-colors shrink-0"
+          >
+            <Share2 size={18} />
+          </button>
         </div>
 
         {/* Controls + Progress */}
@@ -293,6 +317,10 @@ const ArtistProfile = () => {
   const [isArtistLiked, setIsArtistLiked] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
+  const [artistBio, setArtistBio] = useState(null);
+  const [bioLoading, setBioLoading] = useState(true);
+  const [showFullBio, setShowFullBio] = useState(false);
+
   const audioRef = useRef(null);
   const countedSongIds = useRef(new Set());
   const songDurationsRef = useRef({});
@@ -405,6 +433,36 @@ const ArtistProfile = () => {
       }
     };
     fetchArtistData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [decodedArtistName]);
+
+  // Bio comes from Spotify + Wikipedia (backend combines both), not Supabase —
+  // fetched independently so a slow/failed lookup never blocks the song list.
+  useEffect(() => {
+    let isCancelled = false;
+    setArtistBio(null);
+    setShowFullBio(false);
+
+    if (!decodedArtistName) {
+      setBioLoading(false);
+      return;
+    }
+
+    setBioLoading(true);
+    fetch(`${API_BASE}/api/external-artist/${encodeURIComponent(decodedArtistName)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isCancelled && data?.success) setArtistBio(data.artist);
+      })
+      .catch((error) => {
+        console.error("Error fetching artist bio:", error);
+      })
+      .finally(() => {
+        if (!isCancelled) setBioLoading(false);
+      });
 
     return () => {
       isCancelled = true;
@@ -676,6 +734,21 @@ const ArtistProfile = () => {
     setShowMoreMenu(false);
   };
 
+  // Shares any song from the list directly, without needing to play it first.
+  const handleShareSong = (song) => {
+    const shareData = {
+      title: song.title,
+      text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      toastEvents.show("Song link copied to clipboard!", "success");
+    }
+  };
+
   const handleLanguageClick = (lang) => {
     setActiveLanguage(activeLanguage === lang ? null : lang);
     setActiveActor(null);
@@ -780,6 +853,39 @@ const ArtistProfile = () => {
                   </>
                 )}
               </div>
+
+              {/* Bio */}
+              {bioLoading ? (
+                <div className="space-y-2 mb-5 max-w-2xl mx-auto md:mx-0">
+                  <div className="h-3 bg-blue-50 rounded animate-pulse w-full" />
+                  <div className="h-3 bg-blue-50 rounded animate-pulse w-5/6" />
+                </div>
+              ) : artistBio?.bio ? (
+                <div className="mb-5 max-w-2xl mx-auto md:mx-0">
+                  <p
+                    className={`text-sm text-slate-500 leading-relaxed ${
+                      showFullBio ? "" : "line-clamp-3"
+                    }`}
+                  >
+                    {artistBio.bio}
+                  </p>
+                  {artistBio.bio.length > 180 && (
+                    <button
+                      onClick={() => setShowFullBio(!showFullBio)}
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 mt-1"
+                    >
+                      {showFullBio ? "Show less" : "Read more"}
+                    </button>
+                  )}
+                  {artistBio.followers > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start mt-2 text-xs text-slate-400">
+                      <span>
+                        {formatCount(artistBio.followers)} Followers
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
               {/* Stats row */}
               <div className="flex items-center gap-4 flex-wrap justify-center md:justify-start text-sm text-slate-500 mb-5">
@@ -1051,6 +1157,7 @@ const ArtistProfile = () => {
                       <th className="px-4 md:px-6 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wider w-20">
                         Duration
                       </th>
+                      <th className="px-4 md:px-6 py-3 text-right text-xs font-bold text-slate-400 uppercase tracking-wider w-12"></th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-blue-50">
@@ -1256,6 +1363,20 @@ const ArtistProfile = () => {
                             {isActive
                               ? formatDuration(duration) || "—"
                               : getSongDuration(song)}
+                          </td>
+
+                          {/* Share */}
+                          <td className="px-4 md:px-6 py-3 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareSong(song);
+                              }}
+                              title="Share Song"
+                              className="text-slate-300 hover:text-blue-500 transition-colors"
+                            >
+                              <Share2 size={16} />
+                            </button>
                           </td>
                         </motion.tr>
                       );

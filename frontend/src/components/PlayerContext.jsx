@@ -21,8 +21,10 @@ import {
   Megaphone,
   ChevronRight,
   Music,
+  Share2,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { toastEvents } from "../utils/toastEvents";
 
 export const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -976,6 +978,39 @@ const StickyPlayer = ({
   );
   const hasArt = Boolean(song.albumArt || song.img);
 
+  const handleShareSong = async () => {
+    const shareUrl = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: song.title,
+          text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+      }
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = shareUrl;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      toastEvents.show("Song link copied to clipboard!", "success");
+    } catch (err) {
+      toastEvents.show("Couldn't share the song. Please try again.", "error");
+    }
+  };
+
   return (
     <motion.div
       initial={{ y: 100 }}
@@ -1035,6 +1070,18 @@ const StickyPlayer = ({
               </>
             )}
           </div>
+          {!isAdPlaying && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleShareSong();
+              }}
+              title="Share Song"
+              className="text-gray-400 hover:text-white transition-colors shrink-0"
+            >
+              <Share2 size={18} />
+            </button>
+          )}
         </div>
         <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
           <div className="flex items-center gap-4 md:gap-6 mb-2">

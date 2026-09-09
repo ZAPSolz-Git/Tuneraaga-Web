@@ -13,6 +13,7 @@ const { authenticateUser } = require("./middleware/authMiddleware");
 const upload = require("./middleware/uploadMiddleware");
 const { createArtistRequest } = require("./controllers/artistController");
 const jamendoRoutes = require("./routes/jamendoRoutes");
+const externalArtistRoutes = require("./routes/externalArtistRoutes");
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -101,6 +102,7 @@ app.use("/api/incoming-songs", require("./routes/IncomingsongsRoutes"));
 app.use("/api/artists", artistRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/jamendo", jamendoRoutes);
+app.use("/api/external-artist", externalArtistRoutes);
 app.use("/api", orderRoutes);
 app.use("/api/internal", require("./routes/internalReleases"));
 

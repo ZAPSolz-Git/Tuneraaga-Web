@@ -16,8 +16,10 @@ import {
   X,
   Trash2,
   Trash,
+  Share2,
 } from "lucide-react";
 import Auth from "../components/Auth";
+import { toastEvents } from "../utils/toastEvents";
 
 const formatDuration = (val) => {
   if (!val || !isFinite(val) || val <= 0) return "0:00";
@@ -321,6 +323,20 @@ export default function History() {
     playing ? audioRef.current.pause() : audioRef.current.play();
   };
 
+  const handleShareSong = (song) => {
+    const shareData = {
+      title: song.title,
+      text: `Listen to "${song.title}" by ${song.artist} on TuneRaaga`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      toastEvents.show("Song link copied to clipboard!", "success");
+    }
+  };
+
   const handleSeek = (time) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
@@ -605,6 +621,13 @@ export default function History() {
                   {currentSong.artist}
                 </p>
               </div>
+              <button
+                onClick={() => handleShareSong(currentSong)}
+                title="Share Song"
+                className="text-gray-400 hover:text-white transition-colors shrink-0"
+              >
+                <Share2 size={18} />
+              </button>
             </div>
             <div className="flex-1 flex flex-col items-center justify-center w-full md:max-w-2xl">
               <div className="flex items-center gap-4 md:gap-6 mb-2">
