@@ -1006,7 +1006,7 @@ const StickyPlayer = ({
         document.body.removeChild(textarea);
       }
       toastEvents.show("Song link copied to clipboard!", "success");
-    } catch (err) {
+    } catch {
       toastEvents.show("Couldn't share the song. Please try again.", "error");
     }
   };

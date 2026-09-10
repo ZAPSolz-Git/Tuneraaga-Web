@@ -18,16 +18,25 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // --- Middleware ---
+// Vite auto-increments its dev port (5173 -> 5174 -> 5175 ...) whenever an
+// earlier one is already taken — common on a shared machine running several
+// projects. A fixed allowlist of ports silently breaks every API call (CORS
+// preflight rejection) the moment the frontend lands on a port that isn't in
+// the list. Any http(s)://localhost:<port> origin is allowed in dev; the
+// production domain stays explicitly listed.
+const ALLOWED_ORIGINS = ["https://tuneraagaweb.vercel.app"];
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/;
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://localhost:5174",
-      "http://localhost:8081",
-      "https://tuneraagaweb.vercel.app",
-    ],
-
+    origin: (origin, callback) => {
+      // no Origin header (curl, server-to-server, same-origin) -> allow
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin) || LOCALHOST_ORIGIN_RE.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

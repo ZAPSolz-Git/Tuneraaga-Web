@@ -124,8 +124,7 @@ function App() {
                 element={<Navigate to="/playlist/new" replace />}
               />
             </Route>
-
-            {/* ═══ FULL-SCREEN PAGES (no sidebar) ═══ */}
+           
 
             <Route path="/album/:albumName" element={<AlbumDetail />} />
             <Route path="/artist/:artistName" element={<ArtistProfile />} />
