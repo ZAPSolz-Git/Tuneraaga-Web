@@ -1062,6 +1062,9 @@ const ArtistManager = () => {
     } catch (error) {
       console.error("Error updating:", error);
       alert("Error updating: " + error.message);
+      // roll back the optimistic change right away; the refetch alone can't
+      // do it when the API itself is unreachable
+      setArtists((prev) => prev.map((a) => (a.id === id ? artist : a)));
       fetchArtists();
     }
   };
