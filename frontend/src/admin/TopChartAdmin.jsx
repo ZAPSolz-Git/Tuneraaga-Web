@@ -20,7 +20,7 @@ import { supabase } from "../lib/supabaseClient";
 import Swal from "sweetalert2";
 
 // Must match how your backend is mounted: app.use("/api/content", contentRoutes)
-const API_BASE = "http://localhost:5000/api/content";
+const API_BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/content`;
 
 const CHART_TYPES = [
   "Top 50",

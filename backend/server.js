@@ -19,7 +19,12 @@ const port = process.env.PORT || 5000;
 
 // --- Middleware ---
 
-const ALLOWED_ORIGINS = ["https://tuneraagaweb.vercel.app"];
+const ALLOWED_ORIGINS = [
+  "https://tuneraagaweb.vercel.app",
+  "https://tuneraaga.in",
+  "https://www.tuneraaga.in",
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",").map((s) => s.trim()) : []),
+];
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/;
 
 app.use(
@@ -49,10 +54,7 @@ app.use(
   }),
 );
 
-// Helmet's default Cross-Origin-Resource-Policy: same-origin blocks
-// cross-origin fetch() calls at the browser level, independent of CORS.
-// Since your frontend and backend are on different domains, this must be
-// relaxed or your API calls get silently blocked even with correct CORS.
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },

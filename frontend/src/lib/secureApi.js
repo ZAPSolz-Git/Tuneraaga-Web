@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 
 // Base URL of the secure backend built in /backend.
-export const API_BASE = "http://localhost:5000/api/content";
+export const API_BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/content`;
 
 async function getAuthHeader() {
   const {

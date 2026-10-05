@@ -27,7 +27,7 @@ import { genres, getSubgenres } from "../lib/subgener";
 import { validateCoverFile, validateAudioFile } from "../lib/mediaValidation";
 
 
-const API_BASE = `${import.meta.env.VITE_API_URL}/api/content`;
+const API_BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/content`;
 
 const uploadAssetToBackend = async (file, kind) => {
   const formData = new FormData();

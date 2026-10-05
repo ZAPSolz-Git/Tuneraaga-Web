@@ -10,9 +10,7 @@ const {
 
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "music-assets";
 
-// Files that passed release validation are stored under this prefix.
-// createRelease only accepts cover/audio URLs that live under it, so the
-// rules cannot be skipped by calling the generic upload endpoint.
+
 const VALIDATED_PREFIX = "validated";
 const hasValidatedPrefix = (url) =>
   typeof url === "string" && url.includes(`/${VALIDATED_PREFIX}/`);

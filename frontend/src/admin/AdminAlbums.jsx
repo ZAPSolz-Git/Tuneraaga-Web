@@ -23,7 +23,7 @@ import { supabase } from "../lib/supabaseClient";
 import { genres } from "../lib/subgener";
 import { validateCoverFile, validateAudioFile } from "../lib/mediaValidation";
 
-const API_BASE = `${import.meta.env.VITE_API_URL}/api/content`;
+const API_BASE = `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api/content`;
 const MAX_ALBUM_TRACKS = 10;
 
 const LANGUAGES = [
