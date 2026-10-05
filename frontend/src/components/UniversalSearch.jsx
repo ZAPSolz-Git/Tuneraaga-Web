@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useOutletContext } from "react-router-dom";
 import { Play, Pause, Music, Users, ListMusic, User, Search as SearchIcon } from "lucide-react";
 import { supabase, API_BASE_URL } from "../lib/supabaseClient";
+import VerifiedBadge from "./VerifiedBadge";
 
 const ARTIST_API_URL = `${API_BASE_URL}/artists`;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -149,6 +150,7 @@ const UniversalSearch = () => {
         <div className="flex-1 min-w-0">
           <h4 className="font-bold text-slate-900 truncate group-hover:text-blue-600 flex items-center gap-1">
             {artist.name}
+            <VerifiedBadge show={artist.verified} size={14} />
           </h4>
           <p className="text-xs text-slate-500">{artist.genre}</p>
         </div>

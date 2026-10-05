@@ -23,6 +23,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { genres, getSubgenres } from "../lib/subgener";
 import { apiRequest, uploadFileSecure } from "../lib/secureApi";
+import { validateCoverFile, validateAudioFile } from "../lib/mediaValidation";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -110,9 +111,14 @@ const InlineImageUpload = ({ value, onChange, label }) => {
   const handleFile = async (file) => {
     if (!file) return;
     setError("");
+    const problem = await validateCoverFile(file);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setUploading(true);
     try {
-      const url = await uploadFileSecure(file, "music-assets/covers");
+      const url = await uploadFileSecure(file, "music-assets/covers", "release_cover");
       onChange(url);
       setPreview(url);
     } catch (e) {
@@ -170,7 +176,7 @@ const InlineImageUpload = ({ value, onChange, label }) => {
         <input
           ref={ref}
           type="file"
-          accept="image/*"
+          accept=".jpg,.jpeg,image/jpeg"
           className="hidden"
           onChange={(e) => handleFile(e.target.files[0])}
         />
@@ -195,10 +201,15 @@ const InlineAudioUpload = ({ value, onChange }) => {
   const handleFile = async (file) => {
     if (!file) return;
     setError("");
+    const problem = await validateAudioFile(file);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setFileName(file.name);
     setUploading(true);
     try {
-      const url = await uploadFileSecure(file, "music-assets/audio");
+      const url = await uploadFileSecure(file, "music-assets/audio", "release_audio");
       onChange(url);
       setFileName("✓ " + file.name);
     } catch (e) {
@@ -240,7 +251,7 @@ const InlineAudioUpload = ({ value, onChange }) => {
         <input
           ref={ref}
           type="file"
-          accept="audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a"
+          accept=".wav,audio/wav,audio/x-wav,audio/wave"
           className="hidden"
           onChange={(e) => handleFile(e.target.files[0])}
         />

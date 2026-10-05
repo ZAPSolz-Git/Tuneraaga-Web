@@ -1,5 +1,4 @@
 const { distributionData, supabaseAdmin } = require("../config/supabaseClient");
-console.log("distributionData is:", typeof distributionData, distributionData);
 const SUBMISSIONS_TABLE = "submissions";
 const APPROVED_STATUS = "approved";
 

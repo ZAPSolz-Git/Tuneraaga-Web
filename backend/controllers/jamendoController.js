@@ -34,10 +34,6 @@ async function syncJamendoTracks(req, res) {
       });
 
       const results = data.results ?? [];
-      if (fetched === 0) {
-        // one-time debug peek at the raw Jamendo response shape
-        console.log("Jamendo raw response:", JSON.stringify(data).slice(0, 1000));
-      }
       if (results.length === 0) break;
 
       const rows = results.map((track) => ({

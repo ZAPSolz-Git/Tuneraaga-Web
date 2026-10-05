@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { toastEvents } from "../utils/toastEvents";
+import VerifiedBadge from "../components/VerifiedBadge";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -314,9 +315,27 @@ const ArtistProfile = () => {
   const navigate = useNavigate();
   const decodedArtistName = decodeURIComponent(artistName || "");
 
+  const [blueTick, setBlueTick] = useState(false);
   const [artistSongs, setArtistSongs] = useState([]);
   const [collabSongs, setCollabSongs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!decodedArtistName) return;
+    let cancelled = false;
+    supabase
+      .from("artists")
+      .select("verified")
+      .eq("name", decodedArtistName)
+      .limit(1)
+      .then(({ data }) => {
+        if (!cancelled) setBlueTick(data?.[0]?.verified === true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [decodedArtistName]);
+
   const [activeTab, setActiveTab] = useState("songs");
   const [sortBy, setSortBy] = useState("popular");
 
@@ -854,9 +873,9 @@ const ArtistProfile = () => {
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
                   {decodedArtistName}
                 </h1>
-                <CheckCircle2
-                  size={24}
-                  className="text-blue-500 fill-blue-500 flex-shrink-0"
+                <VerifiedBadge
+                  show={blueTick || artistBio?.verified === true}
+                  size={30}
                 />
               </div>
 

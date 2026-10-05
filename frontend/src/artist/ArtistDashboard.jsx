@@ -6,6 +6,7 @@ import {
   Music4, Edit, CheckCircle2, Loader2 
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import VerifiedBadge from "../components/VerifiedBadge";
 
 const ArtistDashboard = () => {
   const [artistData, setArtistData] = useState(null);
@@ -94,17 +95,16 @@ const ArtistDashboard = () => {
                   <User size={64} />
                 </div>
               )}
-              {artistData.verified && (
-                <div className="absolute bottom-2 right-2 bg-blue-600 text-white p-1.5 rounded-full shadow-sm border-2 border-white">
-                  <CheckCircle2 size={20} fill="currentColor" />
-                </div>
-              )}
+              
             </div>
           </div>
           <div className="pt-16 md:pt-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-3xl font-bold text-slate-900">{artistData.name}</h2>
+                <h2 className="text-3xl font-bold text-slate-900 flex items-center gap-2">
+                  {artistData.name}
+                  <VerifiedBadge show={artistData.verified} size={28} />
+                </h2>
               </div>
               <div className="flex items-center gap-2 text-slate-500 font-medium">
                 <Music4 size={18} className="text-blue-500" />

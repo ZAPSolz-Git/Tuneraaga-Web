@@ -45,10 +45,7 @@ const IncomingSongs = () => {
       setSubmissions(data.submissions || []);
     } catch (err) {
       console.error("IncomingSongs fetch error:", err);
-      setError(
-        err?.response?.data?.error ||
-          "Incoming songs load nahi hue. Server route/logs check karo.",
-      );
+      setError(err?.response?.data?.error || "Incoming songs no Loading.");
       setSubmissions([]);
     } finally {
       setLoading(false);
@@ -129,9 +126,7 @@ const IncomingSongs = () => {
 
   // ---- bulk publish all pending approved submissions ----
   const syncAll = async () => {
-    const pendingIds = submissions
-      .filter((s) => !s.imported)
-      .map((s) => s.id);
+    const pendingIds = submissions.filter((s) => !s.imported).map((s) => s.id);
     if (!pendingIds.length) return;
 
     setSyncingAll(true);
@@ -182,8 +177,8 @@ const IncomingSongs = () => {
             <Music2 size={24} className="text-emerald-500" /> Incoming Songs
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Movement Creations (Distribution) se approved submissions — yahan
-            se TuneRaaga pe publish karo.
+            Movement Creations (Distribution) se approved submissions — yahan se
+            TuneRaaga pe publish karo.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -196,9 +191,7 @@ const IncomingSongs = () => {
               size={15}
               className={syncingAll ? "animate-spin" : ""}
             />
-            {syncingAll
-              ? "Syncing..."
-              : `Sync All Approved (${pendingCount})`}
+            {syncingAll ? "Syncing..." : `Sync All Approved (${pendingCount})`}
           </button>
           <button
             onClick={fetchIncoming}
@@ -258,7 +251,9 @@ const IncomingSongs = () => {
               >
                 <div className="flex gap-3 p-4">
                   <img
-                    src={submission.cover_url || "https://via.placeholder.com/80"}
+                    src={
+                      submission.cover_url || "https://via.placeholder.com/80"
+                    }
                     alt=""
                     className="w-16 h-16 rounded-lg object-cover border border-slate-100 flex-shrink-0"
                   />
@@ -441,7 +436,8 @@ const IncomingSongs = () => {
                           .map((track, idx) => {
                             const url = track.audio_file_url;
                             const isPlaying = url && playingUrl === url;
-                            const isLoadingTrack = url && audioLoadingUrl === url;
+                            const isLoadingTrack =
+                              url && audioLoadingUrl === url;
 
                             return (
                               <div
@@ -454,7 +450,10 @@ const IncomingSongs = () => {
                                   className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
                                 >
                                   {isLoadingTrack ? (
-                                    <Loader2 size={16} className="animate-spin" />
+                                    <Loader2
+                                      size={16}
+                                      className="animate-spin"
+                                    />
                                   ) : isPlaying ? (
                                     <Pause size={16} />
                                   ) : (

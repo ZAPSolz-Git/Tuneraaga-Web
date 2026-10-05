@@ -52,6 +52,8 @@ import TrendingSongsAdmin from "./admin/TrendingSongsAdmin";
 import LatestReleasesAdmin from "./admin/LatestReleasesAdmin";
 import Top10IndiaAdmin from "./admin/Top10IndiaAdmin";
 import AdminNewRelease from "./admin/AdminNewRelease";
+import AdminAlbums from "./admin/AdminAlbums";
+import AdminApiArtists from "./admin/AdminApiArtists";
 import SongEditAdmin from "./admin/SongEditAdmin";
 import PodcastAdmin from "./admin/PodcastAdmin";
 import RadioAdmin from "./admin/RadioAdmin";
@@ -167,6 +169,8 @@ function App() {
               <Route path="top-charts" element={<TopChartAdmin />} />
               <Route path="top-playlists" element={<TopPlaylistAdmin />} />
               <Route path="new-release" element={<AdminNewRelease />} />
+              <Route path="albums" element={<AdminAlbums />} />
+              <Route path="api-artists" element={<AdminApiArtists />} />
               <Route path="/admin/incoming-songs" element={<IncomingSongs />} />
               <Route path="/admin/hero-banner" element={<HeroBannerAdmin />} />
               <Route path="song-edit" element={<SongEditAdmin />} />

@@ -55,23 +55,15 @@ const {
   deletePlaylist,
 } = require("../controllers/playlistController");
 
-// ────────────────────────────────────────────
-// DEBUG: confirm the routes are registered
-// If this whole block never prints on server
-// start, this file is NOT being loaded — check
-// your require path in index.js / app.js.
-// ────────────────────────────────────────────
-console.log("✅ contentRoutes.js loaded — registering all routes:");
 
 // ──── Upload operations — Admin only ────
 router.post(
   "/upload",
   authenticateUser,
   requireAdmin,
-  upload.single("file"),
+  upload.large.single("file"),
   uploadAsset,
 );
-console.log("   POST /upload             →  uploadAsset");
 
 // ──── Releases ────
 router.post("/releases", authenticateUser, requireAdmin, createRelease);
@@ -82,19 +74,31 @@ router.put(
   publishAlbumTracks,
 );
 router.delete("/releases/:id", authenticateUser, requireAdmin, deleteRelease);
-console.log("   POST /releases           →  createRelease");
-console.log("   PUT  /releases/publish   →  publishAlbumTracks");
-console.log("   DEL  /releases/:id       →  deleteRelease");
+
+// ──── Albums management (album tracks only) ────
+const albumController = require("../controllers/albumController");
+router.get("/albums", authenticateUser, requireAdmin, albumController.getAlbums);
+router.put("/albums", authenticateUser, requireAdmin, albumController.updateAlbum);
+router.delete("/albums", authenticateUser, requireAdmin, albumController.deleteAlbum);
+router.put(
+  "/albums/tracks/:id",
+  authenticateUser,
+  requireAdmin,
+  albumController.updateAlbumTrack,
+);
+router.delete(
+  "/albums/tracks/:id",
+  authenticateUser,
+  requireAdmin,
+  albumController.deleteAlbumTrack,
+);
 
 // ──── Podcasts ────
 router.delete("/podcasts/:id", authenticateUser, requireAdmin, deletePodcast);
-console.log("   DEL  /podcasts/:id       →  deletePodcast");
 
 // ──── Radio ────
 router.put("/radio/:id", authenticateUser, requireAdmin, updateRadioStation);
 router.delete("/radio/:id", authenticateUser, requireAdmin, deleteRadioStation);
-console.log("   PUT  /radio/:id          →  updateRadioStation");
-console.log("   DEL  /radio/:id          →  deleteRadioStation");
 
 // ──── Admin "list" pages (latest_releases, top10_india, trending_songs) ────
 router.get("/lists/:listName", authenticateUser, requireAdmin, getListItems);
@@ -105,24 +109,15 @@ router.delete(
   requireAdmin,
   deleteListItem,
 );
-console.log("   GET  /lists/:listName    →  getListItems");
-console.log("   POST /lists/:listName    →  addListItem");
-console.log("   DEL  /lists/:listName/:id → deleteListItem");
 
 // ──── Charts CRUD ────
 router.post("/charts", authenticateUser, requireAdmin, createChart);
 router.put("/charts/:id", authenticateUser, requireAdmin, updateChart);
 router.delete("/charts/:id", authenticateUser, requireAdmin, deleteChart);
-console.log("   POST /charts             →  createChart");
-console.log("   PUT  /charts/:id         →  updateChart");
-console.log("   DEL  /charts/:id         →  deleteChart");
 
 // ──── Playlists CRUD ────
 router.post("/playlists", authenticateUser, requireAdmin, createPlaylist);
 router.put("/playlists/:id", authenticateUser, requireAdmin, updatePlaylist);
 router.delete("/playlists/:id", authenticateUser, requireAdmin, deletePlaylist);
-console.log("   POST /playlists          →  createPlaylist");
-console.log("   PUT  /playlists/:id      →  updatePlaylist");
-console.log("   DEL  /playlists/:id      →  deletePlaylist");
 
 module.exports = router;

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Image,
@@ -24,13 +24,15 @@ import {
 
 import { supabase } from "../lib/supabaseClient";
 import { genres, getSubgenres } from "../lib/subgener";
+import { validateCoverFile, validateAudioFile } from "../lib/mediaValidation";
 
 
 const API_BASE = `${import.meta.env.VITE_API_URL}/api/content`;
 
-const uploadAssetToBackend = async (file) => {
+const uploadAssetToBackend = async (file, kind) => {
   const formData = new FormData();
   formData.append("file", file);
+  if (kind) formData.append("kind", kind);
 
   const { data } = await supabase.auth.getSession();
   const accessToken = data?.session?.access_token;
@@ -125,6 +127,7 @@ const LANGUAGES = [
   "Himachali",
 ];
 const CURRENT_YEAR = new Date().getFullYear();
+const MAX_ALBUM_TRACKS = 10;
 
 // ═══════════════════════════════════════════
 // SHARED COMPONENTS
@@ -146,36 +149,17 @@ const ImageUpload = ({
   const handleFile = async (file) => {
     if (!file) return;
     setSizeError("");
-    const result = await new Promise((resolve) => {
-      const img = new window.Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        if (img.naturalWidth < 3000 || img.naturalHeight < 3000) {
-          resolve({
-            valid: false,
-            msg: `Min 3000×3000px required. Your image: ${img.naturalWidth}×${img.naturalHeight}px.`,
-          });
-        } else {
-          resolve({ valid: true });
-        }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve({ valid: false, msg: "Cannot read image file." });
-      };
-      img.src = url;
-    });
-    if (!result.valid) {
-      setSizeError(result.msg);
-      if (onError) onError(result.msg);
+    const problem = await validateCoverFile(file);
+    if (problem) {
+      setSizeError(problem);
+      if (onError) onError(problem);
       return;
     }
     const localUrl = URL.createObjectURL(file);
     setPreview(localUrl);
     setUploading(true);
     try {
-      const publicUrl = await uploadAssetToBackend(file);
+      const publicUrl = await uploadAssetToBackend(file, "release_cover");
       onChange(publicUrl);
     } catch (e) {
       console.error("Cover upload failed:", e.message);
@@ -191,7 +175,7 @@ const ImageUpload = ({
       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
         {label} {required && <span className="text-red-400">*</span>}
         <span className="font-normal text-slate-400 ml-1 normal-case">
-          ({size} minimum required)
+          ({size} minimum · JPG only)
         </span>
       </label>
       <div
@@ -232,15 +216,18 @@ const ImageUpload = ({
               Drop image here
             </p>
             <p className="text-xs text-slate-400 mt-1">or click to browse</p>
-            <p className="text-[10px] text-slate-400 mt-2">JPG, PNG, WebP</p>
+            <p className="text-[10px] text-slate-400 mt-2">JPG only · 3000×3000 px min</p>
           </div>
         )}
         <input
           ref={ref}
           type="file"
-          accept="image/*"
+          accept=".jpg,.jpeg,image/jpeg"
           className="hidden"
-          onChange={(e) => handleFile(e.target.files[0])}
+          onChange={(e) => {
+            handleFile(e.target.files[0]);
+            e.target.value = "";
+          }}
         />
       </div>
       {sizeError && (
@@ -260,6 +247,16 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
   const [fileName, setFileName] = useState(value ? "Audio uploaded ✓" : "");
   const [uploadDone, setUploadDone] = useState(!!value);
 
+  // When the parent clears the value (e.g. after a track is saved), reset the
+  // widget so it doesn't keep showing the previous file as uploaded.
+  useEffect(() => {
+    if (!value) {
+      setUploadDone(false);
+      setFileName("");
+      setUploadError("");
+    }
+  }, [value]);
+
   const handleFile = async (file) => {
     if (!file) return;
     setUploadError("");
@@ -270,10 +267,15 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
       );
       return;
     }
+    const problem = await validateAudioFile(file);
+    if (problem) {
+      setUploadError(problem);
+      return;
+    }
     setFileName(file.name);
     setUploading(true);
     try {
-      const publicUrl = await uploadAssetToBackend(file);
+      const publicUrl = await uploadAssetToBackend(file, "release_audio");
       onChange(publicUrl);
       setUploadDone(true);
       setFileName(`✓ ${file.name}`);
@@ -321,7 +323,7 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
           <p className="text-xs text-slate-400 mt-0.5">
             {uploading
               ? "Do not close this tab"
-              : "MP3, WAV, FLAC, AAC · Max 200MB"}
+              : "WAV only · Max 200MB"}
           </p>
         </div>
         {uploadDone && !uploading && (
@@ -332,9 +334,12 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
         <input
           ref={ref}
           type="file"
-          accept="audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a,.opus"
+          accept=".wav,audio/wav,audio/x-wav,audio/wave"
           className="hidden"
-          onChange={(e) => handleFile(e.target.files[0])}
+          onChange={(e) => {
+            handleFile(e.target.files[0]);
+            e.target.value = "";
+          }}
         />
       </div>
       {uploading && (
@@ -346,7 +351,7 @@ const AudioUpload = ({ label, value, onChange, required, compact = false }) => {
         <div className="flex items-start gap-2 mt-2 text-orange-600 bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs leading-relaxed">
           <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold mb-0.5">Upload Failed</p>
+            <p className="font-semibold mb-0.5">Audio file not accepted</p>
             <p>{uploadError}</p>
           </div>
         </div>
@@ -1071,6 +1076,16 @@ const AlbumReleaseForm = () => {
     setJustSaved(false);
   };
 
+  const missingTrackFields = () => {
+    const missing = [];
+    if (!currentTrack.title.trim()) missing.push("Title");
+    if (!currentTrack.primary_artist.trim()) missing.push("Artist");
+    if (!currentTrack.language) missing.push("Language");
+    if (!currentTrack.genre) missing.push("Genre");
+    if (!currentTrack.audio_url) missing.push("Audio file");
+    return missing;
+  };
+
   const isCurrentTrackValid = () => {
     return !!(
       currentTrack.title.trim() &&
@@ -1083,7 +1098,7 @@ const AlbumReleaseForm = () => {
 
   const buildNextTrack = (justSavedTrack, newCount) => ({
     title: "",
-    primary_artist: "",
+    primary_artist: justSavedTrack.primary_artist || "",
     featuring_artists: [],
     language: justSavedTrack.language || "",
     genre: justSavedTrack.genre || "",
@@ -1098,6 +1113,12 @@ const AlbumReleaseForm = () => {
   // endpoint used by the single-release form (was previously a direct
   // supabase.from("releases").insert(...) with the anonymous key).
   const handleSaveTrack = async () => {
+    if (savedTracks.length >= MAX_ALBUM_TRACKS) {
+      setTrackError(
+        `Maximum track limit reached. An album can contain up to ${MAX_ALBUM_TRACKS} tracks.`,
+      );
+      return;
+    }
     if (!isCurrentTrackValid()) {
       setTrackError(
         "Please fill all required fields and upload audio before saving.",
@@ -1213,7 +1234,7 @@ const AlbumReleaseForm = () => {
 
   const canProceed = () => {
     if (step === 1) return !!coverUrl && !coverSizeError && !!albumName.trim();
-    if (step === 2) return savedTracks.length >= 2;
+    if (step === 2) return savedTracks.length >= 1;
     if (step === 3) return true;
     if (step === 4) return !!(copyright.holder && copyright.year);
     return true;
@@ -1259,7 +1280,7 @@ const AlbumReleaseForm = () => {
             Album Released Successfully! 🎉
           </h2>
           <p className="text-slate-500 mb-2">
-            <strong>{albumName}</strong> — {savedTracks.length} tracks published
+            <strong>{albumName}</strong> — {savedTracks.length} {savedTracks.length === 1 ? "track" : "tracks"} published
           </p>
           <p className="text-slate-400 text-sm mb-4">
             All tracks are now live with the same cover image and album name.
@@ -1341,8 +1362,8 @@ const AlbumReleaseForm = () => {
                   {(!coverUrl || !albumName.trim()) && (
                     <div className="flex items-center gap-2 text-amber-600 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
                       <AlertCircle size={16} className="flex-shrink-0" />
-                      Cover image and album name are required. Minimum 2 tracks
-                      needed to proceed.
+                      Cover image and album name are required. You can add 1 to 10
+                      tracks in the next step.
                     </div>
                   )}
                 </div>
@@ -1356,13 +1377,13 @@ const AlbumReleaseForm = () => {
                         Add Tracks
                       </h2>
                       <p className="text-sm text-slate-500">
-                        Save each track individually. Minimum 2 required.
+                        Save each track individually. Add 1 to {MAX_ALBUM_TRACKS} tracks; remove any before publishing.
                       </p>
                     </div>
                     <span
-                      className={`px-3 py-1 rounded-full text-sm font-bold ${savedTracks.length >= 2 ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"}`}
+                      className={`px-3 py-1 rounded-full text-sm font-bold ${savedTracks.length >= 1 ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"}`}
                     >
-                      {savedTracks.length} / ∞ Saved
+                      {savedTracks.length} / {MAX_ALBUM_TRACKS} Saved
                     </span>
                   </div>
 
@@ -1475,9 +1496,28 @@ const AlbumReleaseForm = () => {
                         required
                         compact
                       />
+                      {savedTracks.length < MAX_ALBUM_TRACKS &&
+                        missingTrackFields().length > 0 && (
+                          <p className="text-xs text-slate-500">
+                            To save this track, fill in:{" "}
+                            <span className="font-semibold">
+                              {missingTrackFields().join(", ")}
+                            </span>
+                          </p>
+                        )}
+                      {trackError && (
+                        <div className="flex items-start gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs">
+                          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                          <span>{trackError}</span>
+                        </div>
+                      )}
                       <button
                         onClick={handleSaveTrack}
-                        disabled={savingTrack || !isCurrentTrackValid()}
+                        disabled={
+                          savingTrack ||
+                          !isCurrentTrackValid() ||
+                          savedTracks.length >= MAX_ALBUM_TRACKS
+                        }
                         className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
                       >
                         {savingTrack ? (
@@ -1487,7 +1527,10 @@ const AlbumReleaseForm = () => {
                           </>
                         ) : (
                           <>
-                            <CheckCircle2 size={16} /> Save Track
+                            <CheckCircle2 size={16} />{" "}
+                            {savedTracks.length >= MAX_ALBUM_TRACKS
+                              ? "Track limit reached (10)"
+                              : "Save Track"}
                           </>
                         )}
                       </button>

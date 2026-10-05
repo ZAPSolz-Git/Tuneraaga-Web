@@ -49,6 +49,7 @@ import { Link, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { genres } from "../lib/subgener";
 import { toastEvents } from "../utils/toastEvents"; // ✅ ADDED Toast Import
+import VerifiedBadge from "../components/VerifiedBadge";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -80,9 +81,24 @@ const formatDuration = (val) => {
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 };
 
+// Follower counts come as plain numbers from the API, but custom artists
+// store them as text such as "88M", "45K" or "1,200" in the artists table.
+const parseFollowers = (val) => {
+  if (val === null || val === undefined || val === "") return 0;
+  if (typeof val === "number") return val;
+  const m = val
+    .toString()
+    .trim()
+    .replace(/,/g, "")
+    .match(/^(\d+(?:\.\d+)?)\s*([kmb])?/i);
+  if (!m) return 0;
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || "").toLowerCase()] || 1;
+  return Math.round(parseFloat(m[1]) * mult);
+};
+
 const formatFollowers = (val) => {
   if (!val) return "0";
-  const num = parseFloat(val.toString().replace(/,/g, ""));
+  const num = parseFollowers(val);
   if (isNaN(num)) return "0";
   if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
   if (num >= 1000) return (num / 1000).toFixed(1) + "K";
@@ -849,6 +865,8 @@ const TopArtist = () => {
           );
           return {
             ...artist,
+            followers: parseFollowers(artist.followers),
+            verified: artist.verified === true,
             source: "custom",
             songs: artistSongs.map((song) => ({
               id: song.id,
@@ -882,7 +900,7 @@ const TopArtist = () => {
                 genre: a.genres?.[0] || "",
                 image: a.image,
                 followers: a.followers || 0,
-                verified: false,
+                verified: a.verified === true,
                 source: "api",
                 spotifyUrl: a.spotifyUrl,
                 songs: [],
@@ -1069,7 +1087,7 @@ const TopArtist = () => {
       genre: result.genres?.[0] || "",
       image: result.image,
       followers: result.followers || 0,
-      verified: false,
+      verified: result.verified === true,
       source: "api",
       spotifyUrl: result.spotifyUrl,
       songs: [],
@@ -1432,10 +1450,7 @@ const TopArtist = () => {
 
                     {artist.verified && (
                       <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-slate-200 flex items-center gap-1.5 shadow-sm z-10">
-                        <CheckCircle2
-                          className="w-3.5 h-3.5 text-blue-600 fill-blue-600"
-                          size={12}
-                        />
+                        <VerifiedBadge show size={14} />
                         <span className="text-[10px] font-bold text-slate-700 tracking-wide uppercase">
                           Verified
                         </span>
@@ -1443,8 +1458,9 @@ const TopArtist = () => {
                     )}
                   </div>
                   <div className="px-1 text-center">
-                    <h3 className="font-bold text-slate-900 truncate text-lg group-hover:text-blue-600 transition-colors">
-                      {artist.name}
+                    <h3 className="font-bold text-slate-900 truncate text-lg group-hover:text-blue-600 transition-colors flex items-center justify-center gap-1.5">
+                      <span className="truncate">{artist.name}</span>
+                      <VerifiedBadge show={artist.verified} size={18} />
                     </h3>
                     <p className="text-sm text-gray-500 truncate mt-0.5">
                       {artist.genre || (artist.source === "api" ? "Artist" : "")}
@@ -1489,15 +1505,14 @@ const TopArtist = () => {
 
                 <div className="flex-1 text-center md:text-left pb-4">
                   <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3 justify-center md:justify-start">
-                    {activeArtist.verified && (
-                      <CheckCircle2 className="text-blue-600 w-6 h-6 fill-blue-600 drop-shadow-sm" />
-                    )}
+                    <VerifiedBadge show={activeArtist.verified} size={26} />
                     <span className="text-blue-600 font-bold text-sm uppercase tracking-widest">
                       Official Artist
                     </span>
                   </div>
-                  <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tight mb-4 leading-none">
+                  <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tight mb-4 leading-none flex items-center justify-center md:justify-start gap-3">
                     {activeArtist.name}
+                    <VerifiedBadge show={activeArtist.verified} size={44} />
                   </h1>
                   {activeArtist.followers > 0 ? (
                     <p className="text-slate-500 text-xl mb-8 flex items-center justify-center md:justify-start gap-2 font-bold">

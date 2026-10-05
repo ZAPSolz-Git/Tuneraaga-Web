@@ -6,6 +6,16 @@ const {
   searchArtists,
 } = require("../controllers/externalArtistController");
 
+const {
+  authenticateUser,
+  requireAdmin,
+} = require("../middleware/authMiddleware");
+const {
+  listVerified,
+  addVerified,
+  removeVerified,
+} = require("../controllers/verifiedApiArtistController");
+
 const router = express.Router();
 
 // GET /api/external-artist/popular          -> curated list of popular Spotify artists
@@ -17,6 +27,10 @@ const router = express.Router();
 // treat them as an artist name and these routes would never be reached.
 router.get("/popular", getPopularArtists);
 router.get("/search", searchArtists);
+// Admin-approved blue ticks for API artists (must stay above /:name)
+router.get("/verified", listVerified);
+router.post("/verified", authenticateUser, requireAdmin, addVerified);
+router.delete("/verified/:spotifyId", authenticateUser, requireAdmin, removeVerified);
 router.get("/:name", getArtistProfile);
 router.get("/:name/playlists", searchArtistPlaylists);
 

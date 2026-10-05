@@ -57,9 +57,6 @@ const sendResetEmail = async (toEmail, resetUrl) => {
   };
 
   const info = await transporter.sendMail(mailOptions);
-  console.log(
-    `✅ Reset email sent to ${toEmail} — MessageId: ${info.messageId}`,
-  );
   return info;
 };
 

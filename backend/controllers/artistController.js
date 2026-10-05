@@ -182,7 +182,9 @@ exports.createArtist = async (req, res) => {
       instagram_url: instagramUrl || null,
       id_document_url: idDocumentUrl || null,
       status: status || "Verified",
-      verified: verified === "true" || verified === true || true,
+      // admin-controlled blue tick; defaults to verified when not sent
+      verified:
+        verified === undefined ? true : verified === "true" || verified === true,
       born_date: born_date || null,
       early_life: early_life || null,
       career: career || null,

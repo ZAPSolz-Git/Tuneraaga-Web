@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { spotifyApi } = require("../config/spotifyClient");
+const { applyVerified } = require("../utils/apiArtistVerification");
 
 const WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary";
 
@@ -15,6 +16,9 @@ function mapSpotifyArtistItem(artist) {
     name: artist.name,
     genres: artist.genres,
     followers: artist.followers?.total ?? 0,
+    // Spotify has no verified flag; the blue tick is admin-approved and added
+    // per Spotify ID by applyVerified() (utils/apiArtistVerification.js).
+    verified: false,
     popularity: artist.popularity,
     image: artist.images?.[0]?.url ?? null,
     spotifyUrl: artist.external_urls?.spotify ?? null,
@@ -113,7 +117,10 @@ const POPULAR_ARTISTS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 exports.getPopularArtists = async (req, res) => {
   try {
     if (popularArtistsCache && Date.now() < popularArtistsCacheExpiresAt) {
-      return res.status(200).json({ success: true, artists: popularArtistsCache });
+      return res.status(200).json({
+        success: true,
+        artists: await applyVerified(popularArtistsCache),
+      });
     }
 
     const results = await Promise.all(
@@ -137,7 +144,7 @@ exports.getPopularArtists = async (req, res) => {
     popularArtistsCache = artists;
     popularArtistsCacheExpiresAt = Date.now() + POPULAR_ARTISTS_CACHE_TTL_MS;
 
-    res.status(200).json({ success: true, artists });
+    res.status(200).json({ success: true, artists: await applyVerified(artists) });
   } catch (err) {
     console.error("Get Popular Artists Error:", err.message);
     res.status(500).json({
@@ -185,7 +192,7 @@ exports.searchArtists = async (req, res) => {
       }),
     );
 
-    res.status(200).json({ success: true, artists });
+    res.status(200).json({ success: true, artists: await applyVerified(artists) });
   } catch (err) {
     console.error("Search Artists Error:", err.message);
     res.status(500).json({
@@ -220,7 +227,7 @@ exports.getArtistProfile = async (req, res) => {
     res.status(200).json({
       success: true,
       artist: {
-        ...enriched,
+        ...(await applyVerified(enriched)),
         bio: wikipedia?.bio ?? null,
         wikipediaUrl: wikipedia?.wikipediaUrl ?? null,
         thumbnail: wikipedia?.thumbnail ?? null,

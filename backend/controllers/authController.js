@@ -492,7 +492,6 @@ exports.forgotPassword = async (req, res) => {
 
     // ---- Email not found — still return success (security) ----
     if (!authUser) {
-      console.log(`⚠ forgotPassword: email not found — ${email}`);
       return res.json({
         success: true,
         message:
@@ -629,10 +628,6 @@ exports.resetPassword = async (req, res) => {
       .from("password_resets")
       .update({ used: true })
       .eq("id", resetRecord.id);
-
-    console.log(
-      `✅ Password reset successful for ${resetRecord.email}`
-    );
 
     return res.json({
       success: true,

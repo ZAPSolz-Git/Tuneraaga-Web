@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getAuthHeader } from "./supabaseClient";
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
@@ -7,12 +8,12 @@ const apiClient = axios.create({
   },
 });
 
-// ---- request interceptor: attach Bearer token from localStorage ----
+// ---- request interceptor: attach the Supabase session token ----
 apiClient.interceptors.request.use(
-  (config) => {
-    const accessToken = localStorage.getItem("accessToken");
-    if (accessToken) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
+  async (config) => {
+    const authHeader = await getAuthHeader();
+    if (authHeader.Authorization) {
+      config.headers.Authorization = authHeader.Authorization;
     }
     return config;
   },

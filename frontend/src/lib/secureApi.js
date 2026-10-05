@@ -42,12 +42,14 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
  * instead of calling supabase.storage.from(...).upload directly.
  * `folder` must match one of the ALLOWED_FOLDERS in backend/routes/upload.js
  */
-export async function uploadFileSecure(file, folder) {
+export async function uploadFileSecure(file, folder, kind) {
   const authHeader = await getAuthHeader();
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("folder", folder);
+  // "release_cover" | "release_audio" → server enforces JPG 3000×3000 / WAV format
+  if (kind) formData.append("kind", kind);
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: "POST",

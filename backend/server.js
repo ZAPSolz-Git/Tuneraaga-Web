@@ -18,12 +18,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // --- Middleware ---
-// Vite auto-increments its dev port (5173 -> 5174 -> 5175 ...) whenever an
-// earlier one is already taken — common on a shared machine running several
-// projects. A fixed allowlist of ports silently breaks every API call (CORS
-// preflight rejection) the moment the frontend lands on a port that isn't in
-// the list. Any http(s)://localhost:<port> origin is allowed in dev; the
-// production domain stays explicitly listed.
+
 const ALLOWED_ORIGINS = ["https://tuneraagaweb.vercel.app"];
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/;
 
@@ -71,12 +66,6 @@ app.use(
   }),
 );
 
-// 🔍 DEBUG LOGGER
-app.use((req, res, next) => {
-  console.log(`➡️  ${req.method} ${req.originalUrl}`);
-  next();
-});
-
 // --- Health Check ---
 app.get("/", (req, res) => {
   res.send("Server Running! 🚀");
@@ -115,9 +104,9 @@ app.use("/api/external-artist", externalArtistRoutes);
 app.use("/api", orderRoutes);
 app.use("/api/internal", require("./routes/internalReleases"));
 
-// 🔍 404 catch-all
+// 404 catch-all
 app.use((req, res) => {
-  console.log(`❌ No route matched: ${req.method} ${req.originalUrl}`);
+  console.warn(`No route matched: ${req.method} ${req.originalUrl}`);
   res
     .status(404)
     .json({ error: `Route not found: ${req.method} ${req.originalUrl}` });

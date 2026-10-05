@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { apiRequest, uploadFileSecure } from "../lib/secureApi";
+import { validateCoverFile, validateAudioFile } from "../lib/mediaValidation";
 
 // ─────────────────────────────────────────────────────────────
 // ⚙️ CONFIGURATION
@@ -273,18 +274,24 @@ const AudioReleaseForm = ({
   const updateField = (field, value) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
 
-  const handleCoverSelect = (e) => {
+  const handleCoverSelect = async (e) => {
     const file = e.target.files[0];
+    e.target.value = "";
     if (file) {
+      const problem = await validateCoverFile(file);
+      if (problem) return notify(problem, "error");
       setNewCoverFile(file);
       const preview = URL.createObjectURL(file);
       updateField("coverUrl", preview);
     }
   };
 
-  const handleAudioSelect = (e) => {
+  const handleAudioSelect = async (e) => {
     const file = e.target.files[0];
+    e.target.value = "";
     if (file) {
+      const problem = await validateAudioFile(file);
+      if (problem) return notify(problem, "error");
       setNewAudioFile(file);
     }
   };
@@ -338,7 +345,7 @@ const AudioReleaseForm = ({
       if (newCoverFile) {
         setUploading(true);
         try {
-          finalCoverUrl = await uploadFileSecure(newCoverFile, "covers");
+          finalCoverUrl = await uploadFileSecure(newCoverFile, "covers", "release_cover");
         } catch (err) {
           console.error(err);
           notify("Cover upload failed: " + err.message, "error");
@@ -351,7 +358,7 @@ const AudioReleaseForm = ({
       if (newAudioFile) {
         setUploading(true);
         try {
-          finalAudioUrl = await uploadFileSecure(newAudioFile, "audio");
+          finalAudioUrl = await uploadFileSecure(newAudioFile, "audio", "release_audio");
         } catch (err) {
           console.error(err);
           notify("Audio upload failed: " + err.message, "error");
@@ -477,7 +484,7 @@ const AudioReleaseForm = ({
                   type="file"
                   id="coverInput"
                   hidden
-                  accept="image/*"
+                  accept=".jpg,.jpeg,image/jpeg"
                   onChange={handleCoverSelect}
                   disabled={uploading}
                 />
@@ -490,6 +497,9 @@ const AudioReleaseForm = ({
                     </p>
                     <p className="text-sm text-gray-400 mt-2">
                       Drag & drop or click to browse
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      JPG only · minimum 3000 × 3000 px
                     </p>
                   </>
                 ) : (
@@ -667,7 +677,7 @@ const AudioReleaseForm = ({
                     type="file"
                     id="audioInput"
                     hidden
-                    accept="audio/*"
+                    accept=".wav,audio/wav,audio/x-wav,audio/wave"
                     onChange={handleAudioSelect}
                     disabled={uploading}
                   />
@@ -679,7 +689,7 @@ const AudioReleaseForm = ({
                       <p className="text-gray-900 font-medium text-lg">
                         Upload Audio File
                       </p>
-                      <p className="text-sm text-gray-500 mt-2">MP3, WAV</p>
+                      <p className="text-sm text-gray-500 mt-2">WAV only</p>
                     </>
                   ) : (
                     <div className="flex flex-col items-center">

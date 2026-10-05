@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import VerifiedBadge from "../components/VerifiedBadge";
 import {
   Music,
   Plus,
@@ -110,8 +111,9 @@ const ArtistCard = ({
       <div className="p-5 flex flex-col flex-grow">
         <div className="flex justify-between items-start mb-2">
           <div>
-            <h3 className="text-lg font-bold text-gray-800 line-clamp-1">
+            <h3 className="text-lg font-bold text-gray-800 line-clamp-1 flex items-center gap-1.5">
               {artist.name}
+              <VerifiedBadge show={artist.verified} size={18} />
             </h3>
             <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wide">
               {artist.genre}
@@ -163,8 +165,12 @@ const ArtistCard = ({
               onClick={() => onToggleVerify(artist.id)}
               className={`text-xs font-bold py-1.5 px-3 rounded-full flex items-center gap-2 ${isVerified ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}
             >
-              {isVerified ? <Check size={14} /> : <X size={14} />}
-              {isVerified ? "Verified" : "Unverified"}
+              {isVerified ? (
+                <VerifiedBadge show size={14} />
+              ) : (
+                <X size={14} />
+              )}
+              {isVerified ? "Blue Tick" : "No Tick"}
             </button>
             <button
               onClick={() => onDelete(artist.id)}
@@ -215,6 +221,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
           followers: initialData.followers || "",
           password: "",
           confirmPassword: "",
+          verified: initialData.verified === true,
           born_date: initialData.born_date || "",
           early_life: initialData.early_life || "",
           career: initialData.career || "",
@@ -236,7 +243,7 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
           idDocumentUrl: "",
           status: "Pending",
           verified: false,
-          born_date: "",
+                born_date: "",
           early_life: "",
           career: "",
           recognition_awards: "",
@@ -697,6 +704,37 @@ const ArtistModal = ({ isOpen, onClose, onSubmit, initialData, isLoading }) => {
                   <option value="Verified">Verified</option>
                   <option value="Rejected">Rejected</option>
                 </select>
+              </div>
+              <div className="mb-4">
+                <label className="flex items-center justify-between gap-4 border border-blue-100 bg-blue-50/50 rounded-lg px-4 py-3 cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <VerifiedBadge show size={20} />
+                    <span>
+                      <span className="block text-sm font-semibold text-gray-700">
+                        Blue Verification Tick
+                      </span>
+                      <span className="block text-xs text-gray-500">
+                        Shows a blue badge next to this artist's name across the app.
+                      </span>
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-blue-600"
+                    checked={formData.verified === true}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        verified: e.target.checked,
+                        status: e.target.checked
+                          ? "Verified"
+                          : formData.status === "Verified"
+                            ? "Pending"
+                            : formData.status,
+                      })
+                    }
+                  />
+                </label>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -1305,8 +1343,9 @@ const ArtistManager = () => {
                                   )}
                                 </div>
                                 <div className="ml-4">
-                                  <div className="text-sm font-medium text-gray-900">
+                                  <div className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
                                     {artist.name}
+                                    <VerifiedBadge show={artist.verified} size={15} />
                                   </div>
                                   <div className="text-sm text-gray-500 truncate max-w-xs">
                                     {artist.email || "No email"}
@@ -1353,6 +1392,17 @@ const ArtistManager = () => {
                                     </button>
                                   </>
                                 ) : null}
+                                <button
+                                  onClick={() => handleToggleVerify(artist.id)}
+                                  title={
+                                    artist.verified
+                                      ? "Remove blue verification tick"
+                                      : "Give blue verification tick"
+                                  }
+                                  className={`p-2 rounded-full ${artist.verified ? "bg-blue-50" : "bg-gray-100 opacity-50 hover:opacity-100"}`}
+                                >
+                                  <VerifiedBadge show size={16} />
+                                </button>
                                 <button
                                   onClick={() => openEditModal(artist)}
                                   className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-2 rounded-full"

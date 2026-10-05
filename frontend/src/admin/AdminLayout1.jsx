@@ -23,6 +23,8 @@ import {
   Sparkles,
   Award,
   Edit3,
+  Disc3,
+  BadgeCheck,
   Image as ImageIcon,
 } from "lucide-react";
 
@@ -284,6 +286,12 @@ const AdminLayout = () => {
                     sidebarOpen={sidebarOpen}
                   />
                   <NavItem
+                    to="/admin/api-artists"
+                    icon={BadgeCheck}
+                    label="API Artist Ticks"
+                    sidebarOpen={sidebarOpen}
+                  />
+                  <NavItem
                     to="/admin/top-playlists"
                     icon={ListMusic}
                     label="Top Playlists"
@@ -293,6 +301,13 @@ const AdminLayout = () => {
                     to="/admin/new-release"
                     icon={Upload}
                     label="Release Song"
+                    sidebarOpen={sidebarOpen}
+                  />
+
+                  <NavItem
+                    to="/admin/albums"
+                    icon={Disc3}
+                    label="Albums Management"
                     sidebarOpen={sidebarOpen}
                   />
 
