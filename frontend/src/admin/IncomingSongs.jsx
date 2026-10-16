@@ -18,13 +18,52 @@ import {
   Tag,
   Languages,
   Globe2,
+  AlertTriangle,
 } from "lucide-react";
 import apiClient from "@/lib/ApiClient";
+
+// Turn any axios error into a clear, human readable message
+function describeError(err) {
+  const base = apiClient?.defaults?.baseURL || "(baseURL set nahi hai)";
+
+  // Server never answered: backend is down, wrong port, or blocked by CORS
+  if (
+    err?.code === "ERR_NETWORK" ||
+    err?.message === "Network Error" ||
+    !err?.response
+  ) {
+    return {
+      title: "Backend server se connect nahi ho paa raha",
+      detail: `Request is URL par gayi: ${base}/api/incoming-songs . Backend chalu karo (npm run dev), aur check karo ki PORT aur ApiClient ka baseURL same hain.`,
+    };
+  }
+
+  const status = err.response.status;
+  const serverMsg = err.response.data?.error || err.response.data?.message;
+
+  if (status === 401 || status === 403) {
+    return {
+      title: "Login / permission problem",
+      detail: serverMsg || "Dobara login karo ya admin token check karo.",
+    };
+  }
+  if (status === 404) {
+    return {
+      title: "API route nahi mila (404)",
+      detail:
+        "Backend mein /api/incoming-songs route register hai ya nahi, check karo.",
+    };
+  }
+  return {
+    title: `Server error (${status})`,
+    detail: serverMsg || "Backend terminal mein error log dekho.",
+  };
+}
 
 const IncomingSongs = () => {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null); // { title, detail } | null
   const [query, setQuery] = useState("");
   const [importingId, setImportingId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -39,13 +78,13 @@ const IncomingSongs = () => {
 
   const fetchIncoming = async () => {
     setLoading(true);
-    setError("");
+    setError(null);
     try {
       const { data } = await apiClient.get("/api/incoming-songs");
-      setSubmissions(data.submissions || []);
+      setSubmissions(data?.submissions || data?.data || []);
     } catch (err) {
       console.error("IncomingSongs fetch error:", err);
-      setError(err?.response?.data?.error || "Incoming songs no Loading.");
+      setError(describeError(err));
       setSubmissions([]);
     } finally {
       setLoading(false);
@@ -56,6 +95,14 @@ const IncomingSongs = () => {
     fetchIncoming();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setPlayingUrl(null);
+    setAudioLoadingUrl(null);
+  };
 
   // stop playback whenever the modal closes
   useEffect(() => {
@@ -72,14 +119,6 @@ const IncomingSongs = () => {
       }
     };
   }, []);
-
-  const stopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    setPlayingUrl(null);
-    setAudioLoadingUrl(null);
-  };
 
   const togglePlay = async (url) => {
     if (!url || !audioRef.current) return;
@@ -116,9 +155,13 @@ const IncomingSongs = () => {
           s.id === submission.id ? { ...s, imported: true } : s,
         ),
       );
+      setActiveSubmission((cur) =>
+        cur && cur.id === submission.id ? { ...cur, imported: true } : cur,
+      );
     } catch (err) {
       console.error("import error:", err);
-      alert("Import fail hua: " + (err?.response?.data?.error || err.message));
+      const { title, detail } = describeError(err);
+      alert(`Import fail hua: ${title}\n${detail}`);
     } finally {
       setImportingId(null);
     }
@@ -141,9 +184,8 @@ const IncomingSongs = () => {
       );
     } catch (err) {
       console.error("bulk sync error:", err);
-      alert(
-        "Bulk sync fail hua: " + (err?.response?.data?.error || err.message),
-      );
+      const { title, detail } = describeError(err);
+      alert(`Bulk sync fail hua: ${title}\n${detail}`);
     } finally {
       setSyncingAll(false);
     }
@@ -170,6 +212,7 @@ const IncomingSongs = () => {
         onPause={() => setPlayingUrl(null)}
         className="hidden"
       />
+
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
@@ -218,9 +261,27 @@ const IncomingSongs = () => {
         />
       </div>
 
+      {/* error box with details + retry */}
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-          {error}
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-3">
+          <AlertTriangle
+            size={18}
+            className="text-red-500 mt-0.5 flex-shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-red-700">{error.title}</p>
+            <p className="text-xs text-red-600 mt-1 break-words">
+              {error.detail}
+            </p>
+          </div>
+          <button
+            onClick={fetchIncoming}
+            disabled={loading}
+            className="flex-shrink-0 flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors"
+          >
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            Retry
+          </button>
         </div>
       )}
 
@@ -228,7 +289,7 @@ const IncomingSongs = () => {
         <div className="flex justify-center py-20">
           <Loader2 className="animate-spin text-slate-400" size={30} />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : error ? null : filtered.length === 0 ? (
         <div className="text-center py-20 text-slate-400 text-sm flex flex-col items-center gap-2">
           <Music2 size={30} className="text-slate-300" />
           Koi approved submission nahi mila.
@@ -239,7 +300,6 @@ const IncomingSongs = () => {
             const trackCount = Array.isArray(submission.tracks)
               ? submission.tracks.length
               : 0;
-            const isImporting = importingId === submission.id;
 
             return (
               <motion.div

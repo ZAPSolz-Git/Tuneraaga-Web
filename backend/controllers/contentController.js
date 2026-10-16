@@ -10,12 +10,14 @@ const {
 
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "music-assets";
 
-
 const VALIDATED_PREFIX = "validated";
 const hasValidatedPrefix = (url) =>
   typeof url === "string" && url.includes(`/${VALIDATED_PREFIX}/`);
 
-const RELEASE_KINDS = { release_cover: validateCover, release_audio: validateAudio };
+const RELEASE_KINDS = {
+  release_cover: validateCover,
+  release_audio: validateAudio,
+};
 
 exports.uploadAsset = async (req, res) => {
   try {
@@ -88,7 +90,11 @@ const checkAlbumLimit = async (artist, albumName) => {
 
   const albums = new Set(
     (data || [])
-      .map((r) => String(r.album_name || "").trim().toLowerCase())
+      .map((r) =>
+        String(r.album_name || "")
+          .trim()
+          .toLowerCase(),
+      )
       .filter(Boolean),
   );
   if (albums.has(String(albumName).trim().toLowerCase())) return null;
@@ -130,7 +136,8 @@ exports.createRelease = async (req, res) => {
     } = req.body;
 
     const badFiles = [];
-    if (!hasValidatedPrefix(cover_url)) badFiles.push("poster (JPG, min 3000 × 3000 px)");
+    if (!hasValidatedPrefix(cover_url))
+      badFiles.push("poster (JPG, min 3000 × 3000 px)");
     if (!hasValidatedPrefix(audio_url)) badFiles.push("audio (WAV)");
     if (badFiles.length) {
       return res.status(422).json({
@@ -209,7 +216,6 @@ exports.createRelease = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 exports.publishAlbumTracks = async (req, res) => {
   try {
