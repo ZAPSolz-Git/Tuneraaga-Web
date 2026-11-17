@@ -1,5 +1,4 @@
-// Client-side pre-checks for release uploads. These give instant feedback;
-// the backend (backend/utils/mediaValidation.js) enforces the same rules.
+
 
 export const COVER_MIN_SIZE = 3000;
 

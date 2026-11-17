@@ -14,28 +14,38 @@ const upload = require("./middleware/uploadMiddleware");
 const { createArtistRequest } = require("./controllers/artistController");
 const jamendoRoutes = require("./routes/jamendoRoutes");
 const externalArtistRoutes = require("./routes/externalArtistRoutes");
+
 const app = express();
 const port = process.env.PORT || 5000;
 
-// --- Middleware ---
+// Proxy ke peeche hone ki wajah se zaroori (rate-limit error fix)
+app.set("trust proxy", 1);
 
+// --- CORS ---
 const ALLOWED_ORIGINS = [
-  "https://tuneraagaweb.vercel.app",
+  "https://tuneraaga.com",
+  "https://www.tuneraaga.com",
   "https://tuneraaga.in",
   "https://www.tuneraaga.in",
-  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",").map((s) => s.trim()) : []),
+  "https://tuneraagaweb.vercel.app",
+  ...(process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.split(",").map((s) => s.trim())
+    : []),
 ];
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/localhost:\d+$/;
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // no Origin header (curl, server-to-server, same-origin) -> allow
       if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin) || LOCALHOST_ORIGIN_RE.test(origin)) {
+      if (
+        ALLOWED_ORIGINS.includes(origin) ||
+        LOCALHOST_ORIGIN_RE.test(origin)
+      ) {
         return callback(null, true);
       }
-      return callback(new Error(`Not allowed by CORS: ${origin}`));
+      console.warn("CORS blocked origin:", origin);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -53,7 +63,6 @@ app.use(
     },
   }),
 );
-
 
 app.use(
   helmet({
@@ -73,7 +82,7 @@ app.get("/", (req, res) => {
   res.send("Server Running! 🚀");
 });
 
-// ✅ DEBUG: Test auth endpoint — hit this to check if token works
+// DEBUG: Test auth endpoint
 app.get("/api/debug/auth", authenticateUser, (req, res) => {
   res.json({
     success: true,
