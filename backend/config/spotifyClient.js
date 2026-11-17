@@ -6,10 +6,7 @@ const SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1";
 let cachedToken = null;
 let tokenExpiresAt = 0;
 
-// Spotify's Client Credentials flow gives an app-only token (no user login),
-// which is all artist profile/search data needs. Cached in memory and
-// refreshed a minute before it actually expires so concurrent requests
-// don't all trigger their own token fetch.
+
 async function getAccessToken() {
   if (cachedToken && Date.now() < tokenExpiresAt) {
     return cachedToken;
