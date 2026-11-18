@@ -55,7 +55,7 @@ function mapSubmissionToRelease(submission, releaseType) {
 
 async function getIncomingSongs(req, res) {
   try {
-    const { data: submissions, error: subError } = await distributionData
+    let { data: submissions, error: subError } = await distributionData
       .from(SUBMISSIONS_TABLE)
       .select(
         `
@@ -66,6 +66,40 @@ async function getIncomingSongs(req, res) {
       )
       .eq("status", APPROVED_STATUS)
       .order("created_at", { ascending: false });
+
+    // The `users:user_id` embed depends on a FK to public.users in the
+    // Distribution DB. If it is missing/ambiguous, don't lose the whole list:
+    // retry without the embed and attach users manually.
+    if (subError) {
+      console.warn(
+        "[getIncomingSongs] embed query failed, retrying without users embed:",
+        subError.message,
+      );
+      const retry = await distributionData
+        .from(SUBMISSIONS_TABLE)
+        .select("*, tracks (*)")
+        .eq("status", APPROVED_STATUS)
+        .order("created_at", { ascending: false });
+      submissions = retry.data;
+      subError = retry.error;
+
+      if (!subError && submissions?.length) {
+        const userIds = [
+          ...new Set(submissions.map((s) => s.user_id).filter(Boolean)),
+        ];
+        if (userIds.length) {
+          const { data: users } = await distributionData
+            .from("users")
+            .select("id, full_name, label_name, email")
+            .in("id", userIds);
+          const byId = new Map((users || []).map((u) => [u.id, u]));
+          submissions = submissions.map((s) => ({
+            ...s,
+            users: byId.get(s.user_id) || null,
+          }));
+        }
+      }
+    }
 
     if (subError) {
       console.error("[getIncomingSongs] submissions fetch error:", subError);

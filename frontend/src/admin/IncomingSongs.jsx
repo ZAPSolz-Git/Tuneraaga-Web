@@ -34,7 +34,7 @@ function describeError(err) {
   ) {
     return {
       title: "Backend server se connect nahi ho paa raha",
-      detail: `Request is URL par gayi: ${base}/api/incoming-songs . Backend chalu karo (npm run dev), aur check karo ki PORT aur ApiClient ka baseURL same hain.`,
+      detail: `Request is URL par gayi: ${base}/api/incoming-songs .`,
     };
   }
 
@@ -220,8 +220,8 @@ const IncomingSongs = () => {
             <Music2 size={24} className="text-emerald-500" /> Incoming Songs
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Movement Creations (Distribution) se approved submissions — yahan se
-            TuneRaaga pe publish karo.
+            Movement Creations (Distribution) se approved submissions — Publish
+            on Tuneraaga
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
